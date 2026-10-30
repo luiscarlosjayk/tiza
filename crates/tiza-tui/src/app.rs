@@ -1390,9 +1390,17 @@ impl App {
     /// The take at the screen's width (within the widths `check` takes):
     /// what `visible` and `clipped` go by, and `render.text` without a width.
     fn take_at_screen(&self) -> (usize, Layout) {
-        use tiza_core::layout::{MAX_WIDTH, MIN_WIDTH};
-        let width = self.screen_width().clamp(MIN_WIDTH, MAX_WIDTH);
+        let width = self.take_width();
         (width, self.take_at(width))
+    }
+
+    /// The width of the take of the screen: [`App::screen_width`] within the
+    /// widths `check` takes. The width of `render.text` and of `:export`
+    /// without a width, and the `width` of `status`, which `tiza render` of
+    /// this instance and `export_image` use.
+    pub fn take_width(&self) -> usize {
+        use tiza_core::layout::{MAX_WIDTH, MIN_WIDTH};
+        self.screen_width().clamp(MIN_WIDTH, MAX_WIDTH)
     }
 
     /// The take at `width`: the layout of presentation mode, the exports and
@@ -7374,7 +7382,7 @@ impl App {
         // `step=`, when given; else the step on screen (a new empty step
         // after the last one too, see `:step`).
         let mut asked = None;
-        let mut width = tiza_core::layout::width_for_terminal(self.size.0);
+        let mut width = self.take_width();
         let mut theme = self.theme.clone();
         for (k, v) in kv {
             match k.as_str() {
@@ -8937,6 +8945,7 @@ impl App {
             auto_advance_ms: self.doc.auto_advance_ms(self.doc.step),
             looping: self.doc.looping,
             cols: self.size.0,
+            width: self.take_width(),
             rows: self.size.1,
             warnings: {
                 let mut w = self.viewport_warnings();

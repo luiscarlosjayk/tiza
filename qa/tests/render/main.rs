@@ -16,6 +16,7 @@ mod invisible_characters;
 mod language_detection;
 mod line_numbers;
 mod line_range;
+mod live_width;
 mod margin_callouts;
 mod narrow_arrow_labels;
 mod open_notice;

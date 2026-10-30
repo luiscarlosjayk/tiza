@@ -32,7 +32,7 @@ Default: the step on screen.
 
 The width of the take, from 20 to 400 columns.
 
-Default: the terminal width minus 2, from 40 to 400.
+Default: the width of the code area of the screen. It is the terminal width less the side padding on each side, from 20 to 400, or 100 when the size of the terminal is not known. `render.text` uses the same width.
 
 </dd>
 <dt><code>theme=T</code></dt>

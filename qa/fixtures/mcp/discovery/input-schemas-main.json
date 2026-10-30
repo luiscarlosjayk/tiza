@@ -1045,7 +1045,7 @@
         ]
       },
       "width": {
-        "description": "Width in columns; defaults to the live terminal's width",
+        "description": "Width in columns; defaults to the width of the code area of the live screen (the terminal width less the side padding)",
         "format": "uint",
         "minimum": 0,
         "type": [

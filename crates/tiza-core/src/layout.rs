@@ -340,10 +340,10 @@ pub fn check_width(width: usize) -> Result<usize, crate::Error> {
     }
 }
 
-/// The width of an export of what a terminal of `cols` columns shows, when
-/// no width is given (`tiza render` of the live instance, `:export`,
-/// `export_image`): the columns less 2, from 40 to [`MAX_WIDTH`]. A wider
-/// terminal exports at the limit and is not an error.
+/// The width of an export of what a terminal of `cols` columns shows, for
+/// an instance whose `status` gives no `width` (older than that field):
+/// the columns less 2, from 40 to [`MAX_WIDTH`]. A wider terminal exports
+/// at the limit and is not an error.
 pub fn width_for_terminal(cols: u16) -> usize {
     (cols as usize).saturating_sub(2).clamp(40, MAX_WIDTH)
 }

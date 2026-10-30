@@ -378,7 +378,9 @@ pub struct ExportParams {
         description = "Step to show; defaults to the current one. Past the last step, the last is exported and the reply says so in `warning`"
     )]
     pub step: Option<u32>,
-    #[schemars(description = "Width in columns; defaults to the live terminal's width")]
+    #[schemars(
+        description = "Width in columns; defaults to the width of the code area of the live screen (the terminal width less the side padding)"
+    )]
     pub width: Option<usize>,
     #[schemars(description = "dark or light; defaults to the document's theme")]
     pub theme: Option<String>,
@@ -1423,7 +1425,7 @@ impl TizaServer {
             // A .webp without `step` is every step, as a .gif.
             animated: format == "gif" || (format == "webp" && p.step.is_none()),
             asked_step: p.step.unwrap_or(scene.step),
-            width: width.unwrap_or(tiza_core::layout::width_for_terminal(status.cols)),
+            width: width.unwrap_or(status.take_width()),
             theme_name,
             scale,
             font_size,

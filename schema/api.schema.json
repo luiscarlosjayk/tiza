@@ -299,6 +299,13 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "width": {
+            "default": 0,
+            "description": "The width of the take of the screen: `cols` less the side padding on\neach side, from 20 to 400, or 100 while no terminal size is known.\nThe width of `render.text`, `:export`, `tiza render` and\n`export_image` when they get no width. 0 from an instance older than\nthis field.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
           }
         },
         "required": [

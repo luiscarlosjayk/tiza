@@ -917,6 +917,13 @@ pub struct Status {
     pub looping: bool,
     pub cols: u16,
     pub rows: u16,
+    /// The width of the take of the screen: `cols` less the side padding on
+    /// each side, from 20 to 400, or 100 while no terminal size is known.
+    /// The width of `render.text`, `:export`, `tiza render` and
+    /// `export_image` when they get no width. 0 from an instance older than
+    /// this field.
+    #[serde(default)]
+    pub width: usize,
     /// Human-readable warnings about the viewport (code clipped, labels cut
     /// or not drawn, labels under the lines) and the document (a `steps`
     /// entry past the last step; what the file holds that this version does
@@ -965,6 +972,19 @@ pub struct Status {
     /// leaves it out when no effect plays.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub effect: bool,
+}
+
+impl Status {
+    /// The width of an export of what the screen of this instance shows,
+    /// when no width is given: its `width`, or, from an instance older than
+    /// that field, the columns less 2 ([`crate::layout::width_for_terminal`]).
+    pub fn take_width(&self) -> usize {
+        if self.width > 0 {
+            self.width
+        } else {
+            crate::layout::width_for_terminal(self.cols)
+        }
+    }
 }
 
 /// Follow mode in `status`: whether a save loads now.

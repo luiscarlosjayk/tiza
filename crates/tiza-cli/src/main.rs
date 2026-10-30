@@ -224,7 +224,7 @@ enum Cmd {
         /// One image per step (step 0 included), all the same size: `--out DIR/` gets `step-00.png` … `step-NN.png` (`--format svg|webp|txt|ansi|md` for others)
         #[arg(long, conflicts_with = "step")]
         all_steps: bool,
-        /// Width in columns (default: `width` in config.toml, else 100; for the live instance, its terminal's width)
+        /// Width in columns (default: `width` in config.toml, else 100; for the live instance, the width of the code area of its screen)
         #[arg(long)]
         width: Option<usize>,
         #[arg(long, value_enum)]
@@ -556,7 +556,15 @@ fn real_main() -> anyhow::Result<()> {
                         serde_json::json!({}),
                     )?)
                     .context("unexpected status response")?;
-                    let live_w = tiza_core::layout::width_for_terminal(status.cols);
+                    // A tape records the TUI itself, which takes its side
+                    // padding off: its window is the terminal of the
+                    // instance. Every other export is the take of the screen.
+                    let live_w = if format == Format::Tape && status.cols > 0 {
+                        usize::from(status.cols)
+                            .clamp(tiza_core::layout::MIN_WIDTH, tiza_core::layout::MAX_WIDTH)
+                    } else {
+                        status.take_width()
+                    };
                     live_document = Some((status.document.clone(), status.autosave));
                     default_numbers = status.numbers;
                     (
