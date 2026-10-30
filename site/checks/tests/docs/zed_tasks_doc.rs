@@ -27,8 +27,7 @@ use tiza_core::fs;
 use tiza_qa::{Live, example, scratch, tiza};
 
 fn guide() -> String {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-    std::fs::read_to_string(root.join("docs/zed.md")).unwrap()
+    tiza_qa::repo_file("docs/zed.md")
 }
 
 /// Every ```json block of the guide, parsed.

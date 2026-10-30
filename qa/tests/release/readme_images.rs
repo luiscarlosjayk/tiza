@@ -1,5 +1,6 @@
 //! Rendering an example for the README images leaves the files of the
-//! example as they are. `policy::readme_images` checks the images.
+//! example as they are. `readme_images` of the checks of the docs
+//! (`site/checks`) checks the images.
 
 use tiza_qa::{example, scratch, tiza_ok};
 

@@ -6,7 +6,7 @@ use serde_json::Value;
 use tiza_qa::markdown::scene_patch_json;
 use tiza_qa::{repo_file, repo_root, tiza_ok};
 
-use crate::common::{code_words, frames};
+use tiza_site_checks::{code_words, frames};
 
 const PAGE: &str = "docs/demos/tour-of-tally.md";
 const DOC: &str = "examples/tally-tour.tiza";
