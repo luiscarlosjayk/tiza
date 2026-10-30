@@ -4,6 +4,6 @@
   "code": {"file": "ownership.rs", "lines": "6-8"},
   "moves": [
     {"at_step": 1, "action": "code.patch", "op": "replace",
-     "find": "let n = len(&t);", "content": "    let n = t.len();"}
+     "find": "println!", "content": "    println!(\"{n} letters in {t}\");"}
   ]
 }

@@ -6,6 +6,8 @@
     {"at_step": 1, "action": "code.link", "file": "queue.rs", "lines": "17-23"}
   ],
   "annotations": [
+    {"id": "n0", "step": 0, "type": "note", "line": 1, "text": "ownership.rs"},
+    {"id": "n1", "step": 1, "type": "note", "file": "queue.rs", "line": 17, "text": "queue.rs"},
     {"id": "b1", "step": 1, "type": "box", "file": "queue.rs",
      "from_line": 21, "to_line": 23, "label": "the other end"}
   ]

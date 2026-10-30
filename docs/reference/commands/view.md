@@ -124,7 +124,15 @@ Sets the largest width of the right margin, from 12 to 200 cells. Tiza puts note
 :margin auto
 ```
 
-For example, `:margin 40` limits the right margin to 40 cells.
+For example, `:margin 40` limits the right margin to 40 cells. In this frame, `:margin 20` cuts a long note at 20 cells, and ends it with `…`:
+
+<!-- frame id=margin-20 code=examples/ownership.rs:1-3 width=80 -->
+```
+:note 3 s moves into takes, and main can no longer use it
+:margin 20
+```
+
+<img src="../../images/commands/margin-20.webp" width="528" alt="Lines 1 to 3. In the right margin of line 3, the note is cut at 20 cells: s moves into tak….">
 
 - `:margin auto` removes the limit. The right margin then takes the width that the code leaves.
 - `:margin` alone shows the current value.

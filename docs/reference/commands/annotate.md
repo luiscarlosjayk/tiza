@@ -127,6 +127,15 @@ For example, highlight `&t` on line 7:
 
 <img src="../../images/commands/hl-brackets.webp" width="380" alt="Two corners are under &t on line 7.">
 
+At the end of the longest line, the code column has no space after the span. Then the brackets go under the span, `⌊` under its first character and `⌋` under its last:
+
+<!-- frame id=hl-brackets-under code=examples/ownership.rs:20-20 -->
+```
+:hl 20:s.len() the length emphasis=brackets
+```
+
+<img src="../../images/commands/hl-brackets-under.webp" width="208" alt="Line 20 is s.len(). The bracket ⌊ is under s, the bracket ⌋ is under the last ), and the label the length is under them.">
+
 `strike` draws a line through the span:
 
 <!-- frame id=hl-strike code=examples/ownership.rs:6-8 -->
@@ -213,6 +222,15 @@ A thick arrow with sharp corners:
 ```
 
 <img src="../../images/commands/arrow-route.webp" width="403" alt="A thick arrow with sharp corners goes from u on line 10 to &mut on line 11.">
+
+An arrow with an open head at its start and no head at its end:
+
+<!-- frame id=arrow-heads code=examples/ownership.rs:1-3 -->
+```
+:arrow 2:s 3:s) the value moves heads=open,none
+```
+
+<img src="../../images/commands/arrow-heads.webp" width="380" alt="An arrow from s on line 2 to s on line 3, with an open head at line 2 and no head at line 3.">
 
 ### Notes on `:arrow`
 
@@ -389,6 +407,15 @@ When the right margin has no room, Tiza puts the callout under the lines.
 ```
 
 <img src="../../images/commands/callout-below.webp" width="380" alt="Under line 8, a callout with the title Borrow holds the text len reads t and gives it back.">
+
+A callout with a tint and a dashed border:
+
+<!-- frame id=callout-fill code=examples/ownership.rs:6-8 width=66 -->
+```
+:callout 6-8 t stays with main. fill=yes border=dashed
+```
+
+<img src="../../images/commands/callout-fill.webp" width="567" alt="In the right margin of lines 6 to 8, a callout with a dashed border and a tint holds the text t stays with main.">
 
 ### Notes on `:callout`
 

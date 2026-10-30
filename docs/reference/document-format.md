@@ -214,9 +214,9 @@ A spotlight with only `ids`, from [`:spot` with an id](commands/annotate.md#spot
 
 #### Values of annotation fields
 
-- Stroke values: `solid`, `dashed`, `dotted`, `thick`, `double`.
-- Head values: `none`, `arrow`, `dot`, `bar`, `open`.
-- Emphasis values: `fill`, `underline`, `brackets`, `strike`.
+- Stroke values: `solid`, `dashed`, `dotted`, `thick`, `double`. The frames of [`:arrow`](commands/annotate.md#arrow), [`:box`](commands/annotate.md#box) and [`:callout`](commands/annotate.md#callout) show `dashed`, `thick` and `double`.
+- Head values: `none`, `arrow`, `dot`, `bar`, `open`. The frames of [`:arrow`](commands/annotate.md#arrow) and [`:set`](commands/change.md#set) show each one.
+- Emphasis values: `fill`, `underline`, `brackets`, `strike`. The frames of [`:hl` with an emphasis](commands/annotate.md#hl-with-an-emphasis) show each one.
 
 Each value has this meaning:
 
@@ -455,6 +455,25 @@ A color value is one of these:
 
 A color name of an annotation, such as `orange`, is not a color value. `red`, `blue` and the other names that are also ANSI names give the colors of the terminal. In an export, a token with a color of the terminal palette uses the color of the `dark` or `light` theme, and Tiza prints a note. The keys are the same as in the `[theme]` table of the config file.
 
+For example, a document that changes the `accent` role, the color of a highlight, and the `note` role. `:theme file` writes this field from a theme file: see [Change a color](themes.md#change-a-color). The image is a real `tiza render` export of this document at step 1, with the dark theme:
+
+<!-- frame id=theme-overrides doc=docs/frames/theme-overrides.tiza step=1 -->
+```json
+{
+  "schema": 1,
+  "source": {},
+  "code": {"file": "ownership.rs", "lines": "6-8"},
+  "theme_overrides": {"accent": "#c678dd", "note": "#56b6c2"},
+  "annotations": [
+    {"id": "h1", "step": 1, "type": "highlight",
+     "span": {"line": 7, "start": 16, "end": 18}, "label": "shared borrow"},
+    {"id": "n1", "step": 1, "type": "note", "line": 8, "text": "t is still here"}
+  ]
+}
+```
+
+<img src="../images/format/theme-overrides.webp" width="380" alt="Lines 6 to 8 on the dark theme. The label shared borrow of &t on line 7 is purple, and the note t is still here under line 8 is cyan.">
+
 ## Moves
 
 A move changes the code or the view at a step. The `moves` list of a document holds them.
@@ -535,7 +554,7 @@ An `insert` puts a line after the line with `let n = len(&t);`:
 
 <img src="../images/format/patch-insert.webp" width="380" alt="Lines 6 to 8 at step 0. At step 1, the new line let m = n * 2; comes after line 7, and println moves down one line.">
 
-A `replace` changes the line with `let n = len(&t);`:
+A `replace` changes the line with `println!`:
 
 <!-- frame id=patch-replace doc=docs/frames/patch-replace.tiza animate=0 -->
 ```json
@@ -545,12 +564,12 @@ A `replace` changes the line with `let n = len(&t);`:
   "code": {"file": "ownership.rs", "lines": "6-8"},
   "moves": [
     {"at_step": 1, "action": "code.patch", "op": "replace",
-     "find": "let n = len(&t);", "content": "    let n = t.len();"}
+     "find": "println!", "content": "    println!(\"{n} letters in {t}\");"}
   ]
 }
 ```
 
-<img src="../images/format/patch-replace.webp" width="380" alt="Lines 6 to 8 at step 0. At step 1, line 7 is let n = t.len(); in place of let n = len(&t);.">
+<img src="../images/format/patch-replace.webp" width="380" alt="Lines 6 to 8 at step 0. At step 1, the println on line 8 prints {n} letters in {t} in place of {t} has {n} letters.">
 
 A `delete` removes the line with `println!`:
 
@@ -588,7 +607,7 @@ With `"typing": "line"` or `"char"`, Tiza types the content on the screen.
 
 Each image in this section is a real `tiza render` export of the document above it, from step 0 to step 1. An animated export types as the TUI does.
 
-`"typing": "line"` types the new lines one at a time:
+`"typing": "line"` types the new lines one at a time. Here `speed_ms` gives each line 600 ms, so the pause between the two lines shows:
 
 <!-- frame id=typing-line doc=docs/frames/typing-line.tiza animate=0 -->
 ```json
@@ -598,7 +617,8 @@ Each image in this section is a real `tiza render` export of the document above 
   "code": {"file": "ownership.rs", "lines": "6-8"},
   "moves": [
     {"at_step": 1, "action": "code.patch", "op": "insert", "after": "let t",
-     "content": "    let u = t.clone();\n    let v = u.len();", "typing": "line"}
+     "content": "    let u = t.clone();\n    let v = u.len();", "typing": "line",
+     "speed_ms": 600}
   ]
 }
 ```
@@ -719,7 +739,7 @@ At step 2, `:link src/queue.rs:10-36` adds the same move.
 - `:embed` stores every linked file under `views`. Thus the document stays one `.tiza` file.
 - A document fails to load when a linked file cannot be read. The error names the move and the path.
 
-This image is a real `tiza render` export of the document under this paragraph, from step 0 to step 1. At step 1, the screen shows lines 17 to 23 of `queue.rs`, with a box of that file:
+This image is a real `tiza render` export of the document under this paragraph, from step 0 to step 1. At step 1, the screen shows lines 17 to 23 of `queue.rs`, with a box of that file. A note on each file names it: the export does not show the name of a file.
 
 <!-- frame id=code-link doc=docs/frames/link.tiza animate=0 -->
 ```json
@@ -731,13 +751,15 @@ This image is a real `tiza render` export of the document under this paragraph, 
     {"at_step": 1, "action": "code.link", "file": "queue.rs", "lines": "17-23"}
   ],
   "annotations": [
+    {"id": "n0", "step": 0, "type": "note", "line": 1, "text": "ownership.rs"},
+    {"id": "n1", "step": 1, "type": "note", "file": "queue.rs", "line": 17, "text": "queue.rs"},
     {"id": "b1", "step": 1, "type": "box", "file": "queue.rs",
      "from_line": 21, "to_line": 23, "label": "the other end"}
   ]
 }
 ```
 
-<img src="../images/format/code-link.webp" width="552" alt="At step 0, lines 1 to 4 of ownership.rs. At step 1, lines 17 to 23 of queue.rs, with a box on lines 21 to 23 and the label the other end.">
+<img src="../images/format/code-link.webp" width="552" alt="At step 0, lines 1 to 4 of ownership.rs, with the note ownership.rs. At step 1, lines 17 to 23 of queue.rs, with the note queue.rs and a box on lines 21 to 23 with the label the other end.">
 
 When a document has a `code.link` move or an annotation of another file, `:list` groups the annotations of each step by file. `scene.list` ends the line of an annotation of another file with that file. For example:
 

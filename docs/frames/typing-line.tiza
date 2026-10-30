@@ -4,6 +4,7 @@
   "code": {"file": "ownership.rs", "lines": "6-8"},
   "moves": [
     {"at_step": 1, "action": "code.patch", "op": "insert", "after": "let t",
-     "content": "    let u = t.clone();\n    let v = u.len();", "typing": "line"}
+     "content": "    let u = t.clone();\n    let v = u.len();", "typing": "line",
+     "speed_ms": 600}
   ]
 }
