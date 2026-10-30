@@ -313,13 +313,13 @@ impl Drop for Follow {
     }
 }
 
-/// Test hooks, only with the `test-hooks` feature: `TIZA_TEST_HOOK`
-/// names one. `follow:slow` holds the start and the stop of the watcher
-/// 3 s each, as a busy fseventsd does; `follow:fail` makes the start fail.
+/// Test hooks, only with the `test-hooks` feature ([`crate::test_hook`]).
+/// `follow:slow` holds the start and the stop of the watcher 3 s each, as
+/// a busy fseventsd does; `follow:fail` makes the start fail.
 #[allow(unused_variables)]
 fn hook(place: &str) -> bool {
     #[cfg(feature = "test-hooks")]
-    if std::env::var("TIZA_TEST_HOOK").is_ok_and(|v| v == place) {
+    if crate::test_hook(place) {
         return true;
     }
     false

@@ -491,6 +491,14 @@ fn spare_answered_requests() {
 #[cfg(feature = "test-hooks")]
 static SLOW_FIRST_FRAME_DONE: AtomicBool = AtomicBool::new(false);
 
+/// Whether the test hook `place` is on: only with the `test-hooks`
+/// feature, when `TIZA_TEST_HOOK` names it. Several hooks are separated by
+/// commas, for example `effect:slow,request:step.set`.
+#[cfg(feature = "test-hooks")]
+pub(crate) fn test_hook(place: &str) -> bool {
+    std::env::var("TIZA_TEST_HOOK").is_ok_and(|v| v.split(',').any(|h| h == place))
+}
+
 /// Draws one frame, and the terminal paints it at once: the output of the
 /// frame goes in a synchronized update (DEC mode 2026), so that a big
 /// change never shows half the frame before and half the new one. The
@@ -504,25 +512,25 @@ fn draw_frame(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> io::Res
         // machine: the first frame takes 1.5 s more, or each frame takes
         // 100 ms more.
         #[cfg(feature = "test-hooks")]
-        match std::env::var("TIZA_TEST_HOOK").as_deref() {
-            Ok("draw:slow-first-frame") if !SLOW_FIRST_FRAME_DONE.swap(true, Ordering::Relaxed) => {
-                std::thread::sleep(Duration::from_millis(1500));
-            }
-            Ok("draw:slow-frames") => std::thread::sleep(Duration::from_millis(100)),
-            _ => {}
+        if test_hook("draw:slow-first-frame")
+            && !SLOW_FIRST_FRAME_DONE.swap(true, Ordering::Relaxed)
+        {
+            std::thread::sleep(Duration::from_millis(1500));
+        } else if test_hook("draw:slow-frames") {
+            std::thread::sleep(Duration::from_millis(100));
         }
         // Test hooks, only with the `test-hooks` feature: a panic at the
         // end of the layout, before the update begins, and one inside the
         // update, for the tests that no update stays open.
         #[cfg(feature = "test-hooks")]
-        if std::env::var("TIZA_TEST_HOOK").is_ok_and(|v| v == "draw:panic-in-layout") {
+        if test_hook("draw:panic-in-layout") {
             panic!("TIZA_TEST_HOOK at the layout");
         }
         // The backend writes to the same `Stdout`: its buffer keeps this
         // before the frame.
         let _ = queue!(io::stdout(), BeginSynchronizedUpdate);
         #[cfg(feature = "test-hooks")]
-        if std::env::var("TIZA_TEST_HOOK").is_ok_and(|v| v == "draw:panic-after-begin") {
+        if test_hook("draw:panic-after-begin") {
             panic!("TIZA_TEST_HOOK at draw");
         }
     });

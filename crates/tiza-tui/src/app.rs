@@ -185,6 +185,21 @@ pub struct EffectState {
     cache: std::cell::RefCell<Option<EffectCache>>,
 }
 
+impl EffectState {
+    /// The same effect with no cache: a frame computes it again.
+    fn copy(&self) -> EffectState {
+        EffectState {
+            started: self.started,
+            duration_ms: self.duration_ms,
+            slow: self.slow,
+            hold_ms: self.hold_ms,
+            revision: self.revision,
+            pointer: self.pointer,
+            cache: std::cell::RefCell::new(None),
+        }
+    }
+}
+
 #[derive(Debug)]
 struct EffectCache {
     width: usize,
@@ -341,6 +356,32 @@ struct RequestState {
     agent_notice: Option<AgentNotice>,
     agent_deferred: Vec<(String, &'static str)>,
     following: bool,
+    /// What a follow pause waits for: a request at the resume step loads
+    /// the change and clears it.
+    pause: Pause,
+    /// What a load changes in the watcher, while follow stays on: with
+    /// `last_content` of a load that is undone, the next read of the file
+    /// would find nothing new, and the change would never load.
+    loaded: Option<FollowLoaded>,
+    follow_failed: Option<(PathBuf, String)>,
+    screen_via_history: bool,
+    /// The enter effect that plays: a request that ends it sets
+    /// `step_ready_at`, so with the effect gone and `step_ready_at` back the
+    /// auto-advance would never start.
+    effect: Option<EffectState>,
+}
+
+/// The fields of [`crate::follow::Follow`] that a load writes, and the
+/// counts of its reads, for a watcher started again.
+struct FollowLoaded {
+    last_content: Vec<String>,
+    reloads: u64,
+    last_reload: Option<std::time::Instant>,
+    last_reload_clock: Option<String>,
+    missing: bool,
+    reads: u64,
+    last_read: Option<crate::follow::Stamp>,
+    hash: Option<String>,
 }
 
 impl RequestState {
@@ -382,6 +423,20 @@ impl RequestState {
             agent_notice: app.agent_notice.clone(),
             agent_deferred: app.agent_deferred.clone(),
             following: app.follow.is_some(),
+            pause: app.pause.clone(),
+            loaded: app.follow.as_ref().map(|f| FollowLoaded {
+                last_content: f.last_content.clone(),
+                reloads: f.reloads,
+                last_reload: f.last_reload,
+                last_reload_clock: f.last_reload_clock.clone(),
+                missing: f.missing,
+                reads: f.reads,
+                last_read: f.last_read,
+                hash: f.hash.clone(),
+            }),
+            follow_failed: app.follow_failed.clone(),
+            screen_via_history: app.screen_via_history,
+            effect: app.effect.as_ref().map(EffectState::copy),
         }
     }
 
@@ -421,14 +476,32 @@ impl RequestState {
         app.view_request = self.view_request;
         app.agent_notice = self.agent_notice;
         app.agent_deferred = self.agent_deferred;
-        // Follow holds a file watcher: stopped, or started again.
-        match (self.following, app.follow.is_some()) {
-            (false, true) => app.follow = None,
-            (true, false) => {
-                let _ = app.set_follow(true);
+        app.screen_via_history = self.screen_via_history;
+        app.effect = self.effect;
+        // Follow holds a file watcher: stopped, or started again. The
+        // watcher gets back what a load wrote; one started again, its counts
+        // of reads too (the same watcher keeps them: Tiza did read the file).
+        let restarted = match (self.following, app.follow.is_some()) {
+            (false, true) => {
+                app.follow = None;
+                false
             }
-            _ => {}
+            (true, false) => app.set_follow(true).is_ok(),
+            _ => false,
+        };
+        if let (Some(f), Some(l)) = (app.follow.as_mut(), self.loaded) {
+            f.last_content = l.last_content;
+            f.reloads = l.reloads;
+            f.last_reload = l.last_reload;
+            f.last_reload_clock = l.last_reload_clock;
+            f.missing = l.missing;
+            if restarted {
+                (f.reads, f.last_read, f.hash) = (l.reads, l.last_read, l.hash);
+            }
         }
+        // After follow: starting it again sets a pause of its own.
+        app.pause = self.pause;
+        app.follow_failed = self.follow_failed;
         app.clamp_cursor();
     }
 }
@@ -3746,9 +3819,7 @@ impl App {
         #[allow(unused_mut)]
         let mut slow = 1;
         #[cfg(feature = "test-hooks")]
-        if std::env::var("TIZA_TEST_HOOK")
-            .is_ok_and(|v| v == "effect:slow" || v == "effect:late-frames")
-        {
+        if crate::test_hook("effect:slow") || crate::test_hook("effect:late-frames") {
             slow = 100;
         }
         self.effect = Some(EffectState {
@@ -3792,7 +3863,7 @@ impl App {
         // effect takes 50 ms more, longer than the time between two frames,
         // so a test on a pty sees how the loop paces late frames.
         #[cfg(feature = "test-hooks")]
-        if std::env::var("TIZA_TEST_HOOK").is_ok_and(|v| v == "effect:late-frames") {
+        if crate::test_hook("effect:late-frames") {
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
         let cache = e
@@ -7898,8 +7969,9 @@ impl App {
     /// dropped whole: everything it could change in the instance — the
     /// document, the view (step, cursor, selection, scroll, focus, pointer,
     /// a typing animation it started), the mode and overlays, theme, save
-    /// path and autosave, follow, supervision, the alerts — goes back to
-    /// what it was ([`RequestState`]), the undo entries it recorded are
+    /// path and autosave, follow (a pause and the change it waits for, and
+    /// what a load of the file wrote), supervision, the alerts — goes back
+    /// to what it was ([`RequestState`]), the undo entries it recorded are
     /// forgotten, and the document is saved again when the request had
     /// saved a half-done change. The crash hook leaves the terminal alone
     /// meanwhile ([`answering_request`]); the panic's place and message go
@@ -7924,8 +7996,21 @@ impl App {
         }
         if self.revision != revision {
             // The request saved or announced a change that is gone now:
-            // a new revision, and the file as the document is again.
+            // a new revision, and the file as the document is again. With
+            // no save (autosave off), nothing on disk changed: the document
+            // is as saved, or not, as before.
+            let dirty = self.dirty;
             self.touch();
+            if self.dirty && !self.autosave {
+                self.dirty = dirty;
+            }
+            // An effect that played goes on at the new revision (at another
+            // one it is over).
+            if let Some(e) = &mut self.effect
+                && e.revision == revision
+            {
+                e.revision = self.revision;
+            }
         }
         let known = tiza_core::protocol::METHODS.iter().any(|m| m.0 == method);
         let what = if known { method.as_str() } else { "request" };
@@ -7961,7 +8046,7 @@ impl App {
         // purpose after the request did its work, for the tests that a
         // caught panic leaves the instance as it was.
         #[cfg(feature = "test-hooks")]
-        if std::env::var("TIZA_TEST_HOOK").is_ok_and(|v| v == format!("request:{}", req.method)) {
+        if crate::test_hook(&format!("request:{}", req.method)) {
             panic!("TIZA_TEST_HOOK at {}", req.method);
         }
         match result {
