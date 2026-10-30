@@ -14,7 +14,7 @@
 use std::path::Path;
 
 use serde_json::{Value, json};
-use tiza_qa::{bin, scratch};
+use tiza_qa::{FOLLOW_START_BUDGET, bin, scratch};
 
 const OLD: &str = "fn f(t: &str) -> usize {\n    let n = t.len();\n    n + 1\n}\n";
 const NEW: &str = "fn f(t: &str) -> usize {\n    let n = t.chars().count();\n    n + 1\n}\n";
@@ -47,8 +47,11 @@ fn files(dir: &Path) {
     std::fs::write(dir.join("main.rs.tiza"), doc.to_string()).unwrap();
 }
 
-/// The Python helpers of both tests: `api`, and `until`, which waits for a
-/// condition on `follow.status` for at most 10 s.
+/// The Python helpers of the tests: `api`, and `until`, which waits for a
+/// condition on `follow.status` for at most `BUDGET` s ([`helpers`]). The
+/// watcher runs once `reads` is 2: `--follow` reads the file at once, and
+/// the watcher reads it again when it has started, so a save after that
+/// is seen as a save.
 const HELPERS: &str = r##"
 import json, time
 def api(method, params=None):
@@ -58,7 +61,7 @@ def api(method, params=None):
 def status():
     return json.loads(api("follow.status")[1])
 def until(what, ok):
-    end = time.time() + 10
+    end = time.time() + BUDGET
     while time.time() < end:
         st = status()
         if ok(st):
@@ -70,20 +73,27 @@ def code():
     return json.loads(api("code.get")[1])["text"]
 "##;
 
+/// [`HELPERS`], with `BUDGET`: the start of a watcher, and the save it
+/// reads, can take seconds on a loaded Mac ([`FOLLOW_START_BUDGET`]).
+fn helpers() -> String {
+    format!("BUDGET = {}\n{HELPERS}", FOLLOW_START_BUDGET.as_secs())
+}
+
 #[test]
 fn pty_a_dropped_step_to_the_resume_step_keeps_the_change_waiting() {
     let _alone = WATCHERS.write().unwrap_or_else(|e| e.into_inner());
     let dir = scratch("rollback-resume");
     files(&dir);
+    let helpers = helpers();
     let body = format!(
         r##"
 binary, cwd, new = sys.argv[1], sys.argv[2], sys.argv[3]
 os.chdir(cwd)
-{HELPERS}
+{helpers}
 env = dict(os.environ, TERM="xterm-256color", TIZA_NO_OSC="1", TIZA_TEST_HOOK="request:step.set")
 s = Pty([binary, "--socket", "s.sock", "--follow", "main.rs.tiza"], 30, 160, env=env)
 if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists("s.sock"), 10, "first frame"):
-    until("the watcher", lambda st: st.get("enabled") and st.get("reads", 0) >= 1)
+    until("the watcher", lambda st: st.get("enabled") and st.get("reads", 0) >= 2)
     api("step.next")
     api("step.next")
     with open("main.rs.tmp", "w") as f:
@@ -157,15 +167,16 @@ fn pty_a_dropped_put_keeps_the_reason_of_follow() {
     let _alone = WATCHERS.write().unwrap_or_else(|e| e.into_inner());
     let dir = scratch("rollback-reason");
     files(&dir);
+    let helpers = helpers();
     let body = format!(
         r##"
 binary, cwd = sys.argv[1], sys.argv[2]
 os.chdir(cwd)
-{HELPERS}
+{helpers}
 env = dict(os.environ, TERM="xterm-256color", TIZA_NO_OSC="1", TIZA_TEST_HOOK="request:scene.put")
 s = Pty([binary, "--socket", "s.sock", "--follow", "main.rs.tiza"], 30, 160, env=env)
 if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists("s.sock"), 10, "first frame"):
-    until("the watcher", lambda st: st.get("enabled") and st.get("reads", 0) >= 1)
+    until("the watcher", lambda st: st.get("enabled") and st.get("reads", 0) >= 2)
     # A paste turns follow off; an undo and a redo bring the paste back.
     s.send(b"\x1b[200~fn other() {{}}\n\x1b[201~")
     until("the paste", lambda st: not st.get("enabled"))
@@ -211,11 +222,12 @@ fn pty_a_dropped_follow_set_keeps_why_follow_is_off() {
     let _alone = WATCHERS.write().unwrap_or_else(|e| e.into_inner());
     let dir = scratch("rollback-failed");
     files(&dir);
+    let helpers = helpers();
     let body = format!(
         r##"
 binary, cwd = sys.argv[1], sys.argv[2]
 os.chdir(cwd)
-{HELPERS}
+{helpers}
 env = dict(os.environ, TERM="xterm-256color", TIZA_NO_OSC="1", TIZA_TEST_HOOK="follow:fail,request:follow.set")
 s = Pty([binary, "--socket", "s.sock", "--follow", "main.rs.tiza"], 30, 160, env=env)
 if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists("s.sock"), 10, "first frame"):
@@ -250,15 +262,16 @@ fn pty_a_dropped_follow_off_keeps_the_pause() {
     let _alone = WATCHERS.write().unwrap_or_else(|e| e.into_inner());
     let dir = scratch("rollback-follow-off");
     files(&dir);
+    let helpers = helpers();
     let body = format!(
         r##"
 binary, cwd, new = sys.argv[1], sys.argv[2], sys.argv[3]
 os.chdir(cwd)
-{HELPERS}
+{helpers}
 env = dict(os.environ, TERM="xterm-256color", TIZA_NO_OSC="1", TIZA_TEST_HOOK="request:follow.set")
 s = Pty([binary, "--socket", "s.sock", "--follow", "main.rs.tiza"], 30, 160, env=env)
 if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists("s.sock"), 10, "first frame"):
-    until("the watcher", lambda st: st.get("enabled") and st.get("reads", 0) >= 1)
+    until("the watcher", lambda st: st.get("enabled") and st.get("reads", 0) >= 2)
     # One load at step 0 first, so that a watcher started again with
     # counts of its own would show: `reloads` is 1.
     with open("main.rs.tmp", "w") as f:
@@ -318,15 +331,16 @@ fn pty_a_dropped_put_that_loaded_the_change_keeps_it_waiting() {
     let _alone = WATCHERS.write().unwrap_or_else(|e| e.into_inner());
     let dir = scratch("rollback-put-load");
     files(&dir);
+    let helpers = helpers();
     let body = format!(
         r##"
 binary, cwd, new = sys.argv[1], sys.argv[2], sys.argv[3]
 os.chdir(cwd)
-{HELPERS}
+{helpers}
 env = dict(os.environ, TERM="xterm-256color", TIZA_NO_OSC="1", TIZA_TEST_HOOK="request:scene.put")
 s = Pty([binary, "--socket", "s.sock", "--follow", "main.rs.tiza"], 30, 160, env=env)
 if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists("s.sock"), 10, "first frame"):
-    until("the watcher", lambda st: st.get("enabled") and st.get("reads", 0) >= 1)
+    until("the watcher", lambda st: st.get("enabled") and st.get("reads", 0) >= 2)
     api("step.next")
     api("step.next")
     with open("main.rs.tmp", "w") as f:
