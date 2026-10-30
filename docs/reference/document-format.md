@@ -642,6 +642,8 @@ A position can also have a key that Tiza does not know. These are the positions:
 
 The document opens, and Tiza ignores the key. `tiza check` gives a warning with a known key that is near. A save does not keep the key, and `tiza scene put` refuses the document. A span calls its first grapheme `start`. An arrow end and a `select` point call it `col`.
 
+The key can be a key that the position needs, under another name, for example `col` in a span. Then the position does not have the key that it needs, and the document does not open. The error names the key that Tiza took out, and the name to use.
+
 ## Enter effects (experimental)
 
 This function is an experiment. It can change or go away.

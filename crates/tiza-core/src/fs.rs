@@ -521,7 +521,16 @@ pub fn parse_document(text: &str, base_dir: Option<&Path>) -> Result<Document, E
     migrate_document_value(&mut raw)?;
     let unknown = take_unknown_effects(&mut raw);
     let newer = take_newer_moves(&mut raw);
-    let mut doc: Document = serde_json::from_value(raw)?;
+    let mut doc: Document = serde_json::from_value(raw).map_err(|e| {
+        let e = Error::from(e);
+        match taken_keys_note(&newer.positions) {
+            Some(note) => Error::Because {
+                message: format!("{e}. {note}"),
+                inner: Box::new(e),
+            },
+            None => e,
+        }
+    })?;
     doc.unknown_effects = crate::model::UnknownEffects(unknown);
     doc.newer_moves = newer;
     doc.schema = SCHEMA_VERSION;
@@ -725,6 +734,40 @@ fn a_id(a: &serde_json::Map<String, serde_json::Value>) -> String {
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string()
+}
+
+/// The keys that the load took out of the positions, with what to write
+/// instead, for an error of the load: the key that was taken out can be
+/// the one that the position needs, under another name (`col` in a span,
+/// which needs `start`). `None` when the load took out none.
+pub(crate) fn taken_keys_note(positions: &[crate::model::PositionKeys]) -> Option<String> {
+    if positions.is_empty() {
+        return None;
+    }
+    let list: Vec<String> = positions
+        .iter()
+        .map(|p| {
+            let owner = match &p.owner {
+                crate::model::KeysOwner::Move { number, .. } => format!("move #{number}"),
+                crate::model::KeysOwner::Annotation { id, .. } => format!("annotation {id}"),
+            };
+            let hints: Vec<String> = p
+                .keys
+                .iter()
+                .filter_map(|k| crate::moves::position_key_hint(k, p.known))
+                .collect();
+            let hint = if hints.is_empty() {
+                String::new()
+            } else {
+                format!(" ({})", hints.join(" "))
+            };
+            format!("{} in {} of {owner}{hint}", p.keys.join(", "), p.field)
+        })
+        .collect();
+    Some(format!(
+        "This version of Tiza does not know these keys, so it took them out: {}",
+        list.join("; ")
+    ))
 }
 
 /// Takes out of the position `p` (an object) each key that is not in
