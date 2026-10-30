@@ -1,6 +1,7 @@
 //! Every test starts the `tiza` binary with an empty config, so the config
 //! file of whoever runs the tests never changes a result: through
-//! `tiza_qa::command()` (or a helper that uses it) in `qa/tests`, and with
+//! `tiza_qa::command()` (or a helper that uses it) in `qa/tests` and in the
+//! checks of the docs (`site/checks/tests`), and with
 //! `TIZA_CONFIG` and `XDG_CONFIG_HOME` set in a crate's own tests.
 //! `qa/tests/env/developer_config.rs` checks the helpers with a config in
 //! each place that Tiza looks.
@@ -57,6 +58,7 @@ fn starts_with_a_config(text: &str) -> bool {
 fn every_qa_test_starts_tiza_through_tiza_qa_command() {
     let mut files = Vec::new();
     rs_files(&root().join("qa/tests"), &mut files);
+    rs_files(&root().join("site/checks/tests"), &mut files);
     let mut found = Vec::new();
     for file in files {
         let text = std::fs::read_to_string(&file).unwrap();

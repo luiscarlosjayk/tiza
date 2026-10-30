@@ -7,6 +7,17 @@ members = [
     "crates/tiza-cli",
     "crates/tiza-export",
     "qa",
+    "site/checks",
+]
+# `cargo build`, `cargo clippy` and `cargo test` in the root leave out the
+# checks of the docs: only the job that builds the site runs them.
+default-members = [
+    "crates/tiza-core",
+    "crates/tiza-tui",
+    "crates/tiza-mcp",
+    "crates/tiza-cli",
+    "crates/tiza-export",
+    "qa",
 ]
 
 [workspace.package]

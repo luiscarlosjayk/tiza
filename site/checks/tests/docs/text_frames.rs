@@ -8,7 +8,7 @@ use std::path::Path;
 use serde_json::Value;
 use tiza_qa::{repo_file, repo_root, repository_files, tiza, tiza_ok};
 
-use crate::common::frames;
+use tiza_site_checks::frames;
 
 /// The code that a document shows: its file and the file of each
 /// `code.link` move, from the folder of the document.
