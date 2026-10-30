@@ -25,6 +25,7 @@ on:
       - "rust-toolchain.toml"
       - "crates/**"
       - "examples/**"
+      - "qa/Cargo.toml"
       - "qa/src/**"
       - "qa/fixtures/mcp/agent_scenarios/**"
       - "scripts/readme-images.sh"
@@ -42,12 +43,18 @@ on:
       - "rust-toolchain.toml"
       - "crates/**"
       - "examples/**"
+      - "qa/Cargo.toml"
       - "qa/src/**"
       - "qa/fixtures/mcp/agent_scenarios/**"
       - "scripts/readme-images.sh"
       - "site/**"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
+    inputs:
+      checks:
+        description: "Check the docs against the code first. Turn it off only to deploy again a release that deployed before."
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -80,6 +87,9 @@ jobs:
       - name: Choose the ref that the site describes
         id: ref
         shell: bash
+        env:
+          # Empty for an event other than a manual run.
+          CHECKS_INPUT: ${{ inputs.checks }}
         run: |
           stable='^v[0-9]+\.[0-9]+\.[0-9]+$'
           if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
@@ -101,9 +111,15 @@ jobs:
             exit 1
           fi
           # A release from before the checks of the docs has no site/checks.
-          if [ -f site/checks/Cargo.toml ]; then checks=true; else
+          # A manual run can turn the checks off, to deploy a release again.
+          if [ ! -f site/checks/Cargo.toml ]; then
             checks=false
             echo "::notice::$ref has no site/checks: the checks of the docs do not run"
+          elif [ "$CHECKS_INPUT" = false ]; then
+            checks=false
+            echo "::notice::the checks of the docs are off for this manual run"
+          else
+            checks=true
           fi
           echo "The site describes $ref (deploy: $deploy, checks: $checks)."
           {
