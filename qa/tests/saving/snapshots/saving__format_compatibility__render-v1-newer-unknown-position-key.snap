@@ -1,0 +1,8 @@
+---
+source: qa/tests/saving/format_compatibility.rs
+expression: out
+---
+ 1     fn main() {
+ 2 ╭──     let s = String::from("hi");
+ 3 ╰─▶     takes(s.clone());            moved
+ 4     }

@@ -68,6 +68,16 @@ fn every_refusal_of_the_mcp_tools_has_its_code() {
             "add_move",
             json!({"at_step": 1, "op": "insert", "position": "1", "content": "x", "align": "top"}),
         ),
+        // A position with a key that it does not know: `start` is `col`.
+        ("highlight", json!({"at": {"line": 2, "start": 4}})),
+        (
+            "add_arrow",
+            json!({"from": {"line": 2, "col": 4}, "to": {"line": 3, "start": 4}}),
+        ),
+        (
+            "add_move",
+            json!({"at_step": 1, "action": "select", "from": {"line": 2, "colum": 4}, "to": {"line": 2, "col": 9}}),
+        ),
     ];
     for (tool, args) in cases {
         let (err, text, _) = mcp.call(tool, args.clone());

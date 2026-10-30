@@ -26,6 +26,7 @@
       ]
     },
     "Anchor": {
+      "additionalProperties": false,
       "description": "A point in the code: absolute line (1-based) and grapheme (0-based).",
       "properties": {
         "col": {
@@ -995,6 +996,7 @@
       "type": "string"
     },
     "TextSpan": {
+      "additionalProperties": false,
       "description": "A range within ONE line, in graphemes, exclusive end.",
       "properties": {
         "end": {
@@ -1066,7 +1068,8 @@
       "type": "object"
     },
     "Where": {
-      "description": "Where to anchor something: explicit coordinates or a text search.\nAn agent rarely knows the exact column; `find` is more robust.",
+      "additionalProperties": false,
+      "description": "Where to anchor something: explicit coordinates or a text search.\nAn agent rarely knows the exact column; `find` is more robust. A key\nthat a position does not know is an error.",
       "properties": {
         "col": {
           "format": "uint32",

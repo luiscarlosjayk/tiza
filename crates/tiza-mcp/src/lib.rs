@@ -43,6 +43,12 @@ pub struct At {
     pub find: Option<String>,
     #[schemars(description = "Which match of `find` to use (1-based). Defaults to the first.")]
     pub occurrence: Option<u32>,
+    /// A key that `At` does not know (`start` instead of `col`): sent on
+    /// with the position, so that the instance refuses it and names the
+    /// key to write instead, as for any agent of the socket.
+    #[serde(flatten)]
+    #[schemars(skip)]
+    pub other: serde_json::Map<String, Value>,
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]

@@ -64,16 +64,31 @@ fn big_live(name: &str) -> Live {
             ),
             3 => live.api(
                 "annotation.add",
-                json!({"type":"highlight","at":{"line":line,"start":0,"end":5}}),
+                json!({"type":"highlight","at":{"line":line,"col":0,"end":5}}),
             ),
             _ => live.api(
                 "annotation.add",
-                json!({"type":"mark","kind":"move","at":{"line":line+1,"start":4,"end":7},"label":"m"}),
+                json!({"type":"mark","kind":"move","at":{"line":line+1,"col":4,"end":7},"label":"m"}),
             ),
         };
         assert!(r.error.is_none(), "{:?}", r.error);
     }
     assert_eq!(live.with(|a| a.doc.annotations.len()), 200);
+    // The marks are where they were asked to be: `col` 4 to `end` 7.
+    let spans: Vec<(u32, u32)> = live.with(|a| {
+        a.doc
+            .annotations
+            .iter()
+            .filter_map(|x| match &x.shape {
+                tiza_core::Shape::Mark { span, .. } => Some((span.start, span.end)),
+                _ => None,
+            })
+            .collect()
+    });
+    assert!(
+        !spans.is_empty() && spans.iter().all(|s| *s == (4, 7)),
+        "{spans:?}"
+    );
     live
 }
 

@@ -1,0 +1,20 @@
+{
+ "schema": 1,
+ "title": "Keys of a newer Tiza inside positions",
+ "source": {"language": "rs", "first_line": 1},
+ "code": [
+  "fn main() {",
+  "    let s = String::from(\"hi\");",
+  "    takes(s);",
+  "}"
+ ],
+ "annotations": [
+  {"id": "h1", "step": 1, "type": "highlight", "span": {"line": 2, "start": 8, "end": 9, "col": 8}},
+  {"id": "a1", "step": 1, "type": "arrow", "from": {"line": 2, "col": 8, "start": 8}, "to": {"line": 3, "col": 10}, "label": "moved"}
+ ],
+ "moves": [
+  {"at_step": 2, "action": "select", "from": {"line": 2, "colum": 4}, "to": {"line": 2, "col": 9}},
+  {"at_step": 3, "action": "code.patch", "op": "replace", "find": "    takes(s);", "content": "    takes(s.clone());",
+   "rebind": {"a1": {"to": {"find": "s.clone", "ocurrence": 1}}}}
+ ]
+}

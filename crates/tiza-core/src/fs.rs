@@ -175,6 +175,44 @@ fn step_text(at_step: Option<u64>) -> String {
 /// line that names each one, for `tiza scene put`, which refuses them as
 /// the socket does. A file opens without them, and `tiza check` warns.
 pub fn unknown_keys_notice(doc: &Document) -> Option<String> {
+    let notices = [move_keys_notice(doc), position_keys_notice(doc)];
+    let notices: Vec<String> = notices.into_iter().flatten().collect();
+    (!notices.is_empty()).then(|| notices.join("; "))
+}
+
+/// The positions with keys that this version does not know, or `None`:
+/// `1 position has a key that this version of Tiza does not know: move #2
+/// (step 1, from: colum)`.
+fn position_keys_notice(doc: &Document) -> Option<String> {
+    let found = &doc.newer_moves.positions;
+    if found.is_empty() {
+        return None;
+    }
+    let list: Vec<String> = found
+        .iter()
+        .map(|p| {
+            let place = match &p.owner {
+                crate::model::KeysOwner::Move { number, at_step } => {
+                    format!("move #{number} ({}", step_text(*at_step))
+                }
+                crate::model::KeysOwner::Annotation { id, step } => {
+                    format!("annotation {id} ({}", step_text(*step))
+                }
+            };
+            format!("{place}{}: {})", p.field, p.keys.join(", "))
+        })
+        .collect();
+    let n = found.len();
+    Some(format!(
+        "{n} position{} {} a key that this version of Tiza does not know: {}",
+        if n == 1 { "" } else { "s" },
+        if n == 1 { "has" } else { "have" },
+        list.join(", ")
+    ))
+}
+
+/// The moves with keys that this version does not know, or `None`.
+fn move_keys_notice(doc: &Document) -> Option<String> {
     let found = &doc.newer_moves.keys;
     if found.is_empty() {
         return None;
@@ -500,13 +538,24 @@ fn skipped_moves_hint(e: Error, skipped: &[crate::model::SkippedMove]) -> Error 
 ///   know ([`crate::moves::LIST_FIELDS`]) is taken out, so that the field
 ///   gets its default; with no default, the move is taken out;
 /// - a key that this version does not know is only noted: serde ignores
-///   it.
+///   it;
+/// - a key inside a position of a move or an annotation (a `select`, a
+///   `rebind`, a span, an end of an arrow) is taken out and noted, because
+///   serde refuses it ([`take_position_keys`]).
 pub(crate) fn take_newer_moves(raw: &mut serde_json::Value) -> crate::model::NewerMoves {
-    use crate::model::{DefaultValue, SkippedMove, UnknownKeys};
-    use crate::moves::{ACTION_KEYS, LIST_FIELDS, ListField, action_keys};
     let mut out = crate::model::NewerMoves::default();
+    take_moves(raw, &mut out);
+    // Also in a file with no moves, which a save writes with no `moves`.
+    take_annotation_positions(raw, &mut out);
+    out
+}
+
+/// The moves part of [`take_newer_moves`].
+fn take_moves(raw: &mut serde_json::Value, out: &mut crate::model::NewerMoves) {
+    use crate::model::{DefaultValue, SkippedMove, UnknownKeys};
+    use crate::moves::{ACTION_KEYS, LIST_FIELDS, ListField, WHERE_KEYS, action_keys};
     let Some(moves) = raw.get_mut("moves").and_then(|m| m.as_array_mut()) else {
-        return out;
+        return;
     };
     let mut kept = Vec::with_capacity(moves.len());
     for (i, m) in std::mem::take(moves).into_iter().enumerate() {
@@ -561,6 +610,25 @@ pub(crate) fn take_newer_moves(raw: &mut serde_json::Value) -> crate::model::New
                 });
             }
         }
+        // The positions of the move.
+        let owner = || crate::model::KeysOwner::Move { number, at_step };
+        if action == "select" {
+            for key in ["from", "to"] {
+                if let Some(p) = o.get_mut(key) {
+                    take_position_keys(p, owner(), key.into(), &WHERE_KEYS, out);
+                }
+            }
+        }
+        if let Some(rebind) = o.get_mut("rebind").and_then(|r| r.as_object_mut()) {
+            for (id, spec) in rebind.iter_mut() {
+                for key in ["at", "from", "to"] {
+                    if let Some(p) = spec.get_mut(key) {
+                        let field = format!("rebind of {id}, {key}");
+                        take_position_keys(p, owner(), field, &WHERE_KEYS, out);
+                    }
+                }
+            }
+        }
         let unknown = crate::moves::unknown_keys(&o, &action);
         if !unknown.is_empty() {
             out.keys.push(UnknownKeys {
@@ -577,7 +645,78 @@ pub(crate) fn take_newer_moves(raw: &mut serde_json::Value) -> crate::model::New
     }
     *moves = kept;
     out.gaps = out.skipped.iter().map(|m| m.number).collect();
-    out
+}
+
+/// The positions of the annotations of `raw`: the span of a highlight or
+/// a mark, and the ends of an arrow ([`take_position_keys`]).
+fn take_annotation_positions(raw: &mut serde_json::Value, out: &mut crate::model::NewerMoves) {
+    use crate::moves::{ARROW_END_KEYS, SPAN_KEYS};
+    let annotations = raw.get_mut("annotations").and_then(|a| a.as_array_mut());
+    for a in annotations.into_iter().flatten() {
+        let Some(a) = a.as_object_mut() else {
+            continue;
+        };
+        let (id, step) = (a_id(a), a.get("step").and_then(|v| v.as_u64()));
+        let fields: &[(&str, &'static [&'static str])] =
+            match a.get("type").and_then(|t| t.as_str()) {
+                Some("arrow") => &[("from", &ARROW_END_KEYS), ("to", &ARROW_END_KEYS)],
+                Some("highlight" | "mark") => &[("span", &SPAN_KEYS)],
+                _ => &[],
+            };
+        for &(key, known) in fields {
+            if let Some(p) = a.get_mut(key) {
+                let owner = crate::model::KeysOwner::Annotation {
+                    id: id.clone(),
+                    step,
+                };
+                take_position_keys(p, owner, key.into(), known, out);
+            }
+        }
+    }
+}
+
+/// The id of annotation `a` as a file writes it, or an empty text.
+fn a_id(a: &serde_json::Map<String, serde_json::Value>) -> String {
+    a.get("id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string()
+}
+
+/// Takes out of the position `p` (an object) each key that is not in
+/// `known`, and notes them, so that serde reads the position: it refuses
+/// a key that it does not know.
+fn take_position_keys(
+    p: &mut serde_json::Value,
+    owner: crate::model::KeysOwner,
+    field: String,
+    known: &'static [&'static str],
+    out: &mut crate::model::NewerMoves,
+) {
+    let Some(o) = p.as_object_mut() else {
+        return;
+    };
+    let mut keys: Vec<String> = o
+        .keys()
+        .filter(|k| !known.contains(&k.as_str()))
+        .cloned()
+        .collect();
+    if keys.is_empty() {
+        return;
+    }
+    keys.sort();
+    for k in &keys {
+        o.remove(k);
+    }
+    out.positions.push(crate::model::PositionKeys {
+        owner,
+        field,
+        keys: keys
+            .iter()
+            .map(|k| crate::printable::printable_line(&crate::moves::cut(k)).into_owned())
+            .collect(),
+        known,
+    });
 }
 
 /// A value as a file writes it, for a message: JSON, cut when it is long

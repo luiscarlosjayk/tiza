@@ -3158,9 +3158,13 @@ impl App {
                     continue;
                 }
                 let mut ann = <Annotation as serde::Deserialize>::deserialize(&v).map_err(|e| {
+                    let msg = e.to_string();
+                    let hint = tiza_core::error::unknown_field_hint(&msg)
+                        .map(|h| format!(". {h}"))
+                        .unwrap_or_default();
                     Error::Invalid(format!(
-                        "annotation {id}: {}",
-                        tiza_core::error::serde_text(&e.to_string())
+                        "annotation {id}: {}{hint}",
+                        tiza_core::error::serde_text(&msg)
                     ))
                 })?;
                 // An alias of a linked file is that file, as in
@@ -9520,39 +9524,22 @@ fn nearest_commands(typed: &str) -> Vec<&'static str> {
     scored.into_iter().take(3).map(|(_, c)| c).collect()
 }
 
-/// An unknown key of `annotation.update`, with what to send instead: `text`
-/// is the `label` of a note, and a new `shape` for a callout, whose `label`
-/// is its title (no alias); a key one or two letters from an accepted one
-/// (`colour`) names that one. serde's message already names the key and
-/// lists the accepted ones.
+/// An unknown key `text` of `annotation.update`, with what to send
+/// instead: `text` is the `label` of a note, and a new `shape` for a
+/// callout, whose `label` is its title (no alias). A key one or two letters
+/// from an accepted one (`colour`) already names that one ([`parse`]).
 fn update_key_hint(e: Error) -> Error {
     let Error::Invalid(msg) = &e else {
         return e;
     };
-    let Some(key) = msg
-        .split("unknown field `")
-        .nth(1)
-        .and_then(|rest| rest.split('`').next())
-    else {
+    // Only a key `text` of `annotation.update` itself: inside a position,
+    // `text` is `find` (`moves::position_key_hint`).
+    if !msg.contains("unknown field `text`, expected one of `id`") {
         return e;
-    };
-    let hint = if key == "text" {
-        "Use `label` to change the text of a note or the title of a callout. To change the text of a callout, send the whole callout as a new `shape`.".to_string()
-    } else {
-        let accepted = msg.split("expected one of ").nth(1).unwrap_or("");
-        let near = accepted
-            .split(", ")
-            .map(|n| n.trim_matches(|c: char| c == '`' || c.is_whitespace()))
-            .filter(|n| !n.is_empty())
-            .map(|n| (edit_distance(key, n), n))
-            .filter(|(d, _)| *d <= 2)
-            .min();
-        match near {
-            Some((_, n)) => format!("Did you mean `{n}`?"),
-            None => return e,
-        }
-    };
-    Error::Invalid(format!("{msg}. {hint}"))
+    }
+    Error::Invalid(format!(
+        "{msg}. Use `label` to change the text of a note or the title of a callout. To change the text of a callout, send the whole callout as a new `shape`."
+    ))
 }
 
 fn edit_distance(a: &str, b: &str) -> usize {
@@ -9633,10 +9620,16 @@ fn refused_before_review(req: &Request) -> Option<Error> {
 /// deserialization errors, and serde's list of valid names stays.
 fn parse<T: serde::de::DeserializeOwned>(v: Value) -> Result<T, Error> {
     T::deserialize(&v).map_err(|e| {
+        let msg = e.to_string();
+        // An unknown key: also what to write instead, when a known key is
+        // near (`Did you mean `col`?`, `start` is `col` in a position).
+        let hint = tiza_core::error::unknown_field_hint(&msg)
+            .map(|h| format!(". {h}"))
+            .unwrap_or_default();
         Error::Invalid(format!(
-            "{}{}",
+            "{}{}{hint}",
             tiza_core::error::INVALID_PARAMETERS,
-            tiza_core::error::serde_text(&e.to_string())
+            tiza_core::error::serde_text(&msg)
         ))
     })
 }

@@ -58,8 +58,13 @@ impl Response {
 }
 
 /// Where to anchor something: explicit coordinates or a text search.
-/// An agent rarely knows the exact column; `find` is more robust.
+/// An agent rarely knows the exact column; `find` is more robust. A key
+/// that a position does not know is an error.
+// `start` instead of `col` put the anchor on another column without a
+// word. A file that has such a key opens: `fs::take_newer_moves` takes it
+// out first.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct Where {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub line: Option<u32>,

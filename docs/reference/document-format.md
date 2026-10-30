@@ -349,7 +349,7 @@ A newer version of Tiza can write a move that this version does not know. The do
 - A save does not keep the skipped moves, the values or the keys.
 - The step of a skipped move is still a step. A step that has only skipped moves changes nothing. When that step is the last step, the take ends one step before it.
 - A later move can need the code that a skipped move changes. Then Tiza does not open the document. The error names the later move and the skipped move.
-- `move.add`, `scene.put`, `tiza scene put` and `add_move` refuse a move with an action or a value that this version does not know. `move.add`, `scene.put` and `tiza scene put` also refuse a key of a move that this version does not know, and `add_move` refuses an argument that the action does not use.
+- `move.add`, `scene.put`, `tiza scene put` and `add_move` refuse a move with an action or a value that this version does not know. `move.add`, `scene.put` and `tiza scene put` also refuse a key of a move that this version does not know, or a key inside a position. `add_move` refuses an argument that the action does not use.
 
 ### Fields of a `code.patch` move
 
@@ -632,6 +632,15 @@ Tiza never drops these entries:
 Tiza keeps them in the file. It gives one warning for each entry, and the warning names all the unknown keys of that entry. The warning appears when you open the document. It also appears in `status.warnings` and in the output of `tiza render` and `tiza check`.
 
 Only the entries of `steps` keep unknown keys. Tiza does not keep an unknown key at the top level, in an annotation or in a move. For a move, `tiza check` gives a warning (see [Moves from a newer version](#moves-from-a-newer-version)).
+
+A position can also have a key that Tiza does not know. These are the positions:
+
+- a [span](#span);
+- an [arrow end](#arrow-end);
+- the `from` and `to` of a `select` move;
+- the `at`, `from` and `to` of a `rebind` entry.
+
+The document opens, and Tiza ignores the key. `tiza check` gives a warning with a known key that is near. A save does not keep the key, and `tiza scene put` refuses the document. A span calls its first grapheme `start`. An arrow end and a `select` point call it `col`.
 
 ## Enter effects (experimental)
 

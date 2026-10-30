@@ -215,6 +215,43 @@ pub(crate) fn cut(s: &str) -> String {
     }
 }
 
+/// The keys of a position (`Where`): the `from` and `to` of a `select`,
+/// the places of a `rebind`, and the `at`, `from` and `to` of the
+/// annotation tools.
+pub const WHERE_KEYS: [&str; 5] = ["line", "col", "find", "occurrence", "end"];
+
+/// The keys of the span of an annotation (a highlight, a mark).
+pub const SPAN_KEYS: [&str; 3] = ["line", "start", "end"];
+
+/// The keys of an end of an arrow.
+pub const ARROW_END_KEYS: [&str; 2] = ["line", "col"];
+
+/// What to write for `key`, a key that a position with the keys `known`
+/// does not know. A position calls the first grapheme `col` and a span
+/// calls it `start`, so each one is the most likely mistake for the other.
+/// Else the key that `key` is a typo of, or `None`.
+pub fn position_key_hint(key: &str, known: &[&str]) -> Option<String> {
+    if key == "start" && known.contains(&"col") {
+        return Some("`start` is `col` in a position.".into());
+    }
+    if key == "col" && known.contains(&"start") {
+        return Some("`col` is `start` in a span.".into());
+    }
+    if key == "text" && known.contains(&"find") {
+        return Some("`text` is `find` in a position.".into());
+    }
+    near_key(key, known)
+        .or_else(|| {
+            // `column` for `col`: a known key that starts the key.
+            known
+                .iter()
+                .copied()
+                .filter(|k| k.len() >= 3 && key.starts_with(k))
+                .max_by_key(|k| k.len())
+        })
+        .map(|n| format!("Did you mean `{n}`?"))
+}
+
 /// The key of `known` that `key` is a typo of: one or two letters from it
 /// (`alig` for `align`), or `None`.
 pub fn near_key<'a>(key: &str, known: &[&'a str]) -> Option<&'a str> {
@@ -2148,6 +2185,21 @@ mod tests {
         table.sort();
         lists.sort();
         assert_eq!(lists, table);
+        // The keys of the positions.
+        let keys_of = |def_name: &str| {
+            sorted(
+                defs[def_name]["properties"]
+                    .as_object()
+                    .unwrap()
+                    .keys()
+                    .cloned()
+                    .collect(),
+            )
+        };
+        let table = |keys: &[&str]| sorted(keys.iter().map(|k| k.to_string()).collect());
+        assert_eq!(keys_of("Where"), table(&WHERE_KEYS));
+        assert_eq!(keys_of("TextSpan"), table(&SPAN_KEYS));
+        assert_eq!(keys_of("Anchor"), table(&ARROW_END_KEYS));
         // The defaults are those of serde.
         let sample = |action: &str| match action {
             "code.patch" => {

@@ -1367,3 +1367,51 @@ fn the_moves_after_a_skipped_move_keep_their_numbers() {
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(err.contains("move #2, step 2: rebind names zz"), "{err}");
 }
+
+#[test]
+fn a_key_inside_a_position_is_a_warning() {
+    // A key of a newer Tiza, or a typo, inside a position: the file passes,
+    // with one warning for each position, and the key that it possibly
+    // means. A span calls its first grapheme `start`, a position `col`.
+    let file = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("fixtures/compat/v1-newer-unknown-position-key.tiza");
+    let (code, v) = check_json(&file, &[]);
+    assert_eq!(code, 0, "warnings only: {v}");
+    let said: Vec<(String, String, String)> = findings(&v)
+        .iter()
+        .filter(|f| f["level"] == "warning")
+        .map(|f| {
+            (
+                f["code"].as_str().unwrap().to_string(),
+                f["id"].as_str().unwrap().to_string(),
+                f["message"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect();
+    let want = [
+        (
+            "move",
+            "move #1",
+            "in from, the key colum is not known to this version of Tiza. Tiza ignores it, and a save does not keep it. Did you mean `col`?",
+        ),
+        (
+            "move",
+            "move #2",
+            "in rebind of a1, to, the key ocurrence is not known to this version of Tiza. Tiza ignores it, and a save does not keep it. Did you mean `occurrence`?",
+        ),
+        (
+            "anchor",
+            "h1",
+            "in span, the key col is not known to this version of Tiza. Tiza ignores it, and a save does not keep it. `col` is `start` in a span.",
+        ),
+        (
+            "anchor",
+            "a1",
+            "in from, the key start is not known to this version of Tiza. Tiza ignores it, and a save does not keep it. `start` is `col` in a position.",
+        ),
+    ];
+    assert_eq!(said.len(), want.len(), "{v}");
+    for ((code, id, message), (wc, wi, wm)) in said.iter().zip(want) {
+        assert_eq!((code.as_str(), id.as_str(), message.as_str()), (wc, wi, wm));
+    }
+}

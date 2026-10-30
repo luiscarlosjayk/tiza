@@ -200,13 +200,14 @@ The `code` of a finding is one of these:
 | `steps` | Error | An entry of `steps` is not valid. |
 | `steps` | Warning | An entry of `steps` names a step past the last one, or has a key that Tiza does not know. |
 | `move` | Error | A move is not valid, or it does not apply at its step. |
-| `move` | Warning | The target of a `scroll` move does not match at its step, or its `find` matches more than one time. Or a move has an action, a value or a key that this version of Tiza does not know. See [Moves from a newer version](document-format.md#moves-from-a-newer-version). |
+| `move` | Warning | The target of a `scroll` move does not match at its step, or its `find` matches more than one time. Or a move has an action, a value or a key that this version of Tiza does not know, also a key inside a `select` point or a `rebind` entry. See [Moves from a newer version](document-format.md#moves-from-a-newer-version). |
 | `rebind` | Error | The `rebind` of a move is not valid, or its target does not match after the patch. |
 | `stale` | Error | In a live instance, a move does not match the code after a reload or a paste. |
 | `unknown_id` | Error | The `ids` of a spotlight name an annotation that does not exist. |
 | `unknown_id` | Warning | A `rebind` names an annotation that does not exist. Tiza ignores that `rebind`. |
 | `unknown_file` | Error | An annotation names a file that no `code.link` shows. |
 | `anchor` | Error | An anchor does not match at its step. |
+| `anchor` | Warning | A span or an arrow end of an annotation has a key that this version of Tiza does not know. Tiza ignores it. |
 | `marker` | Error | A marker does not match, or the end marker is only before the start marker. |
 | `marker` | Warning | A marker matches more than one time. |
 | `unanchored` | Warning | A move removes the code that an annotation is on. |
@@ -234,7 +235,7 @@ Tiza writes these messages on stderr:
 | `tiza: width=N: use a number between 20 and 400` | `tiza check --width` got a number out of the range. |
 | `tiza: FILE is not a .tiza document and has no .tiza document next to it (DOCUMENT): nothing to check` | `tiza check` got a source file without a document next to it. |
 | ``tiza: FILE is neither a .tiza document nor a `scene get` envelope; to show it as code, pass --as-code`` | `tiza scene put` got a file that is not a document. |
-| `tiza: FILE: … scene put sends a document as it is, so it refuses this one` | `tiza scene put` got a document with an effect or a move that this version of Tiza does not know. Open the file in Tiza and save it, or remove them. |
+| `tiza: FILE: … scene put sends a document as it is, so it refuses this one` | `tiza scene put` got a document with an effect, a move or a key that this version of Tiza does not know. The key can be a key of a move or a key inside a position. Open the file in Tiza and save it, or remove them. |
 | `tiza: could not read PATH` | `tiza check`, `tiza scene put` or `tiza scene patch @PATH` cannot read the file. |
 | `tiza: the patch is not valid JSON: ERROR` | The JSON of `tiza scene patch` does not parse. |
 | `tiza: the parameters are not valid JSON: ERROR` | The `PARAMS` of `tiza api` do not parse. |

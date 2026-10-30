@@ -218,6 +218,21 @@ Tiza refuses a `scene put` in these saving cases. The error code is `invalid_arg
 
 These methods refuse a key that they do not know: `annotation.update`, `scene.clear`, `scene.get`, `scene.patch`, `pointer.set` and `supervise.set`. The `move` object of `annotation.update` also refuses one. The error is `invalid_argument`, and its message names the keys that the method knows. `scene.get` knows no key.
 
+A position also refuses a key that it does not know, in every method. These are the positions:
+
+- the `at`, `from` and `to` of `annotation.add`, `annotation.update` and `move.add`;
+- the span and the arrow ends of the annotations of `scene.put` and `scene.patch`;
+- the `rebind` entries.
+
+For example, `"at": {"line": 3, "start": 4}` fails, because a position calls its first grapheme `col`. A span calls it `start`.
+
+When a method refuses a key that it does not know, the message names a known key that is near. That key is one or two letters from it, or it starts the key (`col` for `column`). For `start`, `col` and `text` in a position or a span, the message names the field of that position:
+
+| Message | When |
+|---|---|
+| ``invalid parameters: unknown field `colum`, expected one of `line`, `col`, `find`, `occurrence`, `end`. Did you mean `col`?`` | A position has the key `colum`. |
+| ``invalid parameters: unknown field `start`, expected one of `line`, `col`, `find`, `occurrence`, `end`. `start` is `col` in a position.`` | A position has the key `start`. |
+
 `move.add` and `scene.put` refuse a key of a move that the action of the move does not know. The message names the first of these keys in alphabetical order, and the keys of the action. When that key is one or two letters from a key of the action, the message names that key. When that key is a key of another action, the message names that action. In `scene.put`, the message also names the move by its number in `moves`. The keys that `move.list` adds to a move (`index`, `summary`, `stale` and `stale_reason`) are not refused. Thus you can send an entry of `move.list` to `move.add` again.
 
 | Message | When |

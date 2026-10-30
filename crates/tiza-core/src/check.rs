@@ -348,7 +348,10 @@ fn check_text_as(
     // The moves of a newer Tiza: skipped, or with a default, with a
     // warning in `tidy`.
     let newer = crate::fs::take_newer_moves(&mut raw);
-    let changed = !unknown.is_empty() || !newer.skipped.is_empty() || !newer.defaults.is_empty();
+    let changed = !unknown.is_empty()
+        || !newer.skipped.is_empty()
+        || !newer.defaults.is_empty()
+        || !newer.positions.is_empty();
     let parsed: Result<Document, serde_json::Error> = if migrated || changed {
         serde_json::from_value(raw)
     } else {
@@ -416,6 +419,9 @@ fn check_text_as(
 /// leaves. `base_dir` resolves relative files the document names but did
 /// not load.
 pub fn check_document(doc: &Document, base_dir: Option<&Path>, opts: &CheckOptions) -> Report {
+    // What the file held that this version does not know is not in the
+    // live document, so this check does not warn about it: the document
+    // that it checks is the one that a save writes.
     let mut d = doc.clone();
     d.sync_code_src();
     let embedded = CodeSource::Embedded(d.base().to_vec());
@@ -667,6 +673,19 @@ fn newer_moves(doc: &Document, out: &mut Vec<Finding>) {
             ),
         ));
     }
+    // The keys inside a position: of a move here, of an annotation below.
+    let mut annotations = Vec::new();
+    for p in &found.positions {
+        let message = position_keys_message(p);
+        match &p.owner {
+            crate::model::KeysOwner::Move { number, at_step } => {
+                warnings.push((*number, *at_step, message));
+            }
+            crate::model::KeysOwner::Annotation { id, step } => {
+                annotations.push((id.clone(), *step, message));
+            }
+        }
+    }
     warnings.sort_by_key(|(number, _, _)| *number);
     for (number, at_step, message) in warnings {
         let f = Finding::new(Level::Warning, "move", message).id(format!("move #{number}"));
@@ -675,6 +694,42 @@ fn newer_moves(doc: &Document, out: &mut Vec<Finding>) {
             None => f,
         });
     }
+    for (id, step, message) in annotations {
+        let f = Finding::new(Level::Warning, "anchor", message).id(id);
+        out.push(match step.and_then(|s| u32::try_from(s).ok()) {
+            Some(s) => f.step(s),
+            None => f,
+        });
+    }
+}
+
+/// The warning of the keys inside one position that this version does not
+/// know, with what to write instead: `in from, the key colum is not known
+/// to this version of Tiza. … Did you mean `col`?`.
+fn position_keys_message(p: &crate::model::PositionKeys) -> String {
+    let one = p.keys.len() == 1;
+    let hints: Vec<String> = p
+        .keys
+        .iter()
+        .filter_map(|k| {
+            let hint = moves::position_key_hint(k, p.known)?;
+            Some(if one { hint } else { format!("{k}: {hint}") })
+        })
+        .collect();
+    let hint = if hints.is_empty() {
+        String::new()
+    } else {
+        format!(" {}", hints.join(" "))
+    };
+    format!(
+        "in {}, the {} {} {} not known to this version of Tiza. Tiza ignores {}, and a save does not keep {}.{hint}",
+        p.field,
+        if one { "key" } else { "keys" },
+        and_list(&p.keys),
+        if one { "is" } else { "are" },
+        if one { "it" } else { "them" },
+        if one { "it" } else { "them" },
+    )
 }
 
 /// `a, b or c`.

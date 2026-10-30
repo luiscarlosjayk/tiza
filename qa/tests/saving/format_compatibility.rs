@@ -317,3 +317,78 @@ fn a_move_of_a_newer_tiza_is_skipped() {
     assert_eq!(again.document.moves.len(), 7);
     assert_eq!(again.notice, None);
 }
+
+#[test]
+fn a_key_inside_a_position_is_dropped() {
+    // A key that a position does not know, in a move and in an annotation:
+    // the document opens, the position reads as if the key were not there,
+    // and a save does not keep the key.
+    use tiza_core::Shape;
+    let f = compat_dir().join("v1-newer-unknown-position-key.tiza");
+    let doc = fs::open(f.to_str().unwrap()).unwrap().document;
+    match &doc.find_annotation("h1").unwrap().shape {
+        Shape::Highlight { span, .. } => assert_eq!((span.start, span.end), (8, 9)),
+        other => panic!("{other:?}"),
+    }
+    match &doc.find_annotation("a1").unwrap().shape {
+        Shape::Arrow { from, .. } => assert_eq!((from.line, from.col), (2, 8)),
+        other => panic!("{other:?}"),
+    }
+    let dir = scratch("newer-position-key");
+    let saved = dir.join("s.tiza");
+    fs::save_document(&doc, &saved).unwrap();
+    let text = std::fs::read_to_string(&saved).unwrap();
+    for gone in ["colum", "ocurrence"] {
+        assert!(!text.contains(gone), "{gone}: {text}");
+    }
+    let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let a = |id: &str| {
+        json["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["id"] == id)
+            .unwrap()
+            .clone()
+    };
+    assert!(a("h1")["span"].get("col").is_none(), "{json}");
+    assert!(a("a1")["from"].get("start").is_none(), "{json}");
+    assert!(fs::open(saved.to_str().unwrap()).is_ok());
+}
+
+#[test]
+fn a_key_inside_a_position_of_a_file_with_no_moves_is_dropped() {
+    // A save writes no `moves` when there are none: the positions of the
+    // annotations of such a file are read the same way.
+    let dir = scratch("position-key-no-moves");
+    let f = dir.join("no-moves.tiza");
+    std::fs::write(
+        &f,
+        serde_json::json!({
+            "schema": 1,
+            "source": {"language": "rs", "first_line": 1},
+            "code": ["fn main() {}"],
+            "annotations": [
+                {"id": "h1", "step": 1, "type": "highlight", "span": {"line": 1, "start": 0, "end": 2, "col": 0}}
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let doc = fs::open(f.to_str().unwrap()).unwrap().document;
+    let out = tiza(&["check", f.to_str().unwrap()]);
+    let report = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert!(out.status.success(), "{report}");
+    assert!(
+        report.contains("h1, step 1: in span, the key col"),
+        "{report}"
+    );
+    let saved = dir.join("s.tiza");
+    fs::save_document(&doc, &saved).unwrap();
+    let text = std::fs::read_to_string(&saved).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert!(
+        json["annotations"][0]["span"].get("col").is_none(),
+        "{text}"
+    );
+}

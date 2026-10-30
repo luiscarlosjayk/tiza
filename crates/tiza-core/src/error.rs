@@ -95,6 +95,25 @@ pub const ELIDED: &str = "«…»";
 /// rest is serde's message, through [`serde_text`].
 pub const INVALID_PARAMETERS: &str = "invalid parameters: ";
 
+/// What to write instead of the key that serde's message `msg` names
+/// (`unknown field `colum`, expected one of `line`, `col`, …`): the key
+/// of the list that it is a typo of, or for a position the name of the
+/// same field there (`start` is `col`). `None` for another message, or
+/// when no key of the list is near.
+pub fn unknown_field_hint(msg: &str) -> Option<String> {
+    let rest = msg.split("unknown field `").nth(1)?;
+    let (key, rest) = rest.split_once('`')?;
+    let expected: Vec<&str> = rest
+        .split("expected")
+        .nth(1)
+        .unwrap_or("")
+        .split('`')
+        .skip(1)
+        .step_by(2)
+        .collect();
+    crate::moves::position_key_hint(key, &expected)
+}
+
 impl From<serde_json::Error> for Error {
     fn from(e: serde_json::Error) -> Self {
         Error::Json(e)

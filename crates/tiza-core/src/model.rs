@@ -182,6 +182,11 @@ pub struct NewerMoves {
     pub defaults: Vec<DefaultValue>,
     /// The keys that this version ignores, one entry for each move.
     pub keys: Vec<UnknownKeys>,
+    /// The keys inside a position that this version ignores (a `select`
+    /// or a `rebind` of a move, a span or an end of an arrow of an
+    /// annotation), one entry for each position. Also of a file with no
+    /// moves.
+    pub positions: Vec<PositionKeys>,
     /// The numbers in the file of the skipped moves, in order, while the
     /// moves are still those of the file: [`Document::move_number`] counts
     /// them, so that a message names a move as the file does. Empty in a
@@ -224,6 +229,28 @@ pub struct DefaultValue {
     pub default: &'static str,
     /// The values that this version knows, for the messages.
     pub known: &'static [&'static str],
+}
+
+/// The keys inside one position that this version does not know.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PositionKeys {
+    /// The move or the annotation of the position.
+    pub owner: KeysOwner,
+    /// Which position: `from`, `to`, `span`, or `rebind of a1, at`.
+    pub field: String,
+    /// In alphabetical order, each cut and printable for the messages.
+    pub keys: Vec<String>,
+    /// The keys of that kind of position.
+    pub known: &'static [&'static str],
+}
+
+/// What a position belongs to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum KeysOwner {
+    /// A move: its number in the file, from 1, and its `at_step`.
+    Move { number: usize, at_step: Option<u64> },
+    /// An annotation: its id and its step.
+    Annotation { id: String, step: Option<u64> },
 }
 
 /// The keys of one move that this version does not know.
@@ -504,14 +531,20 @@ impl Heads {
 }
 
 /// A point in the code: absolute line (1-based) and grapheme (0-based).
+// Strict as `protocol::Where`: a file with an unknown key opens
+// (`fs::take_newer_moves`).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct Anchor {
     pub line: u32,
     pub col: u32,
 }
 
 /// A range within ONE line, in graphemes, exclusive end.
+// Strict as `protocol::Where`: a file with an unknown key opens
+// (`fs::take_newer_moves`).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct TextSpan {
     pub line: u32,
     pub start: u32,
