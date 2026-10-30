@@ -116,9 +116,10 @@ fn toolchain_rust_toolchain_toml_is_the_only_version() {
     // The jobs that run cargo (`schema` runs only Python, cargo-deny-action
     // installs the toolchain itself, the release job only downloads the
     // archives).
-    let expected: [(&str, &[&str]); 2] = [
+    let expected: [(&str, &[&str]); 3] = [
         (".github/workflows/ci.yml", &["check", "legibility"]),
         (".github/workflows/release.yml", &["build"]),
+        (".github/workflows/docs.yml", &["build"]),
     ];
     for (wf, cargo_jobs) in expected {
         let yml = read(wf);
@@ -185,7 +186,11 @@ fn toolchain_workflows_parse_as_yaml() {
         eprintln!("publishing: python3 with PyYAML not found, YAML syntax not checked");
         return;
     }
-    for wf in [".github/workflows/ci.yml", ".github/workflows/release.yml"] {
+    for wf in [
+        ".github/workflows/ci.yml",
+        ".github/workflows/release.yml",
+        ".github/workflows/docs.yml",
+    ] {
         let out = Command::new("python3")
             .args([
                 "-c",
@@ -211,7 +216,11 @@ fn toolchain_workflows_parse_as_yaml() {
 /// by hand from his Mac, so no workflow publishes and none reads a secret.
 #[test]
 fn publish_no_workflow_publishes_to_crates_io() {
-    for wf in [".github/workflows/ci.yml", ".github/workflows/release.yml"] {
+    for wf in [
+        ".github/workflows/ci.yml",
+        ".github/workflows/release.yml",
+        ".github/workflows/docs.yml",
+    ] {
         let yml = read(wf);
         let code: Vec<&str> = yml
             .lines()
