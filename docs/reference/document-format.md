@@ -833,6 +833,10 @@ A `scroll` move has exactly one target: `line`, `find` or `annotation`.
 {"at_step": 5, "action": "scroll", "annotation": "b2", "align": "bottom"}
 ```
 
+<img src="../images/tui/scroll.webp" width="840" alt="At step 1, the view shows the top of the code. At step 2, line 15 goes to the top of the view. At step 3, Tiza draws a box around lines 15 to 17.">
+
+The view goes to `fn takes` at step 2, a camera step. The document has a note at step 1, a `scroll` move with `"find": "fn takes"` and `"align": "top"` at step 2, and a box with the `draw` effect at step 3. The code is `examples/ownership.rs`. This is a screen recording of the TUI in presentation mode, in a real terminal of 100 columns and 10 rows, with the Menlo font.
+
 - When the presenter reaches the step, the view moves to the target. Then the annotations of the step come in, with their effects.
 - The view stays on the target while its rows move: when the annotations of the step come in after a typed move or a `wait`, when presentation mode starts or stops, and when the terminal changes size. When the presenter moves the view, the cursor or the pointer, the view stays where the presenter puts it.
 - In normal mode, a step with no `scroll` move of its own does not move the view. In presentation mode, when you go to a step or Tiza opens at it, the new annotations of the step and the lines that its moves write come into the view, and the view moves as little as possible. See [Present](keys.md#present) for when this occurs. `:goto` and the other goto commands move the view to the target of the `scroll` of their step, and in presentation mode they then show what comes in at the step. A goto to the step on screen does the same as a goto to it from a step of the same file. Thus a `cursor` or a `code.link` of the step puts the cursor on its line again, and the view goes with it.
@@ -1075,6 +1079,10 @@ The status bar cuts a long title to 32 columns. For example:
 ↪ src/queue.rs:10-36
 step 3/7 · Shared borrow
 ```
+
+<img src="../images/tui/status-bar-link.webp" width="840" alt="The status bar shows step 2/5 · args.rs: one flag, by hand and ↪ tally/src/args.rs:14-30.">
+
+Step 2 of `examples/tally-tour.tiza` in normal mode, with its title and its `code.link`: an image of the TUI in a real terminal of 100 columns and 30 rows, with the Menlo font.
 
 ## Messages
 

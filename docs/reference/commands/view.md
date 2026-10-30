@@ -2,7 +2,7 @@
 
 Use these commands to change how Tiza shows the code. Tiza saves the theme, the title, the line numbers, the padding and the margin in the document. Exports use the theme, the line numbers and the margin. A Markdown export shows the title above the code. An SVG export writes it as the SVG title, which it does not draw.
 
-Each image on this page is a frame of a `tiza render` export. The code is `examples/ownership.rs`. A frame shows only what an export draws, so some commands have no frame.
+Each image on this page is a frame of a `tiza render` export, except the images of `:focus`, `:pad` and `:layout`. The code is `examples/ownership.rs`. A frame shows only what an export draws, so some commands have no frame. An export does not draw the focus, the padding of the TUI or the layout of normal mode, so the images of these commands show the TUI.
 
 ## `:focus`
 
@@ -14,6 +14,10 @@ Dims all the lines except a range. `:focus` alone clears the focus.
 ```
 
 For example, `:focus 6-8` dims all the lines except 6 to 8.
+
+<img src="../../images/tui/focus.webp" width="840" alt="Lines 6 to 8 keep their colors. The other lines of the code are dim. The annotations keep their colors. The status bar shows focus on 6-8.">
+
+`:focus 6-8` at step 3 of `examples/ownership.rs.tiza` in normal mode: an image of the TUI in a real terminal of 100 columns and 30 rows, with the Menlo font.
 
 - `:focus` takes lines that are in the code. When `B` is after the last line, Tiza stops the focus at the last line.
 - A range can also be `A..B` or `A:B`. Write it without spaces.
@@ -110,6 +114,14 @@ Sets the blank cells around the code and its annotations: `V` rows and `H` colum
 
 For example, `:pad 0 0` removes the padding.
 
+<img src="../../images/tui/pad-doc.webp" width="840" alt="One blank row above the code, and two blank columns at each side.">
+
+Step 3 of `examples/ownership.rs.tiza` with the padding of the document, 1 row and 2 columns: an image of the TUI in a real terminal of 100 columns and 30 rows, with the Menlo font.
+
+<img src="../../images/tui/pad-zero.webp" width="840" alt="No blank row above the code, and no blank columns at the sides. The status bar shows padding 0 0.">
+
+The same step after `:pad 0 0`. The document now has changes that are not saved, because `:pad` writes the padding into the document: an image of the TUI in a real terminal of 100 columns and 30 rows, with the Menlo font.
+
 - `:pad default` removes the padding of the document. The padding is then `pad` of the config file, else 0 rows and 1 column. The message ends with `(from config.toml)` or `(default)`.
 - `:pad V` sets `H` to two times `V`.
 - `:pad` also takes `V,H` with a comma. Tiza ignores the values after `H`.
@@ -152,6 +164,14 @@ Sets the layout of normal mode.
 - Presentation mode and exports always use the take.
 - `:layout` alone shows the current value.
 - `:layout` changes only this session. The document does not keep it. `layout` in the config file sets the layout at start. See [`[defaults]`](../config.md#defaults).
+
+<img src="../../images/tui/layout-dynamic.webp" width="840" alt="Step 1 with the lane of its one arrow at the left of the code.">
+
+`:layout dynamic` at step 1 of `examples/ownership.rs.tiza`: an image of the TUI in a real terminal of 100 columns and 30 rows, with the Menlo font.
+
+<img src="../../images/tui/layout-stable.webp" width="840" alt="Step 1 with the lanes of the arrows of all the steps, so the code starts more to the right. The status bar shows stable.">
+
+`:layout stable` at the same step. The lanes of the arrows of later steps are there already, as in presentation mode and the exports: an image of the TUI in a real terminal of 100 columns and 30 rows, with the Menlo font.
 
 ## `:mouse`
 

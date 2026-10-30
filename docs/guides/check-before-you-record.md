@@ -90,6 +90,14 @@ The status bar shows the terminal size as `COLS×ROWS`. It shows a `!` badge onl
 - When the status bar has no space, `! N labels cut` gets shorter and shows only `!`.
 - The `status` reply of the API lists the details in `warnings`, for example `2 labels cut at 40 columns: a4, a3`.
 
+<img src="../images/tui/badge-code.webp" width="504" alt="Line 4 and a note are cut with …. The status bar shows ! code needs 70 cols.">
+
+Step 3 of `examples/ownership.rs.tiza` at 58 columns: an image of the TUI in a real terminal of 58 columns and 20 rows, with the Menlo font.
+
+<img src="../images/tui/badge-labels.webp" width="600" alt="The code fits, but the label of the highlight is cut with …. The status bar shows ! 1 label cut.">
+
+A document of three lines with one long label, at 70 columns: an image of the TUI in a real terminal of 70 columns and 12 rows, with the Menlo font.
+
 ## Terminal and font
 
 - Use a full-screen terminal, or one that fills half of the screen next to Zed.

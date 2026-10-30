@@ -22,7 +22,15 @@ I accept or reject each change that you make.
 4. Select a change with `j` or `k`. Press `y` or `Enter` to accept it, or `n` to reject it.
 5. To stop, type `:supervise off`. Tiza rejects the changes that still wait.
 
+<img src="../images/tui/review.webp" width="840" alt="The review over the code with two agent changes that wait: add note L7 and add note L11. The status bar shows 2 to review.">
+
+The review with two agent changes that wait, at step 3 of `examples/ownership.rs.tiza`: an image of the TUI in a real terminal of 100 columns and 30 rows, with the Menlo font.
+
 Nothing opens over the code by itself. In presentation mode, `⏸ N to review · :review` shows at the bottom left. In a terminal that draws `⏸` two cells wide, it shows `||` in place of `⏸`. See [Signs that some terminals draw wide](../reference/terminals.md#signs-that-some-terminals-draw-wide).
+
+<img src="../images/tui/present-review.webp" width="840" alt="Presentation mode at step 3. The last row shows 1 to review · :review at the left and the step counter 3/6 at the right.">
+
+One agent change waits while you present step 3 of `examples/ownership.rs.tiza`: an image of the TUI in a real terminal of 100 columns and 30 rows, with the Menlo font.
 
 - The call of the agent waits for your decision.
 - Tiza rejects a change that nobody decides in 60 s.

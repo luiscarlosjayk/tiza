@@ -24,6 +24,10 @@ The mouse is off by default. While mouse capture is on, a drag selects code in T
 2. Read the status bar. It shows the main keys for the selection.
 3. Press a key. See [Selection keys](#selection-keys).
 
+<img src="../images/tui/selection.webp" width="840" alt="String on line 6 is selected. The status bar shows SELECT and the keys of the selection.">
+
+A selection of `String` on line 6, at step 3 of `examples/ownership.rs.tiza`. A drag over `String` with the left button makes this selection. `v` and then `e` make the same selection. This is an image of the TUI in a real terminal of 100 columns and 30 rows, with the Menlo font.
+
 To cancel the selection, press `Esc` or `Ctrl-C`, or click the code. `Esc` and `Ctrl-C` also cancel an arrow that you started.
 
 To draw an arrow:
@@ -114,6 +118,10 @@ A mark is always on one line. After `m` on two or more lines, type the kind, the
 - In tmux, the `set -g mouse` setting and mouse capture in Tiza decide together which program gets the mouse. See [Terminal support](../reference/terminals.md).
 
 ### Presentation mode
+
+<img src="../images/tui/present-step.webp" width="840" alt="The code and the annotations of step 3, with no status bar and no cursor. The step counter 3/6 is alone on the last row.">
+
+Step 3 of `examples/ownership.rs.tiza` in presentation mode: an image of the TUI in a real terminal of 100 columns and 30 rows, with the Menlo font.
 
 Presentation mode (`P`) ignores each click and drag. The wheel moves the view three rows for each notch, and the hidden cursor stays in the view. With the live pointer on, the wheel moves the pointer, and while an effect plays, a notch only ends the effect, as a key does. With the live pointer off, the wheel moves the view, and the effect continues. Mouse capture stays on, so the terminal does not select text either. Presentation mode hides the cursor and the selection. `Tab` goes only through the annotations in the view and selects none of them. To annotate with the mouse, leave presentation mode first. The mouse then works without `:mouse on`.
 

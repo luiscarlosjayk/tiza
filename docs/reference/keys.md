@@ -133,6 +133,10 @@ The status bar shows the selected annotation and its keys. A message hides them.
 | `g` `G` `Home` `End` | Goes to the start or the end of the code. |
 | `Tab` `Shift-Tab` | Goes to the next or the previous line where an annotation in the view starts. Nothing is selected. |
 
+<img src="../images/tui/present-step.webp" width="840" alt="The code and the annotations of step 3, with no status bar. The step counter 3/6 is alone on the last row.">
+
+Step 3 of `examples/ownership.rs.tiza` in presentation mode: an image of the TUI in a real terminal of 100 columns and 30 rows, with the Menlo font.
+
 - Presentation mode hides the interface. It uses the take. See [`:layout`](commands/view.md#layout).
 - The last row shows the step counter at the right, for example `3/7`, in the muted color. The counter shows when the document has more than one step, at step 0, and on the empty step after the last one. There it gives the same count as the status bar, for example `8/8`. When agent changes wait, the last row also shows `⏸ N to review · :review` at the left.
 - While the step counter or `⏸ N to review · :review` shows, the last row has no code, so the code has one row less than the terminal. With a padding at the bottom, that row is free already, and the code keeps its rows.
@@ -158,6 +162,10 @@ The live pointer works like a laser pointer. It shows one line or a group of lin
 2. Press `f`.
 3. Move the cursor. The pointer follows it.
 4. Press `f` to turn it off.
+
+<img src="../images/tui/live-pointer.webp" width="840" alt="Lines 6 to 8 keep their colors. The other lines of the code are dim. The annotations keep their colors.">
+
+The live pointer on lines 6 to 8, at step 3 of `examples/ownership.rs.tiza` in presentation mode: an image of the TUI in a real terminal of 100 columns and 30 rows, with the Menlo font.
 
 - With a spotlight, the annotations that touch the lines of the pointer also keep their colors. A box or an arrow that goes through a line of the pointer keeps its color too.
 - `Esc` also turns off the pointer when no selection, panel or command line is open. In a selection, `Esc` closes only the selection, and the pointer stays on the cursor line.
@@ -298,6 +306,14 @@ The help (`?`), the annotation list (`L`) and the agent review (`:review`) are p
 - When the help closes, Tiza goes back to normal mode. It does not go back to the list.
 - When a motion key selects a stale move, the status bar shows `#N is stale: REASON. x deletes it`. The message does not show when the list opens or while you type a filter.
 
+<img src="../images/tui/help.webp" width="840" alt="The help over the code: the keys that move the cursor and the keys that change the step.">
+
+The help (`?`) at step 3 of `examples/ownership.rs.tiza`: an image of the TUI in a real terminal of 100 columns and 30 rows, with the Menlo font.
+
+<img src="../images/tui/list.webp" width="840" alt="The list over the code: the annotations of each step. Step 3 is the current step, and its first row is selected.">
+
+The list (`L`) at step 3 of `examples/ownership.rs.tiza`: an image of the TUI in a real terminal of 100 columns and 30 rows, with the Menlo font.
+
 ### Agent review
 
 | Key | What it does |
@@ -315,6 +331,10 @@ The help (`?`), the annotation list (`L`) and the agent review (`:review`) are p
 
 - With a filter, `a` and `d` decide only the changes that the filter shows. The other changes wait.
 - When the review shows no change, `Enter` closes it.
+
+<img src="../images/tui/review.webp" width="840" alt="The review over the code with two agent changes that wait: add note L7 and add note L11. The status bar shows 2 to review.">
+
+The review (`:review`) with two agent changes that wait, at step 3 of `examples/ownership.rs.tiza`: an image of the TUI in a real terminal of 100 columns and 30 rows, with the Menlo font.
 
 See [Supervise an agent](../guides/supervise-an-agent.md).
 
@@ -345,6 +365,10 @@ The left end of the status bar shows the mode:
 | `V-LINE` | A line selection from `V` is open. |
 | `ARROW` | You started an arrow, and Tiza waits for its second end. |
 | `POINTER` | The live pointer is on. |
+
+<img src="../images/tui/selection.webp" width="840" alt="String on line 6 is selected. The status bar shows SELECT and the keys of the selection.">
+
+The status bar with a text selection open, at step 3 of `examples/ownership.rs.tiza`: an image of the TUI in a real terminal of 100 columns and 30 rows, with the Menlo font.
 
 The rest of the status bar shows the first of these that applies:
 
