@@ -42,3 +42,4 @@ ff04161cbd40466e8b375d81f4a43760f4f61455:crates/tiza-core/src/redact.rs:stripe-a
 ff04161cbd40466e8b375d81f4a43760f4f61455:qa/tests/t-117.rs:jwt:28
 05d920acdd1b91c8d92e8beba452c3bdc490578e:qa/fixtures/t-201/four.env:generic-api-key:2
 e8c50cbaa6956c47a17eb6b38e12ba0751744b6e:qa/tests/t-171.rs:generic-api-key:35
+d76c0430784ddc63084873e99d05080cefdbc945:qa/fixtures/render/margin_callouts/eight.env:generic-api-key:2
