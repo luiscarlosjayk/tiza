@@ -147,7 +147,11 @@ def time_tui(binary, runs, tmp):
         prelude = f.read()
     with open(script, "w") as f:
         f.write(prelude + "\n" + TUI)
-    env = dict(os.environ, TIZA_PTY_DEADLINE="20")
+    # This pty never answers the width probe, so Tiza would wait its 100 ms
+    # for an answer at each start (docs/reference/terminals.md). The scenario
+    # times the start of Tiza, not that wait: TIZA_NO_OSC stops the probe.
+    # The example has a theme, so no color query waits either.
+    env = dict(os.environ, TIZA_PTY_DEADLINE="20", TIZA_NO_OSC="1")
     samples = []
     for k in range(runs + 1):
         r = subprocess.run([sys.executable, "-I", script, binary, EXAMPLE], cwd=tmp, env=env,
