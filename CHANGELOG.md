@@ -4,6 +4,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-30
+
 ### Added
 - A `scroll` move moves the view of the TUI to a line, a text or an annotation when you go to its step: `{"at_step": 4, "action": "scroll", "line": 120, "align": "top"}`. `align` is `top`, `center` (the default), `bottom` or `show`. The view moves before the annotations of the step come in, so their effects play in view. It stays on the target until you move the cursor. A step with only a `scroll` move is a camera step. `:scroll` adds one at the step on screen, and `add_move` and `move.add` take one. The exports ignore it. Tiza 0.1.2 and older do not open a document that has a `scroll` move.
 - Experimental: an annotation can have an enter effect. Set `"effect": "draw"` or `"effect": "fade"` on it. `draw` draws the stroke of a box, a callout, an arrow, an underline, brackets or a strike, then the text comes in. `fade` fades the annotation in. On a spotlight, `fade` fades the dim in and out. An annotation without an effect comes in at once, as before. Set it with `annotation.add`, `annotation.update`, the MCP tools, `effect=` at the end of an annotation command, or `:set ID effect=draw`. Tiza 0.1.2 and older open a document with `effect`. They show no effect and remove `effect` when they save. A file with an effect that this version does not know opens too. That annotation comes in with no effect, and `tiza check` gives a warning.
