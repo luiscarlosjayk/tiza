@@ -201,10 +201,15 @@ At start, Tiza turns on raw mode on that terminal for the wait. After the wait, 
 - When the wait stops in the middle of an answer, the rest of the answer comes as key presses. Tiza takes it out of the keys too, when it comes before the first frame of the TUI or not more than 1 s after the first frame.
 - When the wait stops right after the `ESC` of an answer, Tiza cannot tell that `ESC` from the Escape key. Thus Tiza keeps it until the next key. When the next key is `]` or `[`, the `ESC` is the start of the answer. When the next key is another key, the `ESC` is your Escape key, and Tiza uses it before that key.
 - When no key comes in 1 s after the first frame, Tiza uses the `ESC` as your Escape key. Thus an Escape that you type at the very end of the wait can come up to 1 s late.
-- The rest of a color answer can also come after the first frame, with its `ESC` alone at the end. Thus, until the text color answer (OSC 10) comes, Tiza keeps an Escape key in the same way. This stops 1 s after the first frame or after the last answer, also when the terminal does not answer.
+- A color answer can also come after the first frame, with its `ESC` alone at the end of a read. Thus Tiza counts the color answers that the terminal must still send: two for each color query, at start and after each resize. While the terminal must send a color answer, Tiza keeps an Escape key in the same way. When you type no other key, Tiza uses that Escape as your Escape key 1 s after you type it.
+- The terminal sends the answers in the order of the queries. Thus Tiza counts each answer for the oldest query that has answers to send. Tiza stops to keep the Escape key 1 s after the latest of these: the last color query, the first frame or the last answer. This also occurs when the terminal does not answer.
+- The `ESC` of the `ESC \` at the end of an answer can also come alone at the end of a read. Tiza keeps it until the next key. When the next key is `\`, the answer is complete. When the next key is another key, the `ESC` is your Escape key.
+- A cut answer must be complete not more than 1 s after its first part. When the `ESC` of its `ESC \` comes alone, the `\` can come up to 1 s after that `ESC`. If a part comes later, the rest of the answer comes as key presses.
 - When you type a key between that `ESC` and the rest of the answer, the `ESC` is your Escape key, and the rest of the answer comes as key presses.
-- When the terminal changes size several times in a row while a color answer comes cut, part of the answer can still come as key presses.
-- When you type Escape and then `]` at the very end of the wait, Tiza takes them for the start of an answer, and drops them after 1 s.
+- When a mouse report or an arrow key comes cut right after its `ESC` while Tiza waits for a color answer, the rest of it can come as key presses.
+- When the terminal sends a color answer that Tiza did not ask for, Tiza can stop to wait for the color answers too early. Then the rest of a later answer can come as key presses.
+- When Tiza does not wait for a color answer, it does not keep the `ESC` of a cursor report that comes cut after the first frame. Then the rest of that report can come as key presses.
+- While Tiza keeps an Escape key, an Escape that you type and then `]` or `[` look like the start of an answer. Tiza drops the two keys. After `]`, Tiza also drops the keys that you type until 1 s after the Escape.
 
 ### The width probe
 

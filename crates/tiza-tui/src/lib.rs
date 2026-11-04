@@ -108,19 +108,13 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     if let Some(host) = start_up.host {
         app.set_host(host);
     }
-    // A colour answer that did not come in the read can still come, as
-    // keys: its `ESC` alone at the end of a later read is not the Escape
-    // key.
-    if start_up.colors_due {
-        app.osc.expect_colors();
-    }
     app.wide = start_up.wide;
     let early: Vec<_> = start_up
         .typed
         .iter()
         .flat_map(|p| early_keys::keys(p))
         .collect();
-    let cut_answer = start_up.cut;
+    let (owed, cut_answer) = (start_up.owed, start_up.cut);
     if let Some(s) = opts.step {
         app.set_step(s);
         // The step it opens at shows its final drawing, with no enter
@@ -237,11 +231,11 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
             }
         }
     }
-    // The rest of an answer that the wait cut short comes as keys, after
-    // the keys typed before it: the capture takes it, not the editor.
-    if let Some(cut) = cut_answer {
-        app.osc.resume(cut);
-    }
+    // What the read left to the capture, after the keys typed before it
+    // (an `ESC` among them is the user's, never the start of an answer):
+    // the colour answers still owed, which can come as keys, and the rest
+    // of an answer that the wait cut short.
+    app.osc.start_up(owed, cut_answer);
     execute!(io::stdout(), EnableBracketedPaste)?;
     if app.mouse {
         let _ = execute!(io::stdout(), EnableMouseCapture);
@@ -660,11 +654,14 @@ fn event_loop(
             };
             match ev {
                 Event::Key(k) if k.kind != KeyEventKind::Release => {
+                    let given_back = app.osc.given_back();
                     on_key(app, k.code, k.modifiers);
                     // A key of a color answer that is not complete changes
                     // nothing on the screen: no frame, so that the rest of
-                    // the answer comes in its second.
-                    if !app.osc.active() {
+                    // the answer comes in its second. Unless the capture
+                    // gave the user's Escape back to the editor while the
+                    // answer started.
+                    if !app.osc.active() || app.osc.given_back() != given_back {
                         needs_draw = true;
                     }
                 }

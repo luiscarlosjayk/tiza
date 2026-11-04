@@ -300,9 +300,11 @@ pub struct StartUp {
     pub typed: Vec<Vec<u8>>,
     /// The answer that the end of the wait cut short ([`cut_answer`]).
     pub cut: Option<String>,
-    /// The colours were asked for and the text answer (OSC 10) did not
-    /// come: the rest can come as keys ([`OscCapture::expect_colors`]).
-    pub colors_due: bool,
+    /// How many colour answers the terminal still owes (0 to 2): the
+    /// colours were asked for, and the read did not get every answer
+    /// whole ([`closed_answers`]). They can still come, as keys
+    /// ([`OscCapture::start_up`]).
+    pub owed: u32,
 }
 
 /// Asks the terminal at start-up, before crossterm owns the input: raw mode
@@ -346,7 +348,6 @@ pub fn query_host(colors: bool) -> StartUp {
         String::new()
     };
     ask.push_str(PROBE_START);
-    // The width of the row, for the room of the glyphs; unknown: no room.
     let cols = rustix::termios::tcgetwinsize(&tty).map_or(0, |w| w.ws_col);
     // The reports that the read waits for: the cursor, then one for each
     // glyph when they go.
@@ -384,19 +385,45 @@ pub fn query_host(colors: bool) -> StartUp {
     let host =
         Some(parse_answers(&String::from_utf8_lossy(&buf))).filter(|h| colors && h.bg.is_some());
     let reports = parse_reports(&buf);
+    // Each colour query asks for two answers; each answer that came whole
+    // pays one, whether Tiza understands its colour or not.
+    let owed = if colors {
+        2u32.saturating_sub(closed_answers(&String::from_utf8_lossy(&buf)))
+    } else {
+        0
+    };
     let due = Reports {
         due: reports.len() < expected,
         answered: host.is_some() || !reports.is_empty(),
-        colors_due: colors && host.is_none(),
+        colors_due: owed > 0,
     };
-    let (typed, cut) = start_up_rest(&buf, &reads, host.as_ref(), due);
+    let (typed, cut) = start_up_rest(&buf, &reads, due);
     StartUp {
-        colors_due: colors && host.as_ref().is_none_or(|h| h.fg.is_none()),
+        owed,
         host,
         wide: Wide::from_reports(&reports),
         typed,
         cut,
     }
+}
+
+/// How many colour answers (OSC 11 and OSC 10) in `input` came whole, with
+/// their `ESC \` or BEL, whether their colour parses or not. An answer is
+/// one that the terminal owed: it pays one ([`OscCapture`]).
+pub fn closed_answers(input: &str) -> u32 {
+    let mut n = 0u32;
+    let mut rest = input;
+    while let Some(start) = rest.find("\x1b]") {
+        let after = &rest[start + 2..];
+        let Some(end) = answer_len(after.as_bytes()) else {
+            break;
+        };
+        if after.starts_with("11;") || after.starts_with("10;") {
+            n = n.saturating_add(1);
+        }
+        rest = &after[end..];
+    }
+    n
 }
 
 /// What the start-up read knows of the cursor reports of the probe.
@@ -410,7 +437,8 @@ pub struct Reports {
     /// the start of a report: from a terminal that answers nothing it is
     /// the user's key (an arrow, say).
     pub answered: bool,
-    /// The colours were asked for, and the background answer did not come.
+    /// The colours were asked for, and a colour answer did not come whole
+    /// ([`StartUp::owed`]).
     pub colors_due: bool,
 }
 
@@ -432,22 +460,20 @@ pub fn all_in(buf: &[u8], colors: bool, reports: usize) -> bool {
     (!colors || (host.bg.is_some() && host.fg.is_some())) && parse_reports(buf).len() >= reports
 }
 
-/// What the start-up read gives the event loop besides `host`: the keys
-/// ([`without_answers`]) and the answer cut short ([`cut_answer`]). When
-/// an answer is still due (a colour answer, or a report of the probe:
+/// What the start-up read gives the event loop besides the colours: the
+/// keys ([`without_answers`]) and the answer cut short ([`cut_answer`]).
+/// When an answer is still due (a colour answer, or a report of the probe:
 /// `reports`), an ESC at the very end may be the start of that answer or
 /// an Escape that the user typed: only the next key tells. The capture
-/// holds it ([`OscCapture::resume`]): a `]` or a `[` goes on with the
+/// holds it ([`OscCapture::start_up`]): a `]` or a `[` goes on with the
 /// answer, and any other key, or no key in its second, gives the ESC back
 /// as the user's Escape ([`OscCapture::take_released`]).
 pub fn start_up_rest(
     buf: &[u8],
     reads: &[usize],
-    host: Option<&Host>,
     reports: Reports,
 ) -> (Vec<Vec<u8>>, Option<String>) {
-    let answer_due =
-        reports.due || reports.colors_due || host.is_some_and(|h| h.bg.is_some() && h.fg.is_none());
+    let answer_due = reports.due || reports.colors_due;
     if answer_due && buf.last() == Some(&0x1b) && cut_answer(buf, reports).is_none() {
         let keys = &buf[..buf.len() - 1];
         return (
@@ -475,7 +501,7 @@ fn answer_len(body: &[u8]) -> Option<usize> {
 /// with no `ESC \` or BEL after it, or, while a cursor report of the probe
 /// is due ([`Reports`]), an `ESC [` with only digits and `;` after it.
 /// The terminal sends the rest later, through the key stream, where
-/// [`OscCapture::resume`] takes it.
+/// [`OscCapture::start_up`] takes it.
 pub fn cut_answer(buf: &[u8], reports: Reports) -> Option<String> {
     let mut i = 0;
     while i + 1 < buf.len() {
@@ -580,103 +606,174 @@ pub fn request_host() -> bool {
     tty.write_all(QUERY.as_bytes()).is_ok() && tty.flush().is_ok()
 }
 
-/// Collects an OSC answer that crossterm hands us as key presses: `Alt+]`
-/// opens it, characters follow, `Alt+\` or Ctrl-G closes it.
+/// Collects an answer of the terminal that crossterm hands us as key
+/// presses: `Alt+]` opens a colour answer, characters follow, `Alt+\` or
+/// Ctrl-G closes it. It also takes the rest of an answer that a read cut
+/// short, and holds an `ESC` alone at the end of a read while an answer
+/// can start ([`OscCapture::answer_can_start_at`]).
+///
+/// It keeps how many colour answers the terminal owes: two for each query,
+/// less each answer that comes. The terminal answers in order, so an
+/// answer to an earlier query pays for that query first. A query that ran
+/// out of time is still owed: only the time to hold an `ESC` runs out.
 #[derive(Debug, Default, Clone)]
 pub struct OscCapture {
     buf: Option<String>,
+    /// The last time that the open capture heard from the terminal: its
+    /// start, or the `ESC` of its end. A second later it is stale
+    /// ([`OscCapture::capture_expired`]).
     started: Option<Instant>,
     /// The keys that the capture gives back ([`OscCapture::take_released`]).
     released: Vec<crossterm::event::KeyCode>,
-    /// The colour answers are due ([`OscCapture::expect_colors`]), since
-    /// this time: the query, the first frame, or the last answer.
-    colors_due: Option<Instant>,
+    /// How many colour answers the terminal owes. Never set to 0 by time.
+    owed: u32,
+    /// The last word about the answers: a query, the first frame
+    /// ([`OscCapture::restart_clock`]), or an answer that paid. An `ESC`
+    /// that the capture holds is not one.
+    last: Option<Instant>,
+    /// How many times the capture gave keys back ([`OscCapture::given_back`]).
+    given_back: u64,
 }
 
-/// How long a capture waits for the rest of an answer.
+/// How long a capture waits for the rest of an answer, and how long after
+/// the last word about the answers an `ESC` alone can start one.
 const CAPTURE_LIMIT: Duration = Duration::from_secs(1);
 
 impl OscCapture {
+    /// Hands over what the start-up read left: `owed` colour answers that
+    /// did not come whole, the answer that the end of the wait cut short
+    /// (`cut`, [`cut_answer`]). The TUI calls it after the keys typed during the read: they
+    /// come without the answers ([`without_answers`]), so an `ESC` in them
+    /// is the user's and is never held.
+    pub fn start_up(&mut self, owed: u32, cut: Option<String>) {
+        let now = Instant::now();
+        self.owe_at(owed, now);
+        if let Some(cut) = cut {
+            self.resume_at(cut, now);
+        }
+    }
+
     /// Starts the capture with the beginning of an answer that the start-up
     /// read cut short ([`cut_answer`]), so that its rest, which comes as
     /// keys, is taken too. The usual limit of a second applies; it starts
     /// again at [`OscCapture::restart_clock`].
+    #[cfg(test)]
     pub fn resume(&mut self, cut: String) {
+        self.resume_at(cut, Instant::now());
+    }
+
+    fn resume_at(&mut self, cut: String, now: Instant) {
         self.buf = Some(cut);
-        self.started = Some(Instant::now());
+        self.started = Some(now);
     }
 
-    /// The colour answers of a query are due: until the text answer
-    /// (OSC 10) comes, or for a second with nothing of them, an Escape key
-    /// alone can be the start of one (its `ESC` came alone at the end of a
-    /// read). The capture holds it as it holds the `ESC` at the end of the
-    /// start-up read.
+    /// A colour query went out (after a resize): the terminal owes two
+    /// answers more, the background and the text.
     pub fn expect_colors(&mut self) {
-        self.colors_due = Some(Instant::now());
+        self.expect_colors_at(Instant::now());
     }
 
-    /// Whether the colour answers are still due at `now`.
-    fn colors_due_at(&self, now: Instant) -> bool {
-        self.colors_due
-            .is_some_and(|t| now.duration_since(t) <= CAPTURE_LIMIT)
+    fn expect_colors_at(&mut self, now: Instant) {
+        self.owe_at(2, now);
     }
 
-    /// An answer closed: the text answer ends the wait for the colours; the
-    /// background answer gives the text answer a second more.
-    fn answered(&mut self, host: &Host) {
-        if host.fg.is_some() {
-            self.colors_due = None;
-        } else if host.bg.is_some() && self.colors_due.is_some() {
-            self.colors_due = Some(Instant::now());
+    fn owe_at(&mut self, answers: u32, now: Instant) {
+        self.owed = self.owed.saturating_add(answers);
+        if answers > 0 {
+            self.last = Some(now);
         }
     }
 
-    /// The second of an open capture starts again now, and so does the wait
-    /// for the colours. The TUI calls it after its first frame: a slow first
-    /// frame (a big file, a busy machine) does not use the second before the
-    /// first key is read.
+    /// The one rule: an `ESC` alone (the Escape key) can be the start of an
+    /// answer now. The terminal owes one, and Tiza asked, drew its first
+    /// frame or got an answer a second ago or less.
+    fn answer_can_start_at(&self, now: Instant) -> bool {
+        self.owed > 0
+            && self
+                .last
+                .is_some_and(|t| now.saturating_duration_since(t) <= CAPTURE_LIMIT)
+    }
+
+    /// Whether the open capture heard nothing from the terminal for more
+    /// than a second: it is stale.
+    fn capture_expired(&self, now: Instant) -> bool {
+        self.started
+            .is_some_and(|t| now.saturating_duration_since(t) > CAPTURE_LIMIT)
+    }
+
+    /// The second of an open capture starts again now, and so does the
+    /// time to hold an `ESC` while answers are owed. The TUI calls it after
+    /// its first frame: a slow first frame (a big file, a busy machine)
+    /// does not use the second before the first key is read.
     pub fn restart_clock(&mut self) {
+        self.restart_clock_at(Instant::now());
+    }
+
+    fn restart_clock_at(&mut self, now: Instant) {
         if self.buf.is_some() {
-            self.started = Some(Instant::now());
+            self.started = Some(now);
         }
-        if self.colors_due.is_some() {
-            self.colors_due = Some(Instant::now());
+        if self.owed > 0 {
+            self.last = Some(now);
         }
     }
 
-    /// Whether the capture holds only an ESC from the end of the start-up
-    /// read: the start of an answer, or an Escape that the user typed.
-    fn holds_escape(&self) -> bool {
-        self.buf.as_deref() == Some("\x1b")
+    /// Whether the capture ends in an `ESC` that nothing went on with yet:
+    /// an `ESC` alone (the start of an answer, or an Escape that the user
+    /// typed), or the `ESC` of the `ESC \` that ends an answer.
+    fn ends_in_lone_escape(&self) -> bool {
+        self.buf.as_deref().is_some_and(|b| b.ends_with('\x1b'))
     }
 
-    /// Stops the capture. An ESC that it held alone was the user's Escape:
-    /// it is given back ([`OscCapture::take_released`]), never lost.
+    /// Stops the capture. An `ESC` at its end that nothing went on with is
+    /// the user's Escape: it is given back ([`OscCapture::take_released`]),
+    /// never lost.
     fn stop(&mut self) {
-        if self.holds_escape() {
+        if self.ends_in_lone_escape() {
             self.released.push(crossterm::event::KeyCode::Esc);
         }
         self.buf = None;
         self.started = None;
     }
 
+    /// An answer closed: each colour answer in it pays one of the answers
+    /// owed, and gives the next one a second more. Returns the colours, when
+    /// it said some.
+    fn close_answer(&mut self, now: Instant) -> Option<Host> {
+        let buf = self.buf.take().unwrap_or_default();
+        self.started = None;
+        let paid = closed_answers(&buf);
+        if paid > 0 {
+            self.owed = self.owed.saturating_sub(paid);
+            self.last = Some(now);
+        }
+        let host = parse_answers(&buf);
+        (host.bg.is_some() || host.fg.is_some()).then_some(host)
+    }
+
     /// The keys that the capture gives back, to handle before the key that
-    /// came: an ESC that it held alone as the start of an answer, when the
-    /// next key did not go on with an answer, or when no key came in its
-    /// second.
+    /// came: an `ESC` that it held, when the next key did not go on with an
+    /// answer, or when no key came in its second.
     pub fn take_released(&mut self) -> Vec<crossterm::event::KeyCode> {
         self.take_released_at(Instant::now())
     }
 
     fn take_released_at(&mut self, now: Instant) -> Vec<crossterm::event::KeyCode> {
-        if self.holds_escape()
-            && self
-                .started
-                .is_some_and(|t| now.duration_since(t) > CAPTURE_LIMIT)
-        {
+        if self.capture_expired(now) {
             self.stop();
         }
+        if !self.released.is_empty() {
+            self.given_back += 1;
+        }
         std::mem::take(&mut self.released)
+    }
+
+    /// How many times the capture gave keys back to the editor. A key that
+    /// the capture took can give an `ESC` back while a new answer starts:
+    /// the editor changed, and the screen must show it, also while the
+    /// capture is open.
+    pub fn given_back(&self) -> u64 {
+        self.given_back
     }
 
     /// Feeds one key. Returns `Some(host)` when an answer closed and said
@@ -687,66 +784,80 @@ impl OscCapture {
         code: crossterm::event::KeyCode,
         mods: crossterm::event::KeyModifiers,
     ) -> (bool, Option<Host>) {
+        self.feed_at(code, mods, Instant::now())
+    }
+
+    fn feed_at(
+        &mut self,
+        code: crossterm::event::KeyCode,
+        mods: crossterm::event::KeyModifiers,
+        now: Instant,
+    ) -> (bool, Option<Host>) {
+        // A stale capture is dropped so the keyboard never stays hijacked;
+        // an `ESC` at its end is given back.
+        if self.capture_expired(now) {
+            self.stop();
+        }
+        if let Some(fed) = self.feed_open(code, mods, now) {
+            return fed;
+        }
+        self.feed_empty(code, mods, now)
+    }
+
+    /// A key while a capture is open: `Some` when the key belongs to it;
+    /// `None` when the capture stopped, and the key starts anew.
+    fn feed_open(
+        &mut self,
+        code: crossterm::event::KeyCode,
+        mods: crossterm::event::KeyModifiers,
+        now: Instant,
+    ) -> Option<(bool, Option<Host>)> {
         use crossterm::event::{KeyCode, KeyModifiers};
         let alt = mods.contains(KeyModifiers::ALT);
         let ctrl = mods.contains(KeyModifiers::CONTROL);
-        // A stale capture (no terminator within a second) is dropped so the
-        // keyboard never stays hijacked; an ESC that it held alone is given
-        // back.
-        if let Some(t) = self.started
-            && t.elapsed() > CAPTURE_LIMIT
-        {
-            self.stop();
+        let plain = !alt && !ctrl;
+        let b = self.buf.as_mut()?;
+        let osc = b.starts_with("\x1b]");
+        // An `ESC` at the end goes on only with `]` or `[` (an `ESC` alone)
+        // or with `\` (the `ESC` of `ESC \`). Any other key (also another
+        // Escape, or a whole answer) stops the capture, which gives the
+        // `ESC` back; the key starts anew.
+        if b.ends_with('\x1b') {
+            let goes_on = match code {
+                KeyCode::Char(c) if plain && b == "\x1b" => c == ']' || c == '[',
+                KeyCode::Char(c) if plain => c == '\\',
+                _ => false,
+            };
+            if !goes_on {
+                self.stop();
+                return None;
+            }
         }
-        let colors_due = self.colors_due_at(Instant::now());
-        match (&mut self.buf, code) {
-            (None, KeyCode::Char(']')) if alt => {
-                self.buf = Some(String::from("\x1b]"));
-                self.started = Some(Instant::now());
-                (true, None)
-            }
-            // The `ESC` of a colour answer that came alone at the end of a
-            // read, after the first frame: crossterm gives it as the Escape
-            // key. Held, as the `ESC` at the end of the start-up read.
-            (None, KeyCode::Esc) if mods.is_empty() && colors_due => {
-                self.buf = Some(String::from("\x1b"));
-                self.started = Some(Instant::now());
-                (true, None)
-            }
-            (None, _) => (false, None),
-            (Some(b), KeyCode::Char('\\')) if alt => {
+        match code {
+            KeyCode::Char('\\') if alt && osc => {
                 b.push_str("\x1b\\");
-                let host = parse_answers(b);
-                self.buf = None;
-                self.started = None;
-                self.answered(&host);
-                (
-                    true,
-                    (host.bg.is_some() || host.fg.is_some()).then_some(host),
-                )
+                Some((true, self.close_answer(now)))
             }
-            (Some(b), KeyCode::Char('g')) if ctrl => {
+            KeyCode::Char('g') if ctrl && osc => {
                 b.push('\x07');
-                let host = parse_answers(b);
-                self.buf = None;
-                self.started = None;
-                self.answered(&host);
-                (
-                    true,
-                    (host.bg.is_some() || host.fg.is_some()).then_some(host),
-                )
+                Some((true, self.close_answer(now)))
             }
             // A second answer begins inside the capture (`ESC ]` again).
-            (Some(b), KeyCode::Char(']')) if alt => {
+            KeyCode::Char(']') if alt && osc => {
                 b.push_str("\x1b]");
-                (true, None)
+                Some((true, None))
             }
-            // The rest of a cursor report that the start-up read cut short
-            // (`ESC [ row ; col R`): digits and `;`, then `R`. Any other
-            // key is the user's.
-            (Some(b), KeyCode::Char(c))
-                if !ctrl && !alt && (b.starts_with("\x1b[") || (b == "\x1b" && c == '[')) =>
-            {
+            // The `ESC` of the `ESC \` that ends the answer came alone at the
+            // end of a read: held, as a word of the terminal.
+            KeyCode::Esc if mods.is_empty() && osc => {
+                b.push('\x1b');
+                self.started = Some(now);
+                Some((true, None))
+            }
+            // The rest of a cursor report that a read cut short
+            // (`ESC [ row ; col R`): digits and `;`, then `R`. Any other key
+            // is the user's.
+            KeyCode::Char(c) if plain && (b.starts_with("\x1b[") || (b == "\x1b" && c == '[')) => {
                 let whole = b
                     .strip_prefix("\x1b[")
                     .and_then(|r| r.split_once(';'))
@@ -754,44 +865,53 @@ impl OscCapture {
                 if c == 'R' && whole {
                     self.buf = None;
                     self.started = None;
-                    return (true, None);
+                    return Some((true, None));
                 }
                 if c == '[' && b == "\x1b" || c.is_ascii_digit() || c == ';' {
                     b.push(c);
-                    return (true, None);
+                    return Some((true, None));
                 }
                 self.buf = None;
                 self.started = None;
-                (false, None)
+                None
             }
-            // After an ESC that the start-up read took as the start of an
-            // answer, only `]` goes on with one (`[` is above): any other
-            // key is the user's, and so was the ESC.
-            (Some(b), KeyCode::Char(c)) if !ctrl && !alt && b == "\x1b" && c != ']' => {
-                self.stop();
-                (false, None)
-            }
-            (Some(b), KeyCode::Char(c)) if !ctrl && !alt => {
+            KeyCode::Char(c) if plain => {
                 b.push(c);
-                // The start-up read cut the answer between the `ESC` and
-                // the `\` of its end: the `\` comes alone.
+                // A read cut the answer between the `ESC` and the `\` of its
+                // end: the `\` comes alone.
                 if c == '\\' && b.ends_with("\x1b\\") {
-                    let host = parse_answers(b);
-                    self.buf = None;
-                    self.started = None;
-                    self.answered(&host);
-                    return (
-                        true,
-                        (host.bg.is_some() || host.fg.is_some()).then_some(host),
-                    );
+                    return Some((true, self.close_answer(now)));
                 }
+                Some((true, None))
+            }
+            // Anything else is the user: stop, and the key starts anew.
+            _ => {
+                self.stop();
+                None
+            }
+        }
+    }
+
+    /// A key with no capture open: `Alt+]` starts an answer, and an Escape
+    /// with no modifier is held while an answer can start (its `ESC` came
+    /// alone at the end of a read). Any other key is the user's.
+    fn feed_empty(
+        &mut self,
+        code: crossterm::event::KeyCode,
+        mods: crossterm::event::KeyModifiers,
+        now: Instant,
+    ) -> (bool, Option<Host>) {
+        use crossterm::event::{KeyCode, KeyModifiers};
+        match code {
+            KeyCode::Char(']') if mods.contains(KeyModifiers::ALT) => {
+                self.resume_at(String::from("\x1b]"), now);
                 (true, None)
             }
-            (Some(_), _) => {
-                // Anything else is the user: give the key back and stop.
-                self.stop();
-                (false, None)
+            KeyCode::Esc if mods.is_empty() && self.answer_can_start_at(now) => {
+                self.resume_at(String::from("\x1b"), now);
+                (true, None)
             }
+            _ => (false, None),
         }
     }
 
@@ -895,8 +1015,12 @@ mod tests {
         // the plain `]` and the rest join it.
         let light = b"\x1b]11;rgb:f7f7/f5f5/efef\x1b\\";
         let buf = [&light[..], b"j\x1b"].concat();
-        let host = parse_answers(&String::from_utf8_lossy(&buf));
-        let (typed, cut) = start_up_rest(&buf, &[0], Some(&host), Reports::default());
+        assert_eq!(closed_answers(&String::from_utf8_lossy(&buf)), 1);
+        let owed = Reports {
+            colors_due: true,
+            ..Reports::default()
+        };
+        let (typed, cut) = start_up_rest(&buf, &[0], owed);
         assert_eq!((typed, cut.as_deref()), (vec![b"j".to_vec()], Some("\x1b")));
         let mut c = OscCapture::default();
         c.resume(cut.unwrap());
@@ -907,8 +1031,8 @@ mod tests {
         assert!(sw && h.is_some_and(|h| h.fg.is_some()));
         // With both answers in, a last ESC is a key, as before.
         let both = [&light[..], b"\x1b]10;rgb:1/2/3\x07\x1b"].concat();
-        let host = parse_answers(&String::from_utf8_lossy(&both));
-        let (typed, cut) = start_up_rest(&both, &[0], Some(&host), Reports::default());
+        assert_eq!(closed_answers(&String::from_utf8_lossy(&both)), 2);
+        let (typed, cut) = start_up_rest(&both, &[0], Reports::default());
         assert_eq!((typed, cut), (vec![b"\x1b".to_vec()], None));
     }
 
@@ -1054,7 +1178,7 @@ mod tests {
         };
         for cut in ["\x1b[", "\x1b[1", "\x1b[12", "\x1b[12;", "\x1b[12;3"] {
             let buf = [b"j\x1b[12;3R".as_slice(), cut.as_bytes()].concat();
-            let (typed, got) = start_up_rest(&buf, &[0], None, answering);
+            let (typed, got) = start_up_rest(&buf, &[0], answering);
             assert_eq!(
                 (typed, got.as_deref()),
                 (vec![b"j".to_vec()], Some(cut)),
@@ -1062,10 +1186,10 @@ mod tests {
             );
         }
         // The same bytes with no report due are keys, as before.
-        let (typed, got) = start_up_rest(b"\x1b[12", &[0], None, Reports::default());
+        let (typed, got) = start_up_rest(b"\x1b[12", &[0], Reports::default());
         assert_eq!((typed, got), (vec![b"\x1b[12".to_vec()], None));
         // A lone ESC at the end, while a report is due, is its start.
-        let (typed, got) = start_up_rest(b"j\x1b", &[0], None, answering);
+        let (typed, got) = start_up_rest(b"j\x1b", &[0], answering);
         assert_eq!((typed, got.as_deref()), (vec![b"j".to_vec()], Some("\x1b")));
         // From a terminal that answered nothing yet, an `ESC [` alone at
         // the end is the user's key (an arrow); with a digit it is a report.
@@ -1073,9 +1197,9 @@ mod tests {
             due: true,
             ..Reports::default()
         };
-        let (typed, got) = start_up_rest(b"j\x1b[", &[0], None, silent);
+        let (typed, got) = start_up_rest(b"j\x1b[", &[0], silent);
         assert_eq!((typed, got), (vec![b"j\x1b[".to_vec()], None));
-        let (typed, got) = start_up_rest(b"j\x1b[1", &[0], None, silent);
+        let (typed, got) = start_up_rest(b"j\x1b[1", &[0], silent);
         assert_eq!(
             (typed, got.as_deref()),
             (vec![b"j".to_vec()], Some("\x1b[1"))
@@ -1096,7 +1220,7 @@ mod tests {
             ..Reports::default()
         };
         for due in [silent, colors] {
-            let (typed, got) = start_up_rest(b"n:abc\x1b", &[0], None, due);
+            let (typed, got) = start_up_rest(b"n:abc\x1b", &[0], due);
             assert_eq!(
                 (typed, got.as_deref()),
                 (vec![b"n:abc".to_vec()], Some("\x1b")),
@@ -1104,7 +1228,7 @@ mod tests {
             );
         }
         // No answer due: the ESC is a key at once.
-        let (typed, got) = start_up_rest(b"n:abc\x1b", &[0], None, Reports::default());
+        let (typed, got) = start_up_rest(b"n:abc\x1b", &[0], Reports::default());
         assert_eq!((typed, got), (vec![b"n:abc\x1b".to_vec()], None));
     }
 
@@ -1224,5 +1348,398 @@ mod tests {
                 "{cut:?}"
             );
         }
+    }
+
+    // ---------- The colour answers that the terminal owes ----------
+
+    const BG: &str = "11;rgb:1515/1717/1b1b";
+    const FG: &str = "10;rgb:d0d0/d0d0/d0d0";
+
+    /// Where a read cut an answer (`ESC ] body ESC \`), as crossterm then
+    /// gives its keys.
+    #[derive(Debug, Clone, Copy)]
+    enum Cut {
+        /// After its first `ESC`: the Escape key, then `]` and the rest.
+        AfterEsc,
+        /// After `ESC ]`: `Alt+]`, then the rest.
+        AfterOscStart,
+        /// After the `ESC` of its `ESC \`: the Escape key, then `\`.
+        AfterEndEsc,
+        /// Whole, ended with BEL: `Alt+]`, the body, Ctrl-G.
+        Bel,
+        /// After its first `ESC` and after the `ESC` of its end.
+        Twice,
+    }
+
+    const CUTS: [Cut; 5] = [
+        Cut::AfterEsc,
+        Cut::AfterOscStart,
+        Cut::AfterEndEsc,
+        Cut::Bel,
+        Cut::Twice,
+    ];
+
+    fn answer_keys(body: &str, cut: Cut) -> Vec<(KeyCode, KeyModifiers)> {
+        let none = KeyModifiers::NONE;
+        let chars = body.chars().map(|c| (KeyCode::Char(c), none));
+        let (start, end): (Vec<_>, Vec<_>) = match cut {
+            Cut::AfterEsc => (
+                vec![(KeyCode::Esc, none), (KeyCode::Char(']'), none)],
+                vec![(KeyCode::Char('\\'), KeyModifiers::ALT)],
+            ),
+            Cut::AfterOscStart => (
+                vec![(KeyCode::Char(']'), KeyModifiers::ALT)],
+                vec![(KeyCode::Char('\\'), KeyModifiers::ALT)],
+            ),
+            Cut::AfterEndEsc => (
+                vec![(KeyCode::Char(']'), KeyModifiers::ALT)],
+                vec![(KeyCode::Esc, none), (KeyCode::Char('\\'), none)],
+            ),
+            Cut::Bel => (
+                vec![(KeyCode::Char(']'), KeyModifiers::ALT)],
+                vec![(KeyCode::Char('g'), KeyModifiers::CONTROL)],
+            ),
+            Cut::Twice => (
+                vec![(KeyCode::Esc, none), (KeyCode::Char(']'), none)],
+                vec![(KeyCode::Esc, none), (KeyCode::Char('\\'), none)],
+            ),
+        };
+        start.into_iter().chain(chars).chain(end).collect()
+    }
+
+    /// Feeds `keys` at `now`: whether each was swallowed, and the colours
+    /// of the answer that closed.
+    fn feed_keys(
+        c: &mut OscCapture,
+        keys: &[(KeyCode, KeyModifiers)],
+        now: Instant,
+    ) -> (Vec<bool>, Option<Host>) {
+        let mut host = None;
+        let swallowed = keys
+            .iter()
+            .map(|(code, mods)| {
+                let (sw, h) = c.feed_at(*code, *mods, now);
+                host = h.or(host);
+                sw
+            })
+            .collect();
+        (swallowed, host)
+    }
+
+    /// One answer, every key at `now`: all of it is swallowed, and it closes.
+    fn answer_at(c: &mut OscCapture, body: &str, cut: Cut, now: Instant) {
+        let (swallowed, host) = feed_keys(c, &answer_keys(body, cut), now);
+        assert!(
+            swallowed.iter().all(|s| *s),
+            "{body} {cut:?}: {swallowed:?}"
+        );
+        assert!(host.is_some(), "{body} {cut:?}: no colour");
+    }
+
+    #[test]
+    fn every_cut_with_one_two_or_three_queries_in_flight() {
+        let t0 = Instant::now();
+        let at = |ms: u64| t0 + Duration::from_millis(ms);
+        for cut in CUTS {
+            for queries in 1..=3 {
+                let what = format!("{cut:?}, {queries} queries");
+                let mut c = OscCapture::default();
+                c.expect_colors_at(at(0));
+                let mut t = 100;
+                for (i, body) in (0..queries).flat_map(|_| [BG, FG]).enumerate() {
+                    // The other queries go out after the first answer: the
+                    // text answer of the first query comes after them.
+                    if i == 1 {
+                        for _ in 1..queries {
+                            c.expect_colors_at(at(t));
+                            t += 50;
+                        }
+                    }
+                    answer_at(&mut c, body, cut, at(t));
+                    t += 100;
+                }
+                assert_eq!(c.owed, 0, "{what}");
+                assert!(!c.active(), "{what}");
+                assert_eq!(c.take_released_at(at(t)), vec![], "{what}");
+                // Nothing is owed: an Escape is the user's at once.
+                assert_eq!(
+                    c.feed_at(KeyCode::Esc, KeyModifiers::NONE, at(t)),
+                    (false, None),
+                    "{what}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn an_answer_that_started_in_the_second_still_pays_after_it() {
+        let t0 = Instant::now();
+        let at = |ms: u64| t0 + Duration::from_millis(ms);
+        let none = KeyModifiers::NONE;
+        // Two answers owed since the first frame. The background answer
+        // starts in its second (the ESC at 0.5 s) and ends after it (1.4 s).
+        let mut c = OscCapture::default();
+        c.owe_at(2, at(0));
+        c.restart_clock_at(at(0));
+        assert_eq!(c.feed_at(KeyCode::Esc, none, at(500)), (true, None));
+        let rest = &answer_keys(BG, Cut::AfterEsc)[1..];
+        let (swallowed, host) = feed_keys(&mut c, rest, at(1400));
+        assert!(swallowed.iter().all(|s| *s) && host.is_some());
+        // It paid one: the text answer is still owed, and its ESC, alone at
+        // the same moment, is held.
+        assert_eq!(c.feed_at(KeyCode::Esc, none, at(1400)), (true, None));
+        let rest = &answer_keys(FG, Cut::AfterEsc)[1..];
+        let (swallowed, host) = feed_keys(&mut c, rest, at(1700));
+        assert!(swallowed.iter().all(|s| *s) && host.is_some());
+        assert_eq!((c.owed, c.take_released_at(at(1700))), (0, vec![]));
+    }
+
+    #[test]
+    fn a_cut_answer_comes_whole_in_a_second_from_its_first_part() {
+        let t0 = Instant::now();
+        let at = |ms: u64| t0 + Duration::from_millis(ms);
+        let none = KeyModifiers::NONE;
+        let keys = |text: &str| {
+            text.chars()
+                .map(|c| (KeyCode::Char(c), none))
+                .collect::<Vec<_>>()
+        };
+        let start = (KeyCode::Char(']'), KeyModifiers::ALT);
+        let end = (KeyCode::Char('\\'), KeyModifiers::ALT);
+        let mut c = OscCapture::default();
+        c.owe_at(3, at(0));
+        // Cut in the body, the rest 0.9 s after the first part: whole in its
+        // second, taken.
+        let first = [vec![start], keys("11;rgb:f7f7")].concat();
+        assert!(feed_keys(&mut c, &first, at(0)).0.iter().all(|s| *s));
+        let (swallowed, host) =
+            feed_keys(&mut c, &[keys("/f5f5/efef"), vec![end]].concat(), at(900));
+        assert!(swallowed.iter().all(|s| *s) && host.is_some());
+        // Three parts 0.6 s apart: no part is more than a second after the
+        // one before, but the answer is not whole a second after its first
+        // part. The capture stops, and the last part is keys.
+        let first = [vec![start], keys("10;rgb:1f1f")].concat();
+        assert!(feed_keys(&mut c, &first, at(1000)).0.iter().all(|s| *s));
+        assert!(
+            feed_keys(&mut c, &keys("/2323"), at(1600))
+                .0
+                .iter()
+                .all(|s| *s)
+        );
+        let (swallowed, host) = feed_keys(&mut c, &[keys("/2828"), vec![end]].concat(), at(2200));
+        assert_eq!((swallowed[0], host), (false, None));
+        assert_eq!(c.owed, 2);
+        // The `ESC` of its `ESC \` alone gives the rest a second more.
+        let first = [vec![start], keys("10;rgb:1f1f/2323/2828")].concat();
+        assert!(feed_keys(&mut c, &first, at(3000)).0.iter().all(|s| *s));
+        assert_eq!(c.feed_at(KeyCode::Esc, none, at(3900)), (true, None));
+        let (swallowed, host) = feed_keys(&mut c, &keys("\\"), at(4800));
+        assert!(swallowed[0] && host.is_some());
+        assert_eq!(c.owed, 1);
+    }
+
+    #[test]
+    fn the_first_frame_gives_the_answers_owed_a_second_again() {
+        let t0 = Instant::now();
+        let at = |ms: u64| t0 + Duration::from_millis(ms);
+        let none = KeyModifiers::NONE;
+        // Owed since the query at start; the first frame comes 1.5 s later.
+        let mut c = OscCapture::default();
+        c.owe_at(2, at(0));
+        c.restart_clock_at(at(1500));
+        // An ESC alone 0.5 s after the first frame can start an answer.
+        assert_eq!(c.feed_at(KeyCode::Esc, none, at(2000)), (true, None));
+        // 1.1 s after the first frame, an ESC is the Escape key again: the
+        // one held before is given back, and this one goes through.
+        assert_eq!(c.feed_at(KeyCode::Esc, none, at(2600)), (false, None));
+        assert_eq!(c.take_released_at(at(2600)), vec![KeyCode::Esc]);
+        assert_eq!(c.given_back(), 1);
+    }
+
+    #[test]
+    fn a_query_that_ran_out_of_time_is_still_owed() {
+        let t0 = Instant::now();
+        let at = |ms: u64| t0 + Duration::from_millis(ms);
+        // The query at start: nothing comes in its second. A resize asks
+        // again at 1.5 s. The answers of the first query come then: they pay
+        // for the first query, not for the second.
+        let mut c = OscCapture::default();
+        c.expect_colors_at(at(0));
+        c.expect_colors_at(at(1500));
+        answer_at(&mut c, BG, Cut::AfterOscStart, at(1700));
+        answer_at(&mut c, FG, Cut::AfterOscStart, at(1900));
+        assert_eq!(c.owed, 2);
+        // The answers of the second query, each cut after its ESC.
+        answer_at(&mut c, BG, Cut::AfterEsc, at(2500));
+        answer_at(&mut c, FG, Cut::AfterEsc, at(2800));
+        assert_eq!((c.owed, c.take_released_at(at(2800))), (0, vec![]));
+    }
+
+    #[test]
+    fn with_nothing_owed_escape_is_escape() {
+        let t0 = Instant::now();
+        let at = |ms: u64| t0 + Duration::from_millis(ms);
+        // Both answers of a query came: at that moment, an Escape is the
+        // user's at once.
+        let mut c = OscCapture::default();
+        c.expect_colors_at(at(0));
+        answer_at(&mut c, BG, Cut::AfterOscStart, at(100));
+        answer_at(&mut c, FG, Cut::AfterOscStart, at(200));
+        assert_eq!(
+            c.feed_at(KeyCode::Esc, KeyModifiers::NONE, at(200)),
+            (false, None)
+        );
+        assert_eq!(c.take_released_at(at(200)), vec![]);
+    }
+
+    #[test]
+    fn the_escape_waits_at_most_a_second_after_the_last_word() {
+        let t0 = Instant::now();
+        let at = |ms: u64| t0 + Duration::from_millis(ms);
+        let none = KeyModifiers::NONE;
+        // The terminal does not answer: an Escape is held up to a second
+        // after the query, and not later.
+        let mut c = OscCapture::default();
+        c.expect_colors_at(at(0));
+        assert_eq!(c.feed_at(KeyCode::Esc, none, at(1000)), (true, None));
+        let mut c = OscCapture::default();
+        c.expect_colors_at(at(0));
+        assert_eq!(c.feed_at(KeyCode::Esc, none, at(1001)), (false, None));
+    }
+
+    #[test]
+    fn the_esc_of_the_end_of_an_answer_alone_is_not_a_key() {
+        let t0 = Instant::now();
+        let at = |ms: u64| t0 + Duration::from_millis(ms);
+        let none = KeyModifiers::NONE;
+        let open = |c: &mut OscCapture| {
+            c.expect_colors_at(at(0));
+            let keys = answer_keys(BG, Cut::AfterEndEsc);
+            // All but the `\`: the capture holds the ESC of the end.
+            let (swallowed, host) = feed_keys(c, &keys[..keys.len() - 1], at(100));
+            assert!(swallowed.iter().all(|s| *s) && host.is_none());
+        };
+        // The `\` comes: the answer counts, and nothing is a key.
+        let mut c = OscCapture::default();
+        open(&mut c);
+        let (swallowed, host) = c.feed_at(KeyCode::Char('\\'), none, at(400));
+        assert!(swallowed && host.is_some_and(|h| h.bg.is_some()));
+        assert_eq!((c.owed, c.take_released_at(at(400))), (1, vec![]));
+        // Another key comes: that ESC was an Escape of the user, given back
+        // before the key.
+        let mut c = OscCapture::default();
+        open(&mut c);
+        assert_eq!(c.feed_at(KeyCode::Char('n'), none, at(400)), (false, None));
+        assert_eq!(c.take_released_at(at(400)), vec![KeyCode::Esc]);
+        assert!(!c.active());
+        // No key in its second: given back then.
+        let mut c = OscCapture::default();
+        open(&mut c);
+        assert_eq!(c.take_released_at(at(1100)), vec![]);
+        assert_eq!(c.take_released_at(at(1101)), vec![KeyCode::Esc]);
+        // Cut after its first ESC too, with 0.6 s between the pieces: the
+        // ESC of the end is a word of the terminal, and the whole answer can
+        // take more than a second.
+        let mut c = OscCapture::default();
+        c.expect_colors_at(at(0));
+        let keys = answer_keys(BG, Cut::Twice);
+        let (n, last) = (keys.len(), keys.len() - 1);
+        assert_eq!(feed_keys(&mut c, &keys[..1], at(0)).0, vec![true]);
+        let (swallowed, _) = feed_keys(&mut c, &keys[1..last], at(600));
+        assert_eq!(swallowed, vec![true; n - 2]);
+        let (swallowed, host) = feed_keys(&mut c, &keys[last..], at(1200));
+        assert!(swallowed == vec![true] && host.is_some());
+        assert_eq!(c.take_released_at(at(1200)), vec![]);
+    }
+
+    #[test]
+    fn a_held_escape_does_not_make_the_wait_longer() {
+        let t0 = Instant::now();
+        let at = |ms: u64| t0 + Duration::from_millis(ms);
+        let none = KeyModifiers::NONE;
+        // A terminal that never answers. An Escape at 0.5 s is held, and the
+        // next key gives it back. An Escape at 1.2 s is more than a second
+        // after the query: it is the user's at once.
+        let mut c = OscCapture::default();
+        c.expect_colors_at(at(0));
+        assert_eq!(c.feed_at(KeyCode::Esc, none, at(500)), (true, None));
+        assert_eq!(c.feed_at(KeyCode::Char('j'), none, at(600)), (false, None));
+        assert_eq!(c.take_released_at(at(600)), vec![KeyCode::Esc]);
+        assert_eq!(c.feed_at(KeyCode::Esc, none, at(1200)), (false, None));
+    }
+
+    #[test]
+    fn the_esc_of_an_answer_after_a_held_escape_is_judged_on_its_own() {
+        let t0 = Instant::now();
+        let at = |ms: u64| t0 + Duration::from_millis(ms);
+        let none = KeyModifiers::NONE;
+        // The user's Escape is held; then the ESC of an answer comes alone.
+        // The first is given back; the second is held, and the answer goes
+        // on with it.
+        let mut c = OscCapture::default();
+        c.expect_colors_at(at(0));
+        assert_eq!(c.feed_at(KeyCode::Esc, none, at(100)), (true, None));
+        assert_eq!(c.feed_at(KeyCode::Esc, none, at(200)), (true, None));
+        assert_eq!(c.take_released_at(at(200)), vec![KeyCode::Esc]);
+        let rest = &answer_keys(BG, Cut::AfterEsc)[1..];
+        let (swallowed, host) = feed_keys(&mut c, rest, at(300));
+        assert!(swallowed.iter().all(|s| *s) && host.is_some());
+    }
+
+    #[test]
+    fn a_whole_answer_after_a_held_escape_gives_the_escape_back() {
+        let t0 = Instant::now();
+        let at = |ms: u64| t0 + Duration::from_millis(ms);
+        // The user's Escape is held; then a whole answer comes (`Alt+]`).
+        let mut c = OscCapture::default();
+        c.expect_colors_at(at(0));
+        assert_eq!(
+            c.feed_at(KeyCode::Esc, KeyModifiers::NONE, at(100)),
+            (true, None)
+        );
+        answer_at(&mut c, BG, Cut::AfterOscStart, at(200));
+        assert_eq!(c.take_released_at(at(200)), vec![KeyCode::Esc]);
+        assert_eq!(c.owed, 1);
+    }
+
+    #[test]
+    fn every_closed_colour_answer_pays_one_also_when_its_colour_does_not_parse() {
+        let t0 = Instant::now();
+        let at = |ms: u64| t0 + Duration::from_millis(ms);
+        // At start: a background answer in a form that Tiza does not read,
+        // whole, and the text answer cut short. One is owed.
+        let read = "\x1b]11;rgba:1/2/3/4\x1b\\\x1b]10;rgb:1f1f/23";
+        assert_eq!(closed_answers(read), 1);
+        assert_eq!(
+            closed_answers("\x1b]11;rgb:1/2/3\x07\x1b]12;rgb:1/2/3\x07"),
+            1
+        );
+        let mut c = OscCapture::default();
+        c.owe_at(2 - closed_answers(read), at(0));
+        c.resume_at(
+            cut_answer(read.as_bytes(), Reports::default()).unwrap(),
+            at(0),
+        );
+        let (swallowed, _) = feed_keys(
+            &mut c,
+            &[
+                (KeyCode::Char('2'), KeyModifiers::NONE),
+                (KeyCode::Char('\\'), KeyModifiers::ALT),
+            ],
+            at(100),
+        );
+        assert_eq!(swallowed, vec![true, true]);
+        assert_eq!(c.owed, 0);
+        // In the key stream too: a closed answer whose colour does not parse
+        // pays.
+        let mut c = OscCapture::default();
+        c.expect_colors_at(at(0));
+        let (swallowed, host) = feed_keys(
+            &mut c,
+            &answer_keys("11;rgba:1/2/3/4", Cut::AfterOscStart),
+            at(100),
+        );
+        assert!(swallowed.iter().all(|s| *s) && host.is_none());
+        assert_eq!(c.owed, 1);
     }
 }

@@ -20,6 +20,7 @@ mod live_pointer;
 mod mouse;
 mod newer_moves;
 mod open_notice;
+mod owed_colour_answers;
 mod paste_in_each_mode;
 mod personal_defaults;
 mod personal_styles;
