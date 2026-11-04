@@ -2379,7 +2379,8 @@ fn take_saturation(take: &Take) -> usize {
     }
     // A margin of `room` cells: past every margin decision (14 cells),
     // past the callout rules (`auto` moves in at `width + 19`, the labels
-    // beside the blocks get their rows from `blocks + 14`), and with the
+    // beside the blocks keep their rows from `blocks + 14` when they fit
+    // there whole), and with the
     // longest label on one row after its `┆ ` and a gap, also beside the
     // blocks.
     let mut room = 14usize.max(3 + longest);

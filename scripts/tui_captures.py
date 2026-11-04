@@ -296,7 +296,7 @@ CAPTURES = [
         "args": ["--step", "4", "band.tiza"],
         "size": (122, 30),
         "ready": r"step 4\/5",
-        "do": [("wait", r"labels? cut"), ("shot", 0)],
+        "do": [("sleep", 500), ("shot", 0)],
     },
     {
         "id": "layout-band-stable",

@@ -9,8 +9,9 @@
 //! - Notes and legends go in the right margin when there are ≥ 14 cells;
 //!   otherwise in a virtual row below the line. This works in a 75-column terminal.
 //!   A line with two or more labels at the step draws them all below it,
-//!   also when the margin is there, and so does a line whose margin row a
-//!   callout's block leaves fewer than 14 cells beside.
+//!   also when the margin is there, and so does a line whose labels do not
+//!   fit whole beside the callout blocks on its margin row (never with
+//!   fewer than 14 cells there).
 
 use std::collections::BTreeMap;
 
@@ -644,8 +645,8 @@ fn layout_run(
     // something to move under its line:
     // - a margin callout with no room for its block on the rows of its own
     //   line is drawn as a block under its line, as the narrow layout does;
-    // - a line with a label whose margin row a block leaves fewer than 14
-    //   cells beside it puts its labels under itself.
+    // - a line whose labels do not fit whole beside the blocks on its margin
+    //   row (`labels_fit_beside`) puts its labels under itself.
     // Both sets only grow (the extra rows only give the blocks more room),
     // so this ends, after at most one plan more than they have members. A plan
     // places the rows and the blocks without drawing anything; the layout is
@@ -1497,6 +1498,8 @@ fn layout_pass(
     // Columns of the margin taken by callout blocks on each row; labels of
     // those rows are drawn to the right of the blocks when there is room.
     let mut shift = vec![0usize; height];
+    // The rows that a label of another line owns (step 7).
+    let reserved = label_rows(&rows, &margin).reserved;
     if labels_in_margin && margin_w > 0 {
         let mut order: Vec<(usize, usize)> = callouts
             .iter()
@@ -1538,15 +1541,18 @@ fn layout_pass(
                 }
             }
         }
-        // Labels of a row go to the right of the blocks on it when 14 cells
-        // are left there; otherwise the row is taken.
+        // Labels of a row go to the right of the blocks on it when they fit
+        // there whole; otherwise the row is taken, and they go under their
+        // line in the next run.
         for &(x, y, w, h) in &blocks {
             for s in &mut shift[y..y + h] {
                 *s = (*s).max(x + w + 1 - margin_x);
             }
         }
         for r in 0..height {
-            if shift[r] > 0 && margin_w.saturating_sub(shift[r]) < 14 {
+            let room = margin_w.saturating_sub(shift[r]);
+            let rows_there = rows_beside(&reserved, &shift, r);
+            if shift[r] > 0 && !labels_fit_beside(&margin[r], room, rows_there) {
                 shift[r] = 0;
                 occupied[r] = true;
             }
@@ -1567,8 +1573,8 @@ fn layout_pass(
         }
         // What of `under` these rows would leave in the margin. A callout:
         // its block in the margin finds room as a block of its line does,
-        // without the rows of its block under the line, and leaves 14 cells
-        // beside it on the rows with a margin label. A line: no block takes
+        // without the rows of its block under the line, and the labels of
+        // the rows it covers fit whole beside it (`labels_fit_beside`). A line: no block takes
         // its code row. Only a hint for `layout_run`: a plan without it
         // decides.
         let mut free = Under::default();
@@ -1595,7 +1601,14 @@ fn layout_pass(
                             }
                             let beside = margin_w.saturating_sub(x + w + 1 - margin_x);
                             x + w <= width
-                                && (beside >= 14 || covered.iter().all(|&r| margin[r].is_empty()))
+                                && covered.iter().all(|&r| {
+                                    margin[r].is_empty()
+                                        || labels_fit_beside(
+                                            &margin[r],
+                                            beside,
+                                            rows_beside(&reserved, &shift, r),
+                                        )
+                                })
                         });
                     if fits {
                         free.callouts.insert(vis[c.idx].id.clone());
@@ -2305,26 +2318,11 @@ fn layout_pass(
         // them, so it does not write over them or sit beside a line that has
         // labels of its own. A label of that same line continues on its rows
         // under it where step 6 left the margin blank.
-        let mut reserved: Vec<bool> = margin.iter().map(|l| !l.is_empty()).collect();
-        let mut owner: Vec<Option<usize>> = vec![None; height];
-        // The code row of the line each row is on.
-        let mut line_row: Vec<Option<usize>> = vec![None; height];
-        let mut code_row = None;
-        for (r, row) in rows.iter().enumerate() {
-            match row {
-                Row::Code(_) => code_row = Some(r),
-                Row::Under(_) => {
-                    reserved[r] = true;
-                    owner[r] = code_row;
-                    if let Some(c) = code_row {
-                        reserved[c] = true;
-                        owner[c] = Some(c);
-                    }
-                }
-                _ => {}
-            }
-            line_row[r] = code_row;
-        }
+        let LabelRows {
+            reserved,
+            owner,
+            line_row,
+        } = label_rows(&rows, &margin);
         let margin_blank: Vec<bool> = (0..height)
             .map(|r| {
                 (margin_x.saturating_sub(1)..width)
@@ -2345,7 +2343,7 @@ fn layout_pass(
             };
             for (k, l) in labels.iter().enumerate() {
                 label_painter(&mut canvas, &l.id);
-                let prefix = if l.note { "┆ " } else { "" };
+                let prefix = if l.note { NOTE_PREFIX } else { "" };
                 let style = if l.note {
                     base.fg(l.color).italic()
                 } else {
@@ -2600,6 +2598,83 @@ fn border_path(
 /// The end (exclusive) of the rows of the line on row `y`: up to the next
 /// code row, or the top row of a box before it, which belongs to the line
 /// after it.
+/// The rows of the margin that belong to a line's labels (step 7).
+struct LabelRows {
+    /// A row that holds a line's margin label, or a row under a line that
+    /// draws its labels there (step 6 wrote them across the margin), with
+    /// that line's code row. A continuation of another line never takes
+    /// one, so it does not write over it or sit beside a line that has
+    /// labels of its own.
+    reserved: Vec<bool>,
+    /// The code row of the line that owns a reserved row under a line.
+    owner: Vec<Option<usize>>,
+    /// The code row of the line each row is on.
+    line_row: Vec<Option<usize>>,
+}
+
+fn label_rows(rows: &[Row], margin: &[Vec<Label>]) -> LabelRows {
+    let height = rows.len();
+    let mut reserved: Vec<bool> = margin.iter().map(|l| !l.is_empty()).collect();
+    let mut owner: Vec<Option<usize>> = vec![None; height];
+    let mut line_row: Vec<Option<usize>> = vec![None; height];
+    let mut code_row = None;
+    for (r, row) in rows.iter().enumerate() {
+        match row {
+            Row::Code(_) => code_row = Some(r),
+            Row::Under(_) => {
+                reserved[r] = true;
+                owner[r] = code_row;
+                if let Some(c) = code_row {
+                    reserved[c] = true;
+                    owner[c] = Some(c);
+                }
+            }
+            _ => {}
+        }
+        line_row[r] = code_row;
+    }
+    LabelRows {
+        reserved,
+        owner,
+        line_row,
+    }
+}
+
+/// The prefix of a note in the margin (step 7).
+const NOTE_PREFIX: &str = "┆ ";
+
+/// Whether the margin labels of a row are drawn whole in the `room` cells
+/// to the right of the blocks on it, on at most `rows` rows: step 7 splits
+/// a label into words that go on in the rows below. Never with fewer than
+/// 14 cells. The rule of the blocks step and of the `free` hint, so that a
+/// label beside a block is whole or goes under its line, and a wider margin
+/// never cuts what a narrower one puts whole under the line.
+fn labels_fit_beside(labels: &[Label], room: usize, rows: usize) -> bool {
+    if room < 14 {
+        return false;
+    }
+    let mut used = 0;
+    for l in labels {
+        let prefix = if l.note { NOTE_PREFIX } else { "" };
+        let text_w = room.saturating_sub(display_width(prefix, 4) + 1);
+        let pieces = wrap_words(&l.text, text_w);
+        if pieces.iter().any(|p| display_width(p, 4) > text_w) {
+            return false;
+        }
+        used += pieces.len();
+    }
+    used <= rows
+}
+
+/// The rows a label of row `y` can take in the margin, as step 7 takes
+/// them: `y`, and the rows below it while no other line's label owns one
+/// (`reserved`) and the blocks take no more of it than of `y` (`shift`).
+fn rows_beside(reserved: &[bool], shift: &[usize], y: usize) -> usize {
+    1 + (y + 1..shift.len())
+        .take_while(|&k| shift[k] <= shift[y] && !reserved[k])
+        .count()
+}
+
 fn own_rows_end(rows: &[Row], y: usize) -> usize {
     (y + 1..rows.len())
         .find(|&r| matches!(rows[r], Row::Code(_) | Row::BoxTop(_)))

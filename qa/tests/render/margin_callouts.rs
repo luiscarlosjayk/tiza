@@ -78,6 +78,13 @@
 //! (`three-on-one-line.tiza` at 80 and 100 and `three-in-a-box.tiza` keep
 //! the callout under its line, as before). A row of a note under the line
 //! is still a row of the line (`later-steps.tiza` at 120).
+//!
+//! Beside the blocks, a row keeps its labels only when they fit whole there,
+//! on its row or split by words on the free rows below; otherwise they go
+//! under their line. With 14 cells or more and a longer label, the note of
+//! L2 of `later-steps.tiza` was cut beside the blocks, while a narrower
+//! margin put it whole under L2. The authoring screen lays it out without
+//! the stable geometry, so its margin is often wider: the tests run both.
 
 use serde_json::{Value, json};
 use tiza_core::check::{CheckOptions, check_document};
@@ -1145,5 +1152,155 @@ fn a_callout_that_goes_back_never_starts_beside_a_block_under_its_line() {
             rows[y].contains('╭') && rows[y + 1].contains("debug shows SQL"),
             "step {step}: the block of L3 does not start beside «┆ chatty»\n{t}"
         );
+    }
+}
+
+/// Each label that the layout of `name` cuts beside a margin block, at
+/// `width` columns of code and `step`, in the stable or the dynamic
+/// geometry: (id, the row of the canvas). A label is beside a block when a
+/// cell of a callout is on the row of its text, to the left of it.
+fn cut_beside_a_block(
+    doc: &tiza_core::Document,
+    width: usize,
+    step: u32,
+    stable: bool,
+) -> Vec<(String, usize)> {
+    let opts = tiza_core::layout::LayoutOptions {
+        width,
+        step,
+        stable,
+        ..Default::default()
+    };
+    let (layout, trace) =
+        tiza_core::layout::layout_traced(doc, &tiza_core::Theme::dark(), &opts, None);
+    let w = layout.canvas.width;
+    let callouts: Vec<&str> = doc
+        .annotations
+        .iter()
+        .filter(|a| matches!(a.shape, tiza_core::Shape::Callout { .. }))
+        .map(|a| a.id.as_str())
+        .collect();
+    let mut out = Vec::new();
+    for c in layout.clipped_labels.iter().filter(|c| !c.dropped) {
+        let cells = trace
+            .cells
+            .iter()
+            .filter(|(_, t)| trace.ids[t.ann] == c.id)
+            .map(|(&i, _)| (i % w, i / w));
+        for (x, y) in cells {
+            let beside = trace.cells.iter().any(|(&i, t)| {
+                i / w == y && i % w < x && callouts.contains(&trace.ids[t.ann].as_str())
+            });
+            if beside && !out.contains(&(c.id.clone(), y)) {
+                out.push((c.id.clone(), y));
+            }
+        }
+    }
+    out
+}
+
+/// The card's case: later-steps at step 4, 120 columns of code (a
+/// terminal of 122). Normal mode lays it out without the band of the box
+/// of step 5, so its margin has 2 columns more than the take's; the note
+/// of L2 did not fit beside the two blocks of L2 and was cut there
+/// («bearer head…»), while the take put it whole under L2. Now both put it
+/// whole under L2.
+#[test]
+fn a_note_that_does_not_fit_beside_the_blocks_goes_whole_under_its_line() {
+    let doc =
+        tiza_core::fs::load_document(std::path::Path::new(&path("later-steps.tiza"))).unwrap();
+    for stable in [true, false] {
+        for width in [119, 120, 121, 122] {
+            for step in 3..=5 {
+                let opts = tiza_core::layout::LayoutOptions {
+                    width,
+                    step,
+                    stable,
+                    ..Default::default()
+                };
+                let l = tiza_core::layout::layout(&doc, &tiza_core::Theme::dark(), &opts);
+                let text: String = (0..l.canvas.height)
+                    .map(|y| l.canvas.row_text(y) + "\n")
+                    .collect();
+                assert!(
+                    l.clipped_labels.is_empty(),
+                    "stable {stable}, {width}, step {step}: {:?}\n{text}",
+                    l.clipped_labels
+                );
+                assert!(
+                    text.contains("┆ bearer header"),
+                    "stable {stable}, {width}, step {step}: the note is not whole\n{text}"
+                );
+            }
+        }
+    }
+}
+
+/// The oracle: over every fixture of margin callouts, from 60 to 140
+/// columns, at every step, in the take and on the authoring screen, no
+/// label is cut beside a margin block. Beside the blocks a row keeps its
+/// labels only when they fit whole there (with the free rows below where a
+/// label goes on, split by words); otherwise they go under their line.
+#[test]
+fn no_label_is_cut_beside_a_margin_block_from_60_to_140() {
+    let dir = fixture("render/margin_callouts");
+    let mut docs: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.extension().is_some_and(|x| x == "tiza"))
+        .collect();
+    docs.sort();
+    assert!(
+        docs.len() >= 20,
+        "{} documents in {}",
+        docs.len(),
+        dir.display()
+    );
+    let mut layouts = 0;
+    let mut bad = Vec::new();
+    for p in &docs {
+        let doc = tiza_core::fs::load_document(p).unwrap();
+        for width in 60..=140 {
+            for step in 0..=doc.max_step() {
+                for stable in [true, false] {
+                    layouts += 1;
+                    for (id, y) in cut_beside_a_block(&doc, width, step, stable) {
+                        bad.push(format!(
+                            "{} at {width}, step {step}, stable {stable}: {id} on row {y}",
+                            p.file_name().unwrap().to_string_lossy()
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    assert!(layouts > 1000, "only {layouts} layouts");
+    assert!(
+        bad.is_empty(),
+        "{} cut beside a block:\n{}",
+        bad.len(),
+        bad.join("\n")
+    );
+}
+
+/// A note that goes on whole beside the block, split by words on the free
+/// rows below its line, stays there: it fits, so the row keeps it (p3 at
+/// 101-104, later-steps at step 2 and 91-92). Under its line it would only
+/// take one more row.
+#[test]
+fn a_note_that_goes_on_whole_beside_the_block_stays_there() {
+    for (name, step, widths, label) in [
+        ("p3.tiza", 1, 101..=104, "┆ sent as a"),
+        ("later-steps.tiza", 2, 91..=92, "┆ bearer"),
+    ] {
+        for w in widths {
+            let t = render_step(name, step, w, "txt");
+            let first = t.lines().find(|r| r.contains(label));
+            assert!(
+                first.is_some_and(|r| r.trim_start().starts_with("2 ") && r.contains('╭')),
+                "{name} at {w}: {label:?} is not beside the block on the row of L2\n{t}"
+            );
+            assert!(check_cuts(name, w).is_empty(), "{name} at {w}\n{t}");
+        }
     }
 }
