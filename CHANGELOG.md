@@ -10,6 +10,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 ### Fixed
 - In a terminal too narrow for its padding, `status` and the status bar measured the code at a width that the screen did not use. Now they use the width of the screen.
 - With `--theme auto` or the terminal theme, the rest of a cut color answer no longer comes as key presses after a resize. Before, the rest of an answer could show on the command line, for example `:1f1f/2323/2828\`. This occurred after two resizes in a row, or after a resize while the answers to the color query at start came late. Now Tiza counts the color answers that the terminal must still send: two for each color query. While the terminal must send an answer, Tiza keeps the `ESC` of a cut answer. When the `ESC` of the `ESC \` at the end of an answer comes alone, Tiza now keeps it too. Before, Tiza lost the color of that answer. An Escape that you type while Tiza reads the answers at start is no longer lost when an answer comes cut. Before, the command line stayed open. See [The color query](docs/reference/terminals.md#the-color-query).
+- With `--theme auto` or the terminal theme, a resize while Tiza reads the answers at start now sends the color query again. Before, Tiza kept the colors of the terminal before the resize until the next resize. See [The color query](docs/reference/terminals.md#the-color-query).
 
 ## [0.2.0] - 2026-10-30
 

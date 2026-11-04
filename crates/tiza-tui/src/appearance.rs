@@ -305,6 +305,10 @@ pub struct StartUp {
     /// whole ([`closed_answers`]). They can still come, as keys
     /// ([`OscCapture::start_up`]).
     pub owed: u32,
+    /// The size of the terminal (columns, rows) when Tiza asked: a resize
+    /// before the event loop listens for one asks again
+    /// ([`OscCapture::take_query_size`]). `None` when no size was read.
+    pub size: Option<(u16, u16)>,
 }
 
 /// Asks the terminal at start-up, before crossterm owns the input: raw mode
@@ -348,7 +352,10 @@ pub fn query_host(colors: bool) -> StartUp {
         String::new()
     };
     ask.push_str(PROBE_START);
-    let cols = rustix::termios::tcgetwinsize(&tty).map_or(0, |w| w.ws_col);
+    // The size before the query: a resize after it asks again. The width
+    // of the row is also for the room of the glyphs; unknown: no room.
+    let size = winsize(&tty);
+    let cols = size.map_or(0, |(cols, _)| cols);
     // The reports that the read waits for: the cursor, then one for each
     // glyph when they go.
     let mut expected = 1;
@@ -404,7 +411,22 @@ pub fn query_host(colors: bool) -> StartUp {
         wide: Wide::from_reports(&reports),
         typed,
         cut,
+        size,
     }
+}
+
+/// The size of terminal `tty` (columns, rows), when it says one.
+fn winsize(tty: &std::fs::File) -> Option<(u16, u16)> {
+    rustix::termios::tcgetwinsize(tty)
+        .ok()
+        .filter(|w| w.ws_col > 0 && w.ws_row > 0)
+        .map(|w| (w.ws_col, w.ws_row))
+}
+
+/// The size of the terminal that the colour query goes to (columns,
+/// rows), read as [`query_host`] reads it.
+pub fn host_size() -> Option<(u16, u16)> {
+    input_terminal().as_ref().and_then(winsize)
 }
 
 /// How many colour answers (OSC 11 and OSC 10) in `input` came whole, with
@@ -631,6 +653,9 @@ pub struct OscCapture {
     /// ([`OscCapture::restart_clock`]), or an answer that paid. An `ESC`
     /// that the capture holds is not one.
     last: Option<Instant>,
+    /// The size of the terminal when Tiza asked at start
+    /// ([`OscCapture::take_query_size`]).
+    query_size: Option<(u16, u16)>,
     /// How many times the capture gave keys back ([`OscCapture::given_back`]).
     given_back: u64,
 }
@@ -642,15 +667,17 @@ const CAPTURE_LIMIT: Duration = Duration::from_secs(1);
 impl OscCapture {
     /// Hands over what the start-up read left: `owed` colour answers that
     /// did not come whole, the answer that the end of the wait cut short
-    /// (`cut`, [`cut_answer`]). The TUI calls it after the keys typed during the read: they
+    /// (`cut`, [`cut_answer`]), and the size of the terminal when Tiza
+    /// asked. The TUI calls it after the keys typed during the read: they
     /// come without the answers ([`without_answers`]), so an `ESC` in them
     /// is the user's and is never held.
-    pub fn start_up(&mut self, owed: u32, cut: Option<String>) {
+    pub fn start_up(&mut self, owed: u32, cut: Option<String>, size: Option<(u16, u16)>) {
         let now = Instant::now();
         self.owe_at(owed, now);
         if let Some(cut) = cut {
             self.resume_at(cut, now);
         }
+        self.query_size = size;
     }
 
     /// Starts the capture with the beginning of an answer that the start-up
@@ -682,6 +709,13 @@ impl OscCapture {
         if answers > 0 {
             self.last = Some(now);
         }
+    }
+
+    /// The size of the terminal when Tiza asked at start, once. The TUI
+    /// compares it with the size when its loop starts to listen for a
+    /// resize: a resize between the two asks again.
+    pub fn take_query_size(&mut self) -> Option<(u16, u16)> {
+        self.query_size.take()
     }
 
     /// The one rule: an `ESC` alone (the Escape key) can be the start of an

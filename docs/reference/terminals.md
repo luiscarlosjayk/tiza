@@ -194,6 +194,7 @@ At start, Tiza turns on raw mode on that terminal for the wait. After the wait, 
 4. When something comes more than 200 ms after the color query and the width probe, Tiza stops after it reads it.
 
 - So the wait is 100 ms when the terminal does not answer and you do not type.
+- When the terminal changes size before the TUI starts to read keys, Tiza sends the color query again when the TUI starts. The answer to the new query sets the theme. When the size changes and then goes back to the size at start in that time, Tiza does not send the query again.
 - When data comes while Tiza waits, the wait can be almost 300 ms. For example, you type, or a slow answer comes over SSH.
 - When the terminal answers only OSC 11, Tiza uses that answer after 100 ms with no new data.
 - Tiza drops a paste or a mouse report that comes during the wait.

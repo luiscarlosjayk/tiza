@@ -114,7 +114,7 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
         .iter()
         .flat_map(|p| early_keys::keys(p))
         .collect();
-    let (owed, cut_answer) = (start_up.owed, start_up.cut);
+    let (owed, cut_answer, query_size) = (start_up.owed, start_up.cut, start_up.size);
     if let Some(s) = opts.step {
         app.set_step(s);
         // The step it opens at shows its final drawing, with no enter
@@ -233,9 +233,9 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     }
     // What the read left to the capture, after the keys typed before it
     // (an `ESC` among them is the user's, never the start of an answer):
-    // the colour answers still owed, which can come as keys, and the rest
-    // of an answer that the wait cut short.
-    app.osc.start_up(owed, cut_answer);
+    // the colour answers still owed, which can come as keys, the rest of
+    // an answer that the wait cut short, and the size when Tiza asked.
+    app.osc.start_up(owed, cut_answer, query_size);
     execute!(io::stdout(), EnableBracketedPaste)?;
     if app.mouse {
         let _ = execute!(io::stdout(), EnableMouseCapture);
@@ -556,6 +556,13 @@ fn event_loop(
     if let Err(e) = event::poll(Duration::ZERO) {
         return hung_up_or(hangup, e);
     }
+    // A resize after the colour query at start and before that poll came
+    // as no event: ask again, as for a resize from now on.
+    if let Some(asked) = app.osc.take_query_size()
+        && appearance::host_size().is_some_and(|now| now != asked)
+    {
+        ask_colors_again(app);
+    }
     let mut needs_draw = true;
     let mut mouse_captured = app.mouse;
     // While an enter effect plays: its start, and when its next frame is
@@ -670,12 +677,7 @@ fn event_loop(
                     needs_draw = true;
                 }
                 Event::Resize(_, _) => {
-                    // A theme change usually comes with a resize (or a
-                    // `kill -WINCH`): ask the terminal again; the answer
-                    // comes back through the key stream.
-                    if (app.theme_auto || app.theme.is_terminal()) && appearance::request_host() {
-                        app.osc.expect_colors();
-                    }
+                    ask_colors_again(app);
                     needs_draw = true;
                 }
                 Event::Mouse(m) => {
@@ -711,6 +713,16 @@ fn event_loop(
         if app.quit {
             return Ok(End::Quit);
         }
+    }
+}
+
+/// After a resize: a theme change usually comes with one (or with a
+/// `kill -WINCH`), so Tiza asks the terminal for its colours again, when
+/// the theme follows the terminal. The answers come back through the key
+/// stream, where the capture takes them ([`appearance::OscCapture`]).
+fn ask_colors_again(app: &mut App) {
+    if (app.theme_auto || app.theme.is_terminal()) && appearance::request_host() {
+        app.osc.expect_colors();
     }
 }
 
