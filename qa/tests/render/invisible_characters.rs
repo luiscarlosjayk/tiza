@@ -496,7 +496,11 @@ fn zwsp_note_is_whole_or_cut_with_an_ellipsis_at_every_width() {
     // says the same at that width and one column less (moved here from
     // step4_ac4_check_and_render_at_180_agree).
     let f = fixture("render/invisible_characters/zwsp-note.tiza");
-    let check_at = |w| tiza_ok(&["check", f.to_str().unwrap(), "--width", &format!("{w}")]);
+    // `tiza check` takes the terminal that has `w` columns of code.
+    let check_at = |w| {
+        let f = f.to_str().unwrap();
+        tiza_ok(&["check", f, "--width", &tiza_qa::check_width_for_code(f, w)])
+    };
     let at_clean = check_at(clean);
     assert!(at_clean.contains(" 0 warnings"), "{at_clean}");
     let below = check_at(clean - 1);

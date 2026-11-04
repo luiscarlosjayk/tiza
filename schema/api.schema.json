@@ -6635,14 +6635,14 @@
       }
     },
     {
-      "description": "Preflight of the live document, the same report as `tiza check --json`: run on the code and linked files inside the instance. `{width?}` (default: the `width` of the config file, else 100). Off the TUI thread, on a copy of the document: `revision` says which one it checked. At most one runs and one waits; a check at another width replaces the waiting one, which is answered `busy`",
+      "description": "Preflight of the live document, the same report as `tiza check --json`: run on the code and linked files inside the instance. `{width?}`: columns of code, as `render.text` takes them (default: the `width` of the config file, else 100); `tiza check --width` takes the width of a terminal and takes off its padding. Off the TUI thread, on a copy of the document: `revision` says which one it checked. At most one runs and one waits; a check at another width replaces the waiting one, which is answered `busy`",
       "method": "check",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "description": "Parameters of `check`.",
         "properties": {
           "width": {
-            "description": "Columns to check the labels and the code lines at; defaults to the\n`width` of the config file of the instance, else 100.",
+            "description": "Columns of code to check the labels and the code lines at, as\n`render.text` takes them (`tiza check --width` takes the width of a\nterminal and takes off its padding); defaults to the `width` of the\nconfig file of the instance, else 100.",
             "format": "uint",
             "minimum": 0,
             "type": [
@@ -6763,10 +6763,53 @@
               "clean"
             ],
             "type": "object"
+          },
+          "TerminalWidths": {
+            "description": "The widths of a report of `tiza check`, in columns of the terminal.",
+            "properties": {
+              "min_clean_width": {
+                "description": "[`Report::min_clean_width`] in columns of the terminal.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "narrower": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Narrower"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "[`Report::narrower`] in columns of the terminal."
+              },
+              "padding": {
+                "description": "The blank columns that the document's `padding` (else the config\nfile's `pad`, else 1) asks for at each side of the code. A terminal\nnarrower than 20 columns of code plus this padding keeps less.",
+                "format": "uint16",
+                "maximum": 65535,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "width": {
+                "description": "The width of the terminal that was checked (`--width`, else the\nconfig file's `width`, else 100). `width` of the report is its\ncolumns of code.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "width",
+              "padding"
+            ],
+            "type": "object"
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "description": "Result of the live `check`: the report of `tiza check --json`,\nfield for field, plus the revision of the document it checked. The\ncheck runs off the TUI thread on a copy of the document, so a change\nmade while it runs is not in it, and one that waited for another check\nmay be about a revision later than the call: compare `revision` with\nthe one `status` or a mutation gave, and check again.",
+        "description": "Result of the live `check`: the report of `tiza check --json`,\nfield for field, without `terminal` (its `width` is columns of code),\nplus the revision of the document it checked. The\ncheck runs off the TUI thread on a copy of the document, so a change\nmade while it runs is not in it, and one that waited for another check\nmay be about a revision later than the call: compare `revision` with\nthe one `status` or a mutation gave, and check again.",
         "properties": {
           "errors": {
             "format": "uint",
@@ -6818,13 +6861,24 @@
             "minimum": 0,
             "type": "integer"
           },
+          "terminal": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TerminalWidths"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Only from `tiza check`, which takes the width of a terminal: that\nwidth, the side padding, and the widths above in columns of the\nterminal. The `check` method of the socket and MCP takes columns of\ncode and leaves it out."
+          },
           "warnings": {
             "format": "uint",
             "minimum": 0,
             "type": "integer"
           },
           "width": {
-            "description": "The width the labels were checked at.",
+            "description": "The width the labels were checked at, in columns of code (the\nterminal less its side padding: see `terminal`).",
             "format": "uint",
             "minimum": 0,
             "type": "integer"

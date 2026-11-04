@@ -124,14 +124,20 @@ fn not_shown(f: &[Value]) -> Vec<(String, u64)> {
         .collect()
 }
 
+/// `tiza check --json` of `path`, as the live check gives it at its default
+/// width (100 columns of code): `tiza check` takes the terminal that has
+/// them.
 fn check_file(path: &Path) -> Value {
+    let width = tiza_qa::check_width_for_code(path.to_str().unwrap(), 100);
     let out = tiza_qa::command()
-        .args(["check", "--json"])
+        .args(["check", "--json", "--width", &width])
         .arg(path)
         .output()
         .unwrap();
-    serde_json::from_slice(&out.stdout)
-        .unwrap_or_else(|e| panic!("{e}: {}", String::from_utf8_lossy(&out.stdout)))
+    tiza_qa::as_live_report(
+        serde_json::from_slice(&out.stdout)
+            .unwrap_or_else(|e| panic!("{e}: {}", String::from_utf8_lossy(&out.stdout))),
+    )
 }
 
 fn check_text(path: &Path) -> String {

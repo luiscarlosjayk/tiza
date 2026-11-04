@@ -99,17 +99,15 @@ fn blit(canvas: &Canvas, rows: std::ops::Range<usize>, area: Rect, buf: &mut Buf
     }
 }
 
-/// Blank cells kept between the terminal edge and the drawing when the
-/// document does not set `padding` (`:pad V H`).
-pub const DEFAULT_PADDING: (u16, u16) = (0, 1);
+pub use tiza_core::layout::DEFAULT_PADDING;
 
 /// Padding that fits a terminal of `size` with `status_h` rows at the
 /// bottom that are not code ([`App::status_rows`]): the code keeps at least
-/// 20 columns and three rows.
+/// three rows, and the columns of [`tiza_core::layout::side_padding`].
 pub fn clamp_padding(pad: (u16, u16), size: (u16, u16), status_h: u16) -> (u16, u16) {
     (
         pad.0.min(size.1.saturating_sub(status_h + 3) / 2),
-        pad.1.min(size.0.saturating_sub(20) / 2),
+        tiza_core::layout::side_padding(pad.1, usize::from(size.0)),
     )
 }
 

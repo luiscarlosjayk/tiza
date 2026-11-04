@@ -1080,7 +1080,8 @@ pub struct Mutated {
 }
 
 /// Result of the live `check`: the report of `tiza check --json`,
-/// field for field, plus the revision of the document it checked. The
+/// field for field, without `terminal` (its `width` is columns of code),
+/// plus the revision of the document it checked. The
 /// check runs off the TUI thread on a copy of the document, so a change
 /// made while it runs is not in it, and one that waited for another check
 /// may be about a revision later than the call: compare `revision` with
@@ -1278,7 +1279,7 @@ pub const METHODS: &[(&str, &str)] = &[
     ),
     (
         "check",
-        "Preflight of the live document, the same report as `tiza check --json`: run on the code and linked files inside the instance. `{width?}` (default: the `width` of the config file, else 100). Off the TUI thread, on a copy of the document: `revision` says which one it checked. At most one runs and one waits; a check at another width replaces the waiting one, which is answered `busy`",
+        "Preflight of the live document, the same report as `tiza check --json`: run on the code and linked files inside the instance. `{width?}`: columns of code, as `render.text` takes them (default: the `width` of the config file, else 100); `tiza check --width` takes the width of a terminal and takes off its padding. Off the TUI thread, on a copy of the document: `revision` says which one it checked. At most one runs and one waits; a check at another width replaces the waiting one, which is answered `busy`",
     ),
     (
         "follow.set",

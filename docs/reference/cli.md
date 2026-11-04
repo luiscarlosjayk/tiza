@@ -66,7 +66,7 @@ tiza examples/ownership.rs.tiza --present   # open a document in presentation mo
 
 | Flag | Command | What it does |
 |---|---|---|
-| `--width N` | `tiza check` | Checks the labels and the code lines at `N` columns. The default is `width` of the config file, else 100. |
+| `--width N` | `tiza check` | Checks the labels and the code lines in a terminal of `N` columns, as the TUI shows them. The side padding comes off `N`: the `padding` of the document, else `pad` of the config file, else 1 column at each side. The default is `width` of the config file, else 100. |
 | `--json` | `tiza check` | Prints the findings as JSON. |
 | `--strict` | `tiza check` | Exits with code 1 also for warnings. |
 | `--width N` | `tiza scene text` | Prints the take at `N` columns, in place of the width of the screen. |
@@ -177,12 +177,15 @@ Tiza keeps the language in the document. `:lang` saves it with autosave on. `--l
 | `ok` | `true` when the check found no error. |
 | `errors` | The number of errors. |
 | `warnings` | The number of warnings. |
-| `width` | The width of the check. |
+| `width` | The columns of code of the check: the terminal less its side padding. |
 | `max_step` | The last step of the document. It is not there when the document does not load. |
 | `min_clean_width` | The narrowest width from which no label is cut, or `null`. |
 | `narrower` | The narrower widths that are clean too: `clean`, `code_fits_from` and `margin_from`. |
+| `terminal` | The terminal of the check: its `width`, the `padding` at each side, and `min_clean_width` and `narrower` in columns of the terminal. |
 | `findings` | The list of findings. |
 
+- `min_clean_width` and `narrower` are in columns of code. Give them to `tiza render --width`, which has no padding. To pick the width of the terminal, use the values in `terminal`.
+- The messages of the findings give the width of the terminal. A `clipped_code` message also gives the columns of code for `tiza render`.
 - `min_clean_width` is `null` when the document does not load, or when no width up to 400 shows each label.
 - `narrower` is there only when `width` is under `min_clean_width` and no label is cut at `width`.
 - Each finding has `level`, `code` and `message`. It also has `id`, `step`, `file`, `line` and `text` when they apply.

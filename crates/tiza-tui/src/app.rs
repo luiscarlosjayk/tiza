@@ -1386,26 +1386,15 @@ impl App {
         if cols == 0 || rows == 0 {
             return tiza_core::check::DEFAULT_WIDTH;
         }
-        let (_, pad_h) =
-            crate::ui::clamp_padding(self.effective_padding(), (cols, rows), self.status_rows());
-        usize::from(cols.saturating_sub(2 * pad_h)).max(1)
+        tiza_core::layout::code_columns(usize::from(cols), self.effective_padding().1).max(1)
     }
 
     /// The terminal width from which the screen lays the code out at
-    /// `width` cells or more: the first number of columns that
-    /// [`App::screen_width`] turns into `width`, its side padding taken
-    /// off. What `code needs N cols` names.
+    /// `width` cells or more, there and in every wider terminal
+    /// ([`App::screen_width`], its side padding taken off). What `code
+    /// needs N cols` names, and `tiza check` too.
     pub fn columns_for(&self, width: usize) -> usize {
-        let rows = self.size.1;
-        let status_h = self.status_rows();
-        (width..=usize::from(u16::MAX))
-            .find(|&cols| {
-                let c = cols as u16;
-                let (_, pad_h) =
-                    crate::ui::clamp_padding(self.effective_padding(), (c, rows), status_h);
-                usize::from(c.saturating_sub(2 * pad_h)) >= width
-            })
-            .unwrap_or(width)
+        tiza_core::layout::terminal_columns_for(width, self.effective_padding().1)
     }
 
     /// The labels cut with `…` or left out at the screen's width (within
@@ -9008,6 +8997,7 @@ impl App {
                         &tiza_core::check::CheckOptions {
                             width: width.or(self.config_defaults.width),
                             numbers: self.config_defaults.numbers,
+                            ..Default::default()
                         },
                     ),
                     revision: self.revision,
@@ -9180,8 +9170,9 @@ impl App {
         if cols == 0 || rows == 0 {
             return Vec::new();
         }
-        let (_, pad_h) = self.effective_padding();
-        let width = (cols as usize).saturating_sub(2 * pad_h as usize).max(1);
+        // The width the screen lays the code out at, with its padding as
+        // the frame keeps it in a narrow terminal.
+        let width = self.screen_width();
         // What the last frame laid out at this width, when nothing it
         // depends on changed since; else laid out once and kept.
         let key = self.viewport_key(width);

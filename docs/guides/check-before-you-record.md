@@ -9,14 +9,16 @@ Tiza is a terminal tool that draws annotations on code. To install it, see [Inst
 1. Run `tiza check demo.tiza`. It loads the document as the TUI does, and lists every problem at once.
 2. Fix the errors. When there is an error, `tiza check` exits with 1.
 3. Read the warnings. Add `--strict` to make a warning also exit with 1.
-4. Pick the width. The last line of the report gives the narrowest width from which no label is cut. Use that width or more. A `clipped_code` warning gives the width from which no code line is cut, or tells you that no width up to 400 shows every code line whole.
+4. Pick the width of the terminal. The last line of the report gives the narrowest width from which no label is cut. Use that width or more. A `clipped_code` warning gives the width from which no code line is cut, or tells you that no width up to 400 shows every code line whole.
 5. Use demo values for tokens, passwords and credentials. The audience sees what is in the file.
 6. Set up the terminal. See [Terminal and font](#terminal-and-font).
 7. Before you record, type `:layout stable`, which shows the take, and go through the steps in normal mode. Look for a `!` badge on the status bar. See [Badges on the status bar](#badges-on-the-status-bar).
 
 ## What check reports
 
-`tiza check` does not change any file. It checks the labels and the code lines at the width that you record at: the `width` of your config file, else 100 columns, or `--width N`.
+`tiza check` does not change any file. It checks the labels and the code lines in a terminal as wide as the one that you record in: `--width N`, else the `width` of your config file, else 100 columns.
+
+The TUI keeps blank columns at each side of the code, so the code has fewer columns than the terminal. `tiza check` takes the same columns off the width: the `padding` of the document, else `pad` of your config file, else 1 column at each side. For example, a document with `"padding": [1, 2]` in a terminal of 100 columns has 96 columns of code.
 
 The table gives the usual problems. Each finding in the JSON output also has a `code`.
 
@@ -61,16 +63,22 @@ warning: step 7: nothing new on this step: the presenter presses a key and nothi
 
 ### The width line
 
-The report ends with the narrowest width from which no label is cut, at that width and at each wider width. For example, for `examples/ownership.rs.tiza`, the line is:
+The summary line gives the width of the terminal, its columns of code and the padding. For example, for `examples/ownership.rs.tiza`:
 
 ```
-no label is clipped at 91 or wider (`tiza render --width 91`)
+examples/ownership.rs.tiza: 0 errors, 0 warnings (steps 0-6, labels at width 100: 96 columns of code, padding 2)
+```
+
+The report ends with the narrowest width of the terminal from which no label is cut, at that width and at each wider width. In parentheses, it gives the columns of code at that width: the width for `tiza render`, which has no padding. For example:
+
+```
+no label is clipped at 95 or wider (91 columns of code: `tiza render --width 91`)
 ```
 
 At a narrow width, notes go under their lines. Then a narrower width can be clean again. When you ask for such a width, the report gives that range too. For example, with `--width 80`:
 
 ```
-no label is clipped at 91 or wider; 70-84 are clean too (notes go under the lines below 85 columns)
+no label is clipped at 95 or wider; 74-88 are clean too (notes go under the lines below 89 columns)
 ```
 
 - When no width up to 400 shows each label, the line is `no width up to 400 shows every label whole: shorten the labels`.
@@ -85,7 +93,7 @@ The status bar shows the terminal size as `COLS×ROWS`. It shows a `!` badge onl
 | `! N labels cut` | `N` labels or notes are cut with `…`, or are not drawn. |
 | `! code needs N cols` | A code line is cut. |
 
-- In `! code needs N cols`, `N` is the narrowest terminal width that shows every code line of the step.
+- In `! code needs N cols`, `N` is the narrowest terminal width that shows every code line of the step. `tiza check` gives the same width, unless the TUI runs with `--padding`.
 - In normal mode, the badge tells what the screen cuts, and `tiza check` tells what the take cuts. With `:layout dynamic`, the default, the screen at an earlier step has no space yet for the arrows, the boxes and the code of later steps, so the two can differ. See [`:layout`](../reference/commands/view.md#layout).
 - The status bar shows one badge at a time. `! code needs N cols` comes before `! N labels cut`.
 - When the status bar has no space, `! N labels cut` gets shorter and shows only `!`.
@@ -123,6 +131,7 @@ A document of three lines with one long label, at 70 columns: an image of the TU
 
 A live instance gives the same report for the document that it holds. The report includes the changes that are not saved. Use `tiza api check '{"width": 108}'`, or the MCP tool `check`.
 
+- Its `width` is the columns of code, as `render_text` takes them, not the width of a terminal. The report has no `terminal`.
 - Only a live instance gives `stale` findings.
 - The reply of a live instance also has `revision`.
 

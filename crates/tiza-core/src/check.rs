@@ -18,8 +18,8 @@ use serde::Serialize;
 
 use crate::canvas::Canvas;
 use crate::layout::{
-    LayoutOptions, MAX_WIDTH, MIN_WIDTH, StableGeometry, layout_measures, layout_with,
-    stable_geometry,
+    DEFAULT_PADDING, LayoutOptions, MAX_WIDTH, MIN_WIDTH, StableGeometry, code_columns,
+    layout_measures, layout_with, stable_geometry, terminal_columns_for,
 };
 use crate::model::{CodeSource, Document, SCHEMA_VERSION, Shape, sanitize_texts};
 use crate::moves::{self, Move, MoveAction, ViewKey, Wait};
@@ -136,11 +136,72 @@ impl Finding {
 #[derive(Debug, Clone, Default)]
 pub struct CheckOptions {
     /// Width to check the labels and the code lines at; `None`:
-    /// [`DEFAULT_WIDTH`].
+    /// [`DEFAULT_WIDTH`]. Columns of code, or of a terminal with
+    /// `terminal`.
     pub width: Option<usize>,
     /// The gutter when the document does not set `numbers` (the config
     /// file's default); `None`: on.
     pub numbers: Option<bool>,
+    /// `tiza check`: `width` is the width of a terminal, and the side
+    /// padding of the TUI comes off it, as on the screen. The report then
+    /// says its widths in columns of the terminal too ([`Report::terminal`]).
+    /// The socket's `check` leaves it off: its width is columns of code, as
+    /// `render.text` takes them.
+    pub terminal: bool,
+    /// The padding when the document does not set `padding` (the config
+    /// file's `pad`); `None`: [`DEFAULT_PADDING`]. Only with `terminal`.
+    pub pad: Option<(u16, u16)>,
+}
+
+/// The width that `check` lays the take out at, and how its report says
+/// a width.
+#[derive(Debug, Clone, Copy)]
+struct Frame {
+    /// The width asked for.
+    asked: usize,
+    /// With a terminal: the blank columns asked at each side of the code.
+    pad: Option<u16>,
+}
+
+impl Frame {
+    /// The frame of `opts` for a document whose `padding` is `doc_pad`.
+    fn of(opts: &CheckOptions, doc_pad: Option<(u16, u16)>) -> Self {
+        Frame {
+            asked: opts.width.unwrap_or(DEFAULT_WIDTH),
+            pad: opts
+                .terminal
+                .then(|| doc_pad.or(opts.pad).unwrap_or(DEFAULT_PADDING).1),
+        }
+    }
+
+    /// The columns of code that the take is laid out at.
+    fn code(self) -> usize {
+        self.pad.map_or(self.asked, |p| code_columns(self.asked, p))
+    }
+
+    /// The width from which the take has `code` columns or more, as the
+    /// report says it.
+    fn from(self, code: usize) -> usize {
+        self.pad.map_or(code, |p| terminal_columns_for(code, p))
+    }
+}
+
+/// The widths of a report of `tiza check`, in columns of the terminal.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, schemars::JsonSchema)]
+pub struct TerminalWidths {
+    /// The width of the terminal that was checked (`--width`, else the
+    /// config file's `width`, else 100). `width` of the report is its
+    /// columns of code.
+    pub width: usize,
+    /// The blank columns that the document's `padding` (else the config
+    /// file's `pad`, else 1) asks for at each side of the code. A terminal
+    /// narrower than 20 columns of code plus this padding keeps less.
+    pub padding: u16,
+    /// [`Report::min_clean_width`] in columns of the terminal.
+    pub min_clean_width: Option<usize>,
+    /// [`Report::narrower`] in columns of the terminal.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub narrower: Option<Narrower>,
 }
 
 /// Everything `check` found about one document.
@@ -150,7 +211,8 @@ pub struct Report {
     pub ok: bool,
     pub errors: usize,
     pub warnings: usize,
-    /// The width the labels were checked at.
+    /// The width the labels were checked at, in columns of code (the
+    /// terminal less its side padding: see `terminal`).
     pub width: usize,
     /// Last step of the document (`None` when it could not be loaded).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -165,6 +227,12 @@ pub struct Report {
     /// widths are clean too.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub narrower: Option<Narrower>,
+    /// Only from `tiza check`, which takes the width of a terminal: that
+    /// width, the side padding, and the widths above in columns of the
+    /// terminal. The `check` method of the socket and MCP takes columns of
+    /// code and leaves it out.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub terminal: Option<TerminalWidths>,
     pub findings: Vec<Finding>,
 }
 
@@ -202,7 +270,7 @@ fn ranges_text(r: &[[usize; 2]]) -> String {
 
 impl Report {
     fn new(
-        width: usize,
+        frame: Frame,
         mut findings: Vec<Finding>,
         max_step: Option<u32>,
         clean: Option<usize>,
@@ -214,12 +282,43 @@ impl Report {
             ok: errors == 0,
             errors,
             warnings: findings.len() - errors,
-            width,
+            width: frame.code(),
             max_step,
             min_clean_width: clean,
             narrower: None,
+            terminal: frame.pad.map(|padding| TerminalWidths {
+                width: frame.asked,
+                padding,
+                min_clean_width: clean.map(|c| frame.from(c)),
+                narrower: None,
+            }),
             findings,
         }
+    }
+
+    /// Sets `narrower`, and its widths in columns of the terminal.
+    fn set_narrower(&mut self, frame: Frame, n: Narrower) {
+        if let (Some(t), Some(pad)) = (&mut self.terminal, frame.pad) {
+            // A terminal is clean when its columns of code are: each width
+            // below the clean one, laid out as the screen would.
+            let top = t.min_clean_width.unwrap_or(MIN_WIDTH);
+            let mut clean: Vec<[usize; 2]> = Vec::new();
+            for cols in MIN_WIDTH..top {
+                let code = code_columns(cols, pad);
+                if n.clean.iter().any(|[a, b]| (*a..=*b).contains(&code)) {
+                    match clean.last_mut() {
+                        Some(r) if r[1] + 1 == cols => r[1] = cols,
+                        _ => clean.push([cols, cols]),
+                    }
+                }
+            }
+            t.narrower = Some(Narrower {
+                clean,
+                code_fits_from: n.code_fits_from.map(|c| frame.from(c)),
+                margin_from: n.margin_from.map(|c| frame.from(c)),
+            });
+        }
+        self.narrower = Some(n);
     }
 
     /// The report for a terminal: one line per finding, a summary, and the
@@ -231,18 +330,37 @@ impl Report {
             out.push('\n');
         }
         let plural = |n: usize, w: &str| format!("{n} {w}{}", if n == 1 { "" } else { "s" });
+        // `tiza check` says the terminal and its columns of code.
+        let at = match &self.terminal {
+            Some(t) => format!(
+                "width {}: {} columns of code, padding {}",
+                t.width, self.width, t.padding
+            ),
+            None => format!("width {}", self.width),
+        };
         out.push_str(&format!(
             "{name}: {}, {}{}\n",
             plural(self.errors, "error"),
             plural(self.warnings, "warning"),
             match self.max_step {
-                Some(0) => format!(" (step 0 only, labels at width {})", self.width),
-                Some(m) => format!(" (steps 0-{m}, labels at width {})", self.width),
+                Some(0) => format!(" (step 0 only, labels at {at})"),
+                Some(m) => format!(" (steps 0-{m}, labels at {at})"),
                 None => String::new(),
             }
         ));
+        let (min_clean, narrower) = match &self.terminal {
+            Some(t) => (t.min_clean_width, &t.narrower),
+            None => (self.min_clean_width, &self.narrower),
+        };
+        // The width to give `tiza render`, which has no padding.
+        let render = |w: usize| match (&self.terminal, self.min_clean_width) {
+            (Some(_), Some(code)) => {
+                format!("{code} columns of code: `tiza render --width {code}`")
+            }
+            _ => format!("`tiza render --width {w}`"),
+        };
         if self.max_step.is_some() {
-            match (self.min_clean_width, &self.narrower) {
+            match (min_clean, narrower) {
                 (Some(w), Some(n)) => {
                     let under = n
                         .margin_from
@@ -265,7 +383,8 @@ impl Report {
                     });
                 }
                 (Some(w), None) => out.push_str(&format!(
-                    "no label is clipped at {w} or wider (`tiza render --width {w}`)\n"
+                    "no label is clipped at {w} or wider ({})\n",
+                    render(w)
                 )),
                 (None, _) => out.push_str(&format!(
                     "no width up to {MAX_WIDTH} shows every label whole: shorten the labels\n"
@@ -308,7 +427,8 @@ fn check_text_as(
     opts: &CheckOptions,
     main: Option<CodeSource>,
 ) -> Report {
-    let width = opts.width.unwrap_or(DEFAULT_WIDTH);
+    // Until the document loads, the padding of the config file.
+    let frame = Frame::of(opts, None);
     let mut out: Vec<Finding> = Vec::new();
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     // ---- the format ----
@@ -319,7 +439,7 @@ fn check_text_as(
                 Finding::new(Level::Error, "schema", format!("not valid JSON: {e}"))
                     .line(Some(e.line() as u32)),
             );
-            return Report::new(width, out, None, None);
+            return Report::new(frame, out, None, None);
         }
     };
     let found = raw.get("schema").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
@@ -331,7 +451,7 @@ fn check_text_as(
                 ".tiza document with schema {found}: this version of Tiza reads schema {SCHEMA_VERSION} at most"
             ),
         ));
-        return Report::new(width, out, None, None);
+        return Report::new(frame, out, None, None);
     }
     let migrated = crate::fs::MIGRATIONS.iter().any(|(from, _)| found <= *from);
     for (from, migrate) in crate::fs::MIGRATIONS {
@@ -374,10 +494,12 @@ fn check_text_as(
                 )
                 .line(line),
             );
-            return Report::new(width, out, None, None);
+            return Report::new(frame, out, None, None);
         }
     };
     doc.schema = SCHEMA_VERSION;
+    // From here on, the document's own padding.
+    let frame = Frame::of(opts, doc.padding);
     doc.unknown_effects = crate::model::UnknownEffects(unknown);
     doc.newer_moves = newer;
     // The gutter the take draws when the document leaves it to the config.
@@ -387,7 +509,7 @@ fn check_text_as(
     // ---- the code ----
     if let Err(e) = crate::fs::resolve_code(&mut doc, base_dir) {
         out.push(Finding::new(Level::Error, "code", e.to_string()));
-        return Report::new(width, out, None, None);
+        return Report::new(frame, out, None, None);
     }
     if let Some(src @ CodeSource::File { .. }) = main {
         doc.code_src = src;
@@ -396,20 +518,21 @@ fn check_text_as(
     // `u32::MAX` is one error, before anything is laid out step by step.
     if let Err(e) = doc.check_bounds() {
         out.push(Finding::new(Level::Error, "bounds", e.to_string()));
-        return Report::new(width, out, None, None);
+        return Report::new(frame, out, None, None);
     }
     let missing = load_links(&mut doc, base_dir, &mut out);
     let doc = tidy(doc, &missing, &mut out);
+    let width = frame.code();
     let take = Take::of(&doc);
     let theme = Theme::dark();
-    let clean = check_loaded(&doc, &take, &theme, &missing, width, &mut out);
+    let clean = check_loaded(&doc, &take, &theme, &missing, frame, &mut out);
     let max = last_step(&doc);
-    let mut report = Report::new(width, out, Some(max), clean);
+    let mut report = Report::new(frame, out, Some(max), clean);
     if let Some(c) = clean
         && width < c
         && !report.findings.iter().any(|f| f.code == "clipped_label")
     {
-        report.narrower = Some(narrower(&take, &theme, c));
+        report.set_narrower(frame, narrower(&take, &theme, c));
     }
     report
 }
@@ -439,7 +562,7 @@ pub fn check_document(doc: &Document, base_dir: Option<&Path>, opts: &CheckOptio
             report
         }
         Err(e) => Report::new(
-            opts.width.unwrap_or(DEFAULT_WIDTH),
+            Frame::of(opts, doc.padding),
             vec![Finding::new(Level::Error, "schema", e.to_string())],
             None,
             None,
@@ -1545,9 +1668,10 @@ fn check_loaded(
     take: &Take,
     theme: &Theme,
     missing: &BTreeSet<String>,
-    width: usize,
+    frame: Frame,
     out: &mut Vec<Finding>,
 ) -> Option<usize> {
+    let width = frame.code();
     let max = last_step(doc);
     // Annotations already reported as broken: not reported again as hidden.
     let mut bad: BTreeSet<String> = BTreeSet::new();
@@ -1765,7 +1889,7 @@ fn check_loaded(
         let mut f = Finding::new(
             Level::Warning,
             "clipped_label",
-            format!("label «{text}» {how} {}", at_steps(width, &steps)),
+            format!("label «{text}» {how} {}", at_steps(frame.asked, &steps)),
         )
         .id(id)
         .step(steps[0])
@@ -1776,6 +1900,12 @@ fn check_loaded(
     }
     // ---- code lines cut with … at the width of the take ----
     let fits = match at.code_fits {
+        // `tiza check` says the terminal, and the columns of code for
+        // `tiza render`, which has no padding.
+        Some(c) if c <= MAX_WIDTH && frame.pad.is_some() => format!(
+            "every code line of the take fits from width {} ({c} columns of code: `tiza render --width {c}`)",
+            frame.from(c)
+        ),
         Some(c) if c <= MAX_WIDTH => {
             format!("every code line of the take fits from width {c}, `tiza render --width {c}`")
         }
@@ -1814,7 +1944,7 @@ fn check_loaded(
                 "clipped_code",
                 format!(
                     "code is cut with «…» {}: {which} ({fits})",
-                    at_steps(width, &steps)
+                    at_steps(frame.asked, &steps)
                 ),
             )
             .step(steps[0])
@@ -2500,7 +2630,7 @@ mod tests {
             for width in [40, 100] {
                 let opts = CheckOptions {
                     width: Some(width),
-                    numbers: None,
+                    ..CheckOptions::default()
                 };
                 let fast = check_text(&text, None, &opts);
                 FULL_LAYOUTS.with(|f| f.set(true));

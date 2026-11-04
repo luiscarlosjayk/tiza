@@ -318,6 +318,80 @@ pub fn tiza_ok(args: &[&str]) -> String {
     String::from_utf8(out.stdout).unwrap()
 }
 
+/// The blank columns that the `.tiza` at `file` asks for at each side of
+/// the code: its `padding`, else 1 (the tests run with no config file).
+/// Read from the file by hand, not with Tiza's rule.
+pub fn side_padding_of(file: &str) -> usize {
+    let text = std::fs::read_to_string(file).unwrap_or_else(|e| panic!("{file}: {e}"));
+    let doc: serde_json::Value =
+        serde_json::from_str(&text).unwrap_or_else(|e| panic!("{file}: {e}"));
+    doc["padding"][1].as_u64().map_or(1, |p| p as usize)
+}
+
+/// The width to give `tiza check` so that it lays `file` out at `code`
+/// columns of code: the width of `tiza render --width`, `render.text` and
+/// the socket's `check`. `tiza check` takes the width of a terminal and
+/// takes off its side padding, as the TUI does. By hand: `code` + 2 × the
+/// padding ([`side_padding_of`]); from 20 columns of code on, no padding is
+/// cut.
+pub fn check_width_for_code(file: &str, code: usize) -> String {
+    assert!(
+        code >= 20,
+        "{code}: below 20 columns of code the padding is cut"
+    );
+    (code + 2 * side_padding_of(file)).to_string()
+}
+
+/// A report of `tiza check --json` as the socket's `check` gives it: without
+/// `terminal`, which only the command line adds, and with the widths of its
+/// messages in columns of code. `tiza check` says the terminal in a message
+/// (`at width 102`, `fits from width 120 (118 columns of code: …)`); the
+/// socket's `check`, the columns of code (`at width 100`, `fits from width
+/// 118, …`). The width that `tiza render` takes is the same in both.
+pub fn as_live_report(mut cli: serde_json::Value) -> serde_json::Value {
+    let Some(o) = cli.as_object_mut() else {
+        return cli;
+    };
+    let Some(t) = o.remove("terminal") else {
+        return cli;
+    };
+    let (asked, code) = (t["width"].clone(), o["width"].clone());
+    for f in o
+        .get_mut("findings")
+        .and_then(|f| f.as_array_mut())
+        .into_iter()
+        .flatten()
+    {
+        let Some(m) = f["message"].as_str() else {
+            continue;
+        };
+        let mut m = m.replace(&format!("at width {asked},"), &format!("at width {code},"));
+        if let Some(head) = m.strip_suffix(&format!("at width {asked}")) {
+            m = format!("{head}at width {code}");
+        }
+        // `fits from width T (C columns of code: `tiza render --width C`)`
+        // becomes `fits from width C, `tiza render --width C``.
+        const FITS: &str = "fits from width ";
+        const CODE: &str = " columns of code: `tiza render --width ";
+        if let Some(at) = m.find(FITS)
+            && let Some(open) = m[at..].find(" (")
+            && let Some(close) = m[at..].find("`)")
+        {
+            let (open, close) = (at + open, at + close);
+            let inner = &m[open + 2..close];
+            if let Some((c, rest)) = inner.split_once(CODE)
+                && c == rest
+            {
+                let live = format!("{c}, `tiza render --width {c}`");
+                // Through the `)` that closes the parenthesis.
+                m.replace_range(at + FITS.len()..close + 2, &live);
+            }
+        }
+        f["message"] = serde_json::Value::String(m);
+    }
+    cli
+}
+
 /// Runs `tiza <args>` in `dir` with `TIZA_CONFIG=config` (relative to `dir`,
 /// or absolute): its exit code, stdout and stderr.
 pub fn tiza_with_config(dir: &Path, config: &str, args: &[&str]) -> (i32, String, String) {

@@ -35,7 +35,10 @@
 
 use serde_json::{Value, json};
 use tiza_core::layout::{LayoutOptions, MAX_WIDTH, MIN_WIDTH, layout};
-use tiza_qa::{Live, McpClient, example, fixture, scratch, tiza, tiza_ok};
+use tiza_qa::{
+    Live, McpClient, check_width_for_code, example, fixture, scratch, side_padding_of, tiza,
+    tiza_ok,
+};
 
 /// The fixtures that clipped at 62 while `check` said «30 or wider» (or
 /// «33»), with the width it announces now: four of two labels on a line and two written
@@ -206,9 +209,16 @@ fn true_clean_width(clipping: &[usize]) -> Option<usize> {
     }
 }
 
+/// `tiza check FILE --json [extra]`. The widths of this file are columns
+/// of code, as the layout takes them: a `--width W` in `extra` becomes the
+/// terminal that has `W` columns of code.
 fn check_json(file: &str, extra: &[&str]) -> Value {
     let mut args = vec!["check", file, "--json"];
-    args.extend_from_slice(extra);
+    let mut extra: Vec<String> = extra.iter().map(|a| a.to_string()).collect();
+    if let Some(i) = extra.iter().position(|a| a == "--width") {
+        extra[i + 1] = check_width_for_code(file, extra[i + 1].parse().unwrap());
+    }
+    args.extend(extra.iter().map(String::as_str));
     let o = tiza(&args);
     let out = String::from_utf8_lossy(&o.stdout);
     serde_json::from_str(&out).unwrap_or_else(|e| panic!("{e}: {out}"))
@@ -247,9 +257,13 @@ fn the_62_fixtures_announce_a_width_above_62_and_every_width_above_is_clean() {
             "{rel}"
         );
         let out = tiza_ok(&["check", &p]);
+        // `tiza check` says the terminal: the code and its padding.
+        let terminal = clean + 2 * side_padding_of(&p);
         assert_eq!(
             last_line(&out),
-            format!("no label is clipped at {clean} or wider (`tiza render --width {clean}`)"),
+            format!(
+                "no label is clipped at {terminal} or wider ({clean} columns of code: `tiza render --width {clean}`)"
+            ),
             "{rel}: {out}"
         );
         // `check --width 62` names what the announcement now accounts for;
@@ -286,9 +300,10 @@ fn tally_tour_says_55_and_its_callout_is_never_cut_at_106_to_108() {
     // so nothing is clipped from 55 columns on.
     let out = tiza_ok(&["check", p]);
     assert!(out.contains("0 errors, 0 warnings"), "{out}");
+    // The tour has a padding of 2 columns at each side.
     assert_eq!(
         last_line(&out),
-        "no label is clipped at 55 or wider (`tiza render --width 55`)",
+        "no label is clipped at 59 or wider (55 columns of code: `tiza render --width 55`)",
         "{out}"
     );
     for w in ["55", "105", "106", "107", "108", "109", "130"] {
@@ -600,10 +615,11 @@ fn the_narrow_layout_below_62_is_unchanged() {
             "{w}"
         );
     }
-    let out = tiza_ok(&["check", &p, "--width", "50"]);
+    // In a terminal, with its padding of 1 at each side: 2 columns more.
+    let out = tiza_ok(&["check", &p, "--width", "52"]);
     assert_eq!(
         last_line(&out),
-        "no label is clipped at 63 or wider; 47-61 are clean too (notes go under the lines below 62 columns)",
+        "no label is clipped at 65 or wider; 49-63 are clean too (notes go under the lines below 64 columns)",
         "{out}"
     );
 }
@@ -619,7 +635,7 @@ fn a_margin_cap_and_width_only_count_the_widths_that_matter() {
     assert_eq!(doc.margin, Some(16));
     let clipping = clipping_widths(&doc);
     let want = true_clean_width(&clipping);
-    for w in ["30", "62", "100", "400"] {
+    for w in ["30", "62", "100", "398"] {
         let v = check_json(&p, &["--width", w]);
         assert_eq!(v["min_clean_width"], json!(want), "{w}: {v}");
         let width: usize = w.parse().unwrap();

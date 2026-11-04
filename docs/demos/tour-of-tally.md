@@ -282,12 +282,12 @@ The reply of each tool that adds an annotation tells if the annotation is on scr
 - Four `code.link` moves show `args.rs` (lines 14 to 30), `count.rs`, `report.rs` and then `main.rs` again (lines 9 to 28).
 - A `select` move selects the `report::table` call at the last step.
 - The steps have the names `main`, `args`, `count`, `report` and `recap`.
-- `tiza check examples/tally-tour.tiza --width 130` reports no findings.
+- `tiza check examples/tally-tour.tiza --width 134` reports no findings. `tiza check` takes the width of a terminal. The tour has a padding of 2 columns at each side, so a terminal of 134 columns has the 130 columns of code that the agent checked.
 
 Tiza saved each change of the agent to `/tmp/tally/src/main.rs.tiza`. See [Saving](../concepts/saving.md). That document is your tour. Check it and export it:
 
 ```sh
-tiza check /tmp/tally/src/main.rs.tiza --width 130
+tiza check /tmp/tally/src/main.rs.tiza --width 134
 tiza render /tmp/tally/src/main.rs.tiza --out tally-tour.gif --width 130 --interval 3
 tiza render /tmp/tally/src/main.rs.tiza --all-steps --width 130 --out tally-tour-steps/
 ```

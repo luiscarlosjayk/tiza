@@ -84,8 +84,9 @@ fn the_zwsp_note_checks_without_a_panic_and_says_83() {
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(out.status.success(), "{text}{err}");
     assert!(!err.contains("panicked"), "{err}");
+    // 83 columns of code; in a terminal, with the padding of 1: 85.
     assert!(
-        text.contains("no label is clipped at 83 or wider"),
+        text.contains("no label is clipped at 85 or wider (83 columns of code"),
         "{text}"
     );
     let doc =

@@ -127,8 +127,14 @@ def steps(args, out):
 
 def same(what):
     live = api("check")
-    r = subprocess.run([binary, "check", "--json", "doc.tiza"], capture_output=True, text=True, timeout=30)
+    # `tiza check` takes the width of a terminal and takes off the side
+    # padding; the check of the socket takes columns of code.
+    pad = (json.load(open("doc.tiza")).get("padding") or [0, 1])[1]
+    width = str(live.get("width", 0) + 2 * pad)
+    r = subprocess.run([binary, "check", "--json", "--width", width, "doc.tiza"],
+                       capture_output=True, text=True, timeout=30)
     disk = json.loads(r.stdout or "{}")
+    disk.pop("terminal", None)
     for x in (live, disk):
         x.pop("narrower", None)
         x.pop("revision", None)

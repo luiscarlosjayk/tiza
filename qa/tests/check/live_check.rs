@@ -648,7 +648,9 @@ s.finish(10)
 /// AC4: for a document that does not change, the live check is the CLI's
 /// `tiza check --json`, field for field, plus the revision it checked —
 /// at the default width and at one that clips labels, without a config
-/// width and with one that is not 100 (a width in the call wins).
+/// width and with one that is not 100 (a width in the call wins). The live
+/// check takes columns of code; `tiza check`, the terminal that has them,
+/// and adds `terminal`.
 #[test]
 fn the_live_check_is_the_cli_check() {
     let (file, live) = big_live("ac4");
@@ -657,18 +659,25 @@ fn the_live_check_is_the_cli_check() {
     std::fs::write(dir.join("width-72.toml"), "[defaults]\nwidth = 72\n").unwrap();
     for (config, width) in [("empty.toml", None), ("width-72.toml", Some(72))] {
         live.with(move |a| a.config_defaults.width = width);
-        for (params, args) in [
-            (json!({}), vec![]),
-            (json!({"width": 60}), vec!["--width", "60"]),
+        for (params, code) in [
+            (json!({}), width.unwrap_or(100)),
+            (json!({"width": 60}), 60),
         ] {
             let mut v = live.api_ok("check", params.clone());
             let revision = v.as_object_mut().unwrap().remove("revision");
             assert!(revision.as_ref().is_some_and(Value::is_u64), "{v}");
-            let mut cli_args = vec!["check", file.to_str().unwrap(), "--json"];
-            cli_args.extend(args);
+            let terminal = tiza_qa::check_width_for_code(file.to_str().unwrap(), code);
+            let cli_args = [
+                "check",
+                file.to_str().unwrap(),
+                "--json",
+                "--width",
+                &terminal,
+            ];
             let (_, out, err) = tiza_with_config(&dir, config, &cli_args);
             let cli: Value =
                 serde_json::from_str(&out).unwrap_or_else(|_| panic!("{config}: {err}"));
+            let cli = tiza_qa::as_live_report(cli);
             assert_eq!(v, cli, "{config}, {params}: live\n{v}\nCLI\n{cli}");
             // A caller of `handle_request` gets the same check in place.
             let p = params.clone();

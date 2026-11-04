@@ -54,11 +54,14 @@ fn document(
 }
 
 /// `tiza check FILE --width W [extra]` (with `--json` unless `extra` asks
-/// for the text): (exit code, stdout).
+/// for the text): (exit code, stdout). `width` is columns of code, as
+/// `tiza render` takes them: `tiza check` gets the terminal that has them,
+/// 2 columns more (the documents of this file have the padding of 1).
 fn run_check(file: &Path, width: usize, extra: &[&str]) -> (i32, String) {
+    let file = file.to_str().unwrap();
     let o = tiza_qa::command()
-        .args(["check", file.to_str().unwrap(), "--width"])
-        .arg(width.to_string())
+        .args(["check", file, "--width"])
+        .arg(tiza_qa::check_width_for_code(file, width))
         .args(extra)
         .output()
         .unwrap();
@@ -271,10 +274,12 @@ fn a_cut_code_line_is_a_warning_that_strict_fails_on() {
         assert_eq!(warnings[0]["level"], "warning");
         assert_eq!(warnings[0]["line"], 3);
         assert_eq!(warnings[0]["step"], 0);
+        // `tiza check` says the terminal: 2 columns more than the code.
         assert_eq!(
             warnings[0]["message"],
             format!(
-                "code is cut with «…» at width {width}, first at step 0, then at step 1: L3 (every code line of the take fits from width 118, `tiza render --width 118`)"
+                "code is cut with «…» at width {}, first at step 0, then at step 1: L3 (every code line of the take fits from width 120 (118 columns of code: `tiza render --width 118`))",
+                width + 2
             )
         );
         assert_eq!(run_check(&file, width, &[]).0, 0);
@@ -303,11 +308,12 @@ fn a_line_that_fits_exactly_is_not_cut() {
         .as_str()
         .unwrap()
         .to_string();
+    // The width to give `tiza render`: columns of code.
     let fits: usize = message
-        .split_once("fits from width ")
+        .split_once("`tiza render --width ")
         .unwrap()
         .1
-        .split(',')
+        .split('`')
         .next()
         .unwrap()
         .parse()
@@ -333,7 +339,8 @@ fn a_line_wider_than_any_width_says_so() {
         json!([]),
         &[],
     );
-    let warnings = checked_against_render(&file, 400);
+    // 398 columns of code: a terminal of 400, the widest.
+    let warnings = checked_against_render(&file, 398);
     assert_eq!(warnings.len(), 1, "{warnings:?}");
     let message = warnings[0]["message"].as_str().unwrap();
     assert!(
@@ -491,7 +498,7 @@ fn each_file_of_the_take_has_its_own_warning() {
     // The text report names the file.
     let (_, text) = run_check(&file, 100, &[]);
     assert!(
-        text.contains("warning: step 2, other.rs, L2: code is cut with «…» at width 100"),
+        text.contains("warning: step 2, other.rs, L2: code is cut with «…» at width 102"),
         "{text}"
     );
 }
@@ -598,9 +605,20 @@ fn the_live_check_gives_the_warning_too() {
     let live = Live::open(doc, dir.join("held.tiza"), dir.join("live.sock"));
     let v = live.api_ok("check", json!({"width": 100}));
     assert_eq!(with_code(&v, "clipped_code").len(), 1, "{v}");
+    // The live check says columns of code; `tiza check`, the terminal that
+    // has them (2 columns more). The rest of the warning is the same.
+    let live_warning = &with_code(&v, "clipped_code")[0];
     assert_eq!(
-        with_code(&v, "clipped_code"),
-        with_code(&report, "clipped_code"),
+        live_warning["message"],
+        "code is cut with «…» at width 100, first at step 0, then at step 1: L3 (every code line of the take fits from width 118, `tiza render --width 118`)",
         "{v}"
     );
+    let mut cli_warning = with_code(&report, "clipped_code")[0].clone();
+    assert_eq!(
+        cli_warning["message"],
+        "code is cut with «…» at width 102, first at step 0, then at step 1: L3 (every code line of the take fits from width 120 (118 columns of code: `tiza render --width 118`))",
+        "{report}"
+    );
+    cli_warning["message"] = live_warning["message"].clone();
+    assert_eq!(&cli_warning, live_warning, "{v}");
 }

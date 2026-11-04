@@ -72,8 +72,11 @@ fn every_text_frame_is_what_tiza_renders_at_its_width() {
                 continue;
             }
             // `tiza check` reads every step: once for each document and width.
+            // It takes the width of a terminal: the one that has the frame's
+            // columns of code.
             if checked_docs.insert((f.doc.clone(), f.width)) {
-                let check = tiza(&["check", doc_arg, "--width", &width, "--json"]);
+                let terminal = tiza_qa::check_width_for_code(doc_arg, f.width as usize);
+                let check = tiza(&["check", doc_arg, "--width", &terminal, "--json"]);
                 let report: Value = serde_json::from_slice(&check.stdout)
                     .unwrap_or_else(|e| panic!("{at}: tiza check --json: {e}"));
                 if report["errors"] != 0 || report["warnings"] != 0 {
