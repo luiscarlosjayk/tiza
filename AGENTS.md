@@ -6,7 +6,10 @@ Some pages are maintainer notes outside this repository, in `../dev/` next to th
 
 ## Always
 
-- Run this before every push: `cargo fmt --all && cargo clippy --all-targets -- -D warnings && cargo test`. Every command must pass.
+- Before every push, run the checks for your kind of change. Every command must pass.
+  - A change of code: `cargo fmt --all && cargo clippy --all-targets -- -D warnings && cargo test --no-fail-fast`.
+  - A change of only `docs/`, `site/`, images or the scripts that make the images of the docs: `cargo fmt --all && cargo test -p tiza-qa --test policy && cargo test -p tiza-site-checks && cargo clippy -p tiza-site-checks --all-targets -- -D warnings`.
+  - A change of a `Cargo.toml` or of `deny.toml`: also `cargo deny check bans licenses sources`.
 - Do not push a change that adds a CI failure. If CI fails on your commit, fix it first.
 - Write every user-facing string in English. Commands, JSON fields and the Spanish color aliases stay as they are.
 - Write public text in ASD-STE100 Simplified Technical English. The targets are in `../dev/writing-docs.md`.
@@ -55,7 +58,7 @@ Some pages are maintainer notes outside this repository, in `../dev/` next to th
 - A test must catch a bug or a broken user experience. Do not write a test that only checks a sentence or a heading.
 - The tests of qa/ test the code (the binary, the API, MCP, the TUI, the exports) and the policies of the repository (ticket ids, licenses). They do not check what the docs say. The checks of the docs run only in the job that builds the site.
 - Put a check of the docs against the code in `site/checks/`. When you change the docs or the code that they describe, run `cargo test -p tiza-site-checks`, or check the "Docs site" job of your pull request. Before a release, `scripts/release-check.py` checks the docs that the release reads.
-- Do not use `#[ignore]`. Do not retry a test blindly. Do not use a sleep to synchronize. Wait on a condition with a timeout of 10 s.
+- Do not use `#[ignore]`. Do not retry a test blindly. Do not use a sleep to synchronize. Wait on a condition with a timeout of 10 s. To wait for a follow watcher to start or to go away, use the timeout `FOLLOW_START_BUDGET` of `qa/src/lib.rs`.
 - To test the TUI without an interactive terminal, use a pseudo-terminal (Python `pty`) and `tiza api status --socket PATH`.
 - `examples/` holds demos only, never test data.
 - When you change what the renderer draws, run `scripts/readme-images.sh` in the same commit.
