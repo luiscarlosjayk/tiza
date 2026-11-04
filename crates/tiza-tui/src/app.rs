@@ -6722,6 +6722,15 @@ impl App {
                                 )));
                             }
                             if n == max + 1 {
+                                // From a step before the last: a jump to the
+                                // last step first, as `:goto` makes it, so that
+                                // its moves apply. The empty step has the code
+                                // of the last step, from whatever step. A move
+                                // that does not apply keeps its error on the
+                                // bar, at the last step.
+                                if self.doc.step < max && self.step_to_with(max, true) {
+                                    return Ok(String::new());
+                                }
                                 // Already there: it stays (a step change
                                 // would go back to the last step).
                                 if n != self.doc.step {
