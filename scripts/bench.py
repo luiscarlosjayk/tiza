@@ -17,12 +17,22 @@ annotations, laid out and drawn into 120x40, from `cargo test --release`);
 and the same in presentation mode with 10 moves over 20 steps
 (`present_moves_frame`, from the qa crate's presentation frame test).
 
+`idle_cpu` is the CPU that the TUI uses at rest, on a pseudo-terminal of
+120x40: after the first frame (and a key that plays an enter effect), 3 s for
+the effect to end, then 10 s with no input. Three cases: presentation mode
+after an effect, normal mode after an effect, and follow mode. A loop that
+does not sleep shows here. Its limit is absolute, `idle_cpu_max_pct` in
+qa/bench/baseline.json (1 %): the CPU time of a process does not depend on the
+load of the machine. Over the limit, bench prints FAIL and exits 1. Run
+`scripts/bench.sh --only idle_cpu` before you push a change to a timed loop of
+the TUI.
+
 `--install` also times a cold `cargo install --path crates/tiza-cli --root
 <tmp>` (fresh target dir, so every crate compiles) and records it as
 information. `--update-baseline --note "why"` stores the run as this target's
 baseline (do it on purpose, with the note, in the commit that explains it).
 
-Usage: scripts/bench.sh [--runs N] [--no-build] [--skip-frame] [--install]
+Usage: scripts/bench.sh [--runs N] [--no-build] [--skip-frame] [--skip-idle] [--install]
                         [--update-baseline --note TEXT]
 """
 import argparse, atexit, datetime, json, os, platform, re, shutil, statistics, subprocess, sys, tempfile, time
@@ -41,7 +51,9 @@ def no_config():
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BENCH = os.path.join(ROOT, "qa", "bench")
 EXAMPLE = os.path.join(ROOT, "qa", "fixtures", "shared", "ownership", "ownership.rs.tiza")
+EFFECTS = os.path.join(ROOT, "qa", "fixtures", "render", "enter_effects", "labels.tiza")
 WARN_PCT = 20
+IDLE_MAX_PCT = 1.0
 
 
 def host_target():
@@ -127,6 +139,90 @@ print("FIRST_FRAME", (t1 - t0) if ok else -1, flush=True)
 """
 
 
+IDLE = r"""
+binary, doc, key, shown, ready, settle, still = sys.argv[1:8]
+mode = sys.argv[8:]
+
+
+def cpu_seconds(pid):
+    # Linux: utime + stime of /proc (ps rounds to whole seconds there).
+    stat = f"/proc/{pid}/stat"
+    if os.path.exists(stat):
+        fields = open(stat).read().rsplit(")", 1)[1].split()
+        return (int(fields[11]) + int(fields[12])) / os.sysconf("SC_CLK_TCK")
+    # macOS: [[hh:]mm:]ss.cc
+    t = subprocess.run(["ps", "-o", "time=", "-p", str(pid)], capture_output=True,
+                       text=True).stdout.strip()
+    secs = 0.0
+    for part in t.split(":"):
+        secs = secs * 60 + float(part)
+    return secs
+
+
+s = Pty([binary, doc, "--no-socket", "--no-save", *mode], 40, 120, env=dict(os.environ),
+        ctty=True, raw=True)
+if not s.wait_for(lambda out: b"\x1b[?1049h" in out and ready in plain(out), 15, "first frame"):
+    s.finish(2.0)
+    print("IDLE -1 -1", flush=True)
+    sys.exit(0)
+if key:
+    s.send(key.encode())
+    # The step comes in: the label of its box shows after its stroke.
+    if not s.wait_for(lambda out: shown in plain(out), 15, "the step after the key"):
+        s.finish(2.0)
+        print("IDLE -2 -2", flush=True)
+        sys.exit(0)
+s.settle(float(settle))
+t0, c0 = time.monotonic(), cpu_seconds(s.p.pid)
+s.settle(float(still))
+t1, c1 = time.monotonic(), cpu_seconds(s.p.pid)
+# A TUI that exits in the measure uses no CPU: that is not a pass.
+gone = s.p.poll() is not None or t1 - t0 < 0.9 * float(still)
+s.kill()
+s.finish(2.0)
+if gone:
+    print("IDLE -3 -3", flush=True)
+    sys.exit(0)
+print("IDLE", 100 * (c1 - c0) / (t1 - t0), c1 - c0, flush=True)
+"""
+
+def idle_cpu(binary, tmp, settle_s=3.0, still_s=10.0):
+    """The CPU of the TUI at rest, in % of one core, for each case."""
+    script = os.path.join(tmp, "idle_cpu.py")
+    with open(os.path.join(ROOT, "qa", "src", "pty.py")) as f:
+        prelude = f.read()
+    with open(script, "w") as f:
+        f.write(prelude + "\nimport subprocess\n" + IDLE)
+    follow = os.path.join(tmp, "follow")
+    os.makedirs(follow, exist_ok=True)
+    for name in ("ownership.rs", "ownership.rs.tiza"):
+        shutil.copy(os.path.join(os.path.dirname(EXAMPLE), name), follow)
+    cases = [
+        # name, document, key, text that the key shows, text of the start, mode
+        ("presentation_after_effect", EFFECTS, "n", "the queue", "", ["--present"]),
+        ("normal_after_effect", EFFECTS, "n", "the queue", "", []),
+        ("follow", os.path.join(follow, "ownership.rs.tiza"), "", "", "following", ["--follow"]),
+    ]
+    env = dict(os.environ, TIZA_PTY_DEADLINE="60", TIZA_NO_OSC="1")
+    out = {}
+    errors = {"-1": "no first frame", "-2": "the key did not show its step",
+              "-3": "the TUI exited during the measure"}
+    for name, doc, key, shown, ready, mode in cases:
+        try:
+            r = subprocess.run([sys.executable, "-I", script, binary, doc, key, shown, ready,
+                                str(settle_s), str(still_s), *mode],
+                               cwd=tmp, env=env, capture_output=True, text=True, timeout=90)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"idle_cpu {name}: no result in 90 s") from None
+        m = re.search(r"IDLE (\S+) (\S+)", r.stdout)
+        if not m or float(m.group(1)) < 0:
+            why = errors.get(m.group(1) if m else "-1", "no result")
+            raise RuntimeError(f"idle_cpu {name}: {why}:\n{r.stdout[-600:]}\n{r.stderr[-600:]}")
+        out[name] = {"cpu_pct": round(float(m.group(1)), 2), "cpu_s": round(float(m.group(2)), 3),
+                     "still_s": still_s}
+    return out
+
+
 def time_cmd(argv, runs):
     """One warm-up, then `runs` timed runs; each must exit 0."""
     samples = []
@@ -205,11 +301,15 @@ def main():
     ap.add_argument("--runs", type=int, default=7, help="timed runs per scenario after one warm-up (default 7)")
     ap.add_argument("--no-build", action="store_true", help="use target/release/tiza as it is")
     ap.add_argument("--skip-frame", action="store_true", help="skip the frame medians (they need a release build of the qa crate)")
+    ap.add_argument("--skip-idle", action="store_true", help="skip idle_cpu (the TUI at rest, about 45 s)")
     ap.add_argument("--install", action="store_true", help="also time a cold `cargo install --path crates/tiza-cli`")
     ap.add_argument("--update-baseline", action="store_true", help="store this run as the target's baseline")
     ap.add_argument("--note", default="", help="one line: why the baseline moves (required with --update-baseline)")
     ap.add_argument("--bin", help="time this binary instead of target/release/tiza (implies --no-build)")
     ap.add_argument("--only", help="comma-separated scenario names (default: all)")
+    # Shorter waits for the test of the limit (qa/tests/release): not a measure.
+    ap.add_argument("--idle-settle", type=float, default=3.0, help=argparse.SUPPRESS)
+    ap.add_argument("--idle-still", type=float, default=10.0, help=argparse.SUPPRESS)
     ap.add_argument("--baseline", default=os.path.join(BENCH, "baseline.json"), help=argparse.SUPPRESS)
     ap.add_argument("--latest", default=os.path.join(BENCH, "latest.json"), help=argparse.SUPPRESS)
     a = ap.parse_args()
@@ -253,6 +353,11 @@ def main():
         if wants("tui_first_frame"):
             results["tui_first_frame"] = summary(time_tui(binary, a.runs, tmp))
             print(f"{'tui_first_frame':<34} {results['tui_first_frame']['median_ms']:>9.1f} ms", flush=True)
+        if not a.skip_idle and wants("idle_cpu"):
+            results["idle_cpu"] = idle_cpu(binary, tmp, a.idle_settle, a.idle_still)
+            for name, r in results["idle_cpu"].items():
+                print(f"{'idle_cpu ' + name:<34} {r['cpu_pct']:>9.2f} % CPU "
+                      f"({r['cpu_s']:.3f} s in {r['still_s']:.0f} s)", flush=True)
     if not a.skip_frame and wants("frame_median"):
         ms = frame_median()
         results["frame_median"] = {"median_ms": round(ms, 2), "runs": 21}
@@ -296,6 +401,8 @@ def main():
     else:
         print(f"vs baseline {base.get('commit', '?')} ({base.get('date', '?')}, {base.get('machine', '?')}):")
         for name, r in results.items():
+            if "median_ms" not in r:
+                continue  # idle_cpu: an absolute limit, below
             was = base.get("scenarios", {}).get(name, {}).get("median_ms")
             if not was:
                 print(f"  {name:<32} new scenario")
@@ -311,7 +418,15 @@ def main():
             print(f"  {'cargo install (cold)':<32} {was:>9.1f} → {latest['cargo_install_cold_s']:>9.1f} s  "
                   f"{(latest['cargo_install_cold_s'] - was) / was * 100:+6.1f} % (information)")
 
-    if a.update_baseline:
+    # The CPU at rest has an absolute limit, and it fails: a loop that does
+    # not sleep is a bug, and the CPU time of a process does not depend on
+    # the load of the machine.
+    limit = baseline.get("idle_cpu_max_pct", IDLE_MAX_PCT)
+    over = [(n, r["cpu_pct"]) for n, r in results.get("idle_cpu", {}).items() if r["cpu_pct"] > limit]
+
+    if a.update_baseline and over:
+        print("baseline not updated: idle_cpu is over its limit")
+    elif a.update_baseline:
         entry = dict(latest, note=a.note.strip())
         if not a.install and base and base.get("cargo_install_cold_s"):
             entry["cargo_install_cold_s"] = base["cargo_install_cold_s"]
@@ -322,6 +437,13 @@ def main():
         print(f"baseline of {target} updated in qa/bench/baseline.json — commit it with the note")
 
     print(f"{warned} scenario(s) over +{warn_pct} %" if warned else "no scenario over the warning threshold")
+
+    for name, pct in over:
+        print(f"FAIL: idle_cpu {name}: {pct:.2f} % CPU at rest (limit {limit} %)")
+    if over:
+        sys.exit(1)
+    if "idle_cpu" in results:
+        print(f"idle_cpu: every case at or under {limit} % CPU at rest")
 
 
 if __name__ == "__main__":

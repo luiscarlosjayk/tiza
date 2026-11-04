@@ -22,6 +22,11 @@
 //! - AC6 `[profile.release]`: `lto = "fat"`, `codegen-units = 1`,
 //!   `strip = true`, the default `panic = "unwind"` (no `panic = "abort"`,
 //!   discarded by Luis) and no `opt-level = "s"/"z"`.
+//! - AC7 `idle_cpu` in bench: the CPU of the TUI at rest (after an effect in
+//!   presentation and normal mode, and with follow) has an absolute limit,
+//!   `idle_cpu_max_pct` (1 %) in `qa/bench/baseline.json`. Over it, bench
+//!   prints FAIL for each case and exits 1: a loop that does not sleep is a
+//!   bug, not noise.
 //!
 //! The scripts are exercised here with fake binaries and temporary budget and
 //! baseline files (`--bin`, `--budgets`, `--committed`, `--baseline`,
@@ -403,10 +408,77 @@ fn bench_warns_on_a_slower_scenario_and_never_fails() {
     assert!(r.stderr.contains("needs --note"), "{}", r.stderr);
 }
 
+/// `idle_cpu` is the CPU of the TUI at rest, with an absolute limit that
+/// fails bench (a loop that does not sleep), unlike the speed warnings.
+/// Short waits here: the test checks the limit, not the machine.
+#[test]
+fn bench_fails_when_the_tui_at_rest_is_over_its_cpu_limit() {
+    let dir = scratch("bench-idle");
+    let tiza = bin();
+    let latest = dir.join("latest.json");
+    let idle = |name: &str, limit: f64| {
+        let baseline = write_json(
+            &dir,
+            name,
+            &json!({"warn_pct": 20, "idle_cpu_max_pct": limit, "targets": {}}),
+        );
+        run(
+            "bench.py",
+            &[
+                "--bin",
+                tiza.to_str().unwrap(),
+                "--only",
+                "idle_cpu",
+                "--idle-settle",
+                "0.5",
+                "--idle-still",
+                "1",
+                "--baseline",
+                baseline.to_str().unwrap(),
+                "--latest",
+                latest.to_str().unwrap(),
+            ],
+        )
+    };
+    let cases = ["presentation_after_effect", "normal_after_effect", "follow"];
+
+    // A limit under zero: every case is over it. FAIL for each, exit 1.
+    let r = idle("under-zero.json", -1.0);
+    assert!(!ok(&r), "over the limit, bench passed:\n{}", r.stdout);
+    for case in cases {
+        assert!(
+            r.stdout.contains(&format!("FAIL: idle_cpu {case}: ")),
+            "{case}:\n{}\n{}",
+            r.stdout,
+            r.stderr
+        );
+    }
+    let l: Value = serde_json::from_str(&std::fs::read_to_string(&latest).unwrap()).unwrap();
+    for case in cases {
+        assert!(
+            l["scenarios"]["idle_cpu"][case]["cpu_pct"]
+                .as_f64()
+                .is_some(),
+            "{case}: {l}"
+        );
+    }
+
+    // A generous limit: it passes and says so.
+    let r = idle("generous.json", 100.0);
+    assert!(ok(&r), "{}\n{}", r.stdout, r.stderr);
+    assert!(!r.stdout.contains("FAIL"), "{}", r.stdout);
+    assert!(
+        r.stdout.contains("idle_cpu: every case at or under 100"),
+        "{}",
+        r.stdout
+    );
+}
+
 #[test]
 fn committed_bench_baseline_covers_every_scenario() {
     let b = read_json("qa/bench/baseline.json");
     assert_eq!(b["warn_pct"], 20);
+    assert_eq!(b["idle_cpu_max_pct"], 1.0, "the limit of the CPU at rest");
     // Same shape for every target, no fixed numbers: a baseline moves with
     // `scripts/bench.sh --update-baseline --note …` and must not break this.
     for t in ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin"] {

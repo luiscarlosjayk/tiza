@@ -68,4 +68,5 @@ Some pages are maintainer notes outside this repository, in `../dev/` next to th
 - An image of the TUI is the only other kind of image of Tiza in a doc. Use it only for what `tiza render` does not draw: presentation mode, the status bar, the live pointer, the focus, the padding and the layout of normal mode, a panel or the view of a `scroll` move. Make it with `scripts/tui-captures.sh`. Do not edit it.
 - Keep images out of the repository unless they are necessary. Tests use text exports, not PNG files.
 - Before you push a new dependency or an embedded asset, run `scripts/size-check.sh` and `scripts/bench.sh`. CI does not run them.
+- When you change a timed loop of the TUI, run `scripts/bench.sh --only idle_cpu` before you push. Examples are an effect, the typing, the tick of follow mode and the wait of the event loop. The check fails when the TUI uses more than 1 % of a CPU with no input for 10 s. CI does not run it.
 - The limits are in `qa/budgets.json` and `qa/bench/baseline.json`.

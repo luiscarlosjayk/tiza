@@ -1,5 +1,6 @@
 {
   "warn_pct": 20,
+  "idle_cpu_max_pct": 1.0,
   "targets": {
     "aarch64-apple-darwin": {
       "target": "aarch64-apple-darwin",
