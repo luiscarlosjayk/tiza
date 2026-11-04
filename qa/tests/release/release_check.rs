@@ -217,12 +217,20 @@ fn a_step_out_of_order_or_missing_is_refused() {
     refused(&check(&dir, &[]), &["has no `cargo login`"]);
 }
 
-/// The crates go to crates.io with one command, after `cargo login`.
+/// The crates go to crates.io with one command, after `cargo login`, and
+/// not as a dry run.
 #[test]
 fn a_publish_missing_or_before_the_login_is_refused() {
     let publish = "cargo publish --workspace --locked      # the crates, in dependency order\n";
     let page = CONTRIBUTING.replace(publish, "");
     let dir = workspace("no-publish", &[("CONTRIBUTING.md", page.as_bytes())]);
+    refused(
+        &check(&dir, &[]),
+        &["has no `cargo publish --workspace --locked`"],
+    );
+    // A dry run publishes nothing.
+    let page = CONTRIBUTING.replace(publish, "cargo publish --workspace --locked --dry-run\n");
+    let dir = workspace("publish-dry", &[("CONTRIBUTING.md", page.as_bytes())]);
     refused(
         &check(&dir, &[]),
         &["has no `cargo publish --workspace --locked`"],

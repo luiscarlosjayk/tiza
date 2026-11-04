@@ -12,7 +12,8 @@
   of release.yml goes to a heading of CONTRIBUTING.md.
 - The commands in the code blocks of that section come in their order.
   The last one, `cargo publish --workspace --locked`, publishes the crates:
-  cargo puts them in dependency order.
+  cargo puts them in dependency order. A line with `--dry-run` is not a
+  step without `--dry-run`: a dry run does not publish.
 
 It writes one line for each problem and exits 1. It needs python3 (3.9 or
 later) and cargo, for `cargo metadata`. .github/workflows/release.yml and
@@ -68,6 +69,13 @@ def read(rel):
         problem(f"{rel} is empty")
         return None
     return text.splitlines()
+
+
+def runs(line, step):
+    """Whether the command of `line` (before a `#` comment) runs `step`.
+    A dry run is not the step that it tries."""
+    command = line.split("#", 1)[0]
+    return step in command and ("--dry-run" in step or "--dry-run" not in command)
 
 
 def blocks(lines):
@@ -162,7 +170,7 @@ def check_contributing():
     # The commands, in order: the first line that has each one.
     at = []
     for step in STEPS:
-        n = next((n for n, l in section if step in l), None)
+        n = next((n for n, l in section if runs(l, step)), None)
         if n is None:
             problem(f"CONTRIBUTING.md: the section `## {SECTION}` has no `{step}`")
         else:
