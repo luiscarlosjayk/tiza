@@ -110,7 +110,7 @@ Press one of these keys while a selection is open:
 - `Tab` also leaves out a note or a callout that the screen has no room for, and the annotations of the step while its moves type.
 - With an annotation selected, `Enter`, `e`, `c`, `x`, `+` and `-` act on the annotation. The other keys do their usual action.
 - For a note, `Enter` opens the text of the note. For a callout, it opens the title.
-- Tiza refuses `+` on an annotation at step 999. It also refuses `+` and `-` when the lines of the annotation are not in the code of the new step. The status bar shows the error.
+- Tiza refuses `+` on an annotation at step 999. It also refuses `+` and `-` when the lines of the annotation are not in the code of the new step. `+` does not move a spotlight after its `until`. The status bar tells why. The status bar shows the error.
 - When `Tab` finds no annotation, it shows a message. See [Messages](#messages).
 - In presentation mode, `Tab` goes to the next line under the cursor where an annotation that the view shows starts. After the last one in the view, it goes back to the first one. `Shift-Tab` goes to the previous one, above the cursor. The annotations that start on one line are one stop, so each `Tab` moves the cursor. The view does not move.
 - In presentation mode, an annotation starts on its first line in the view. Thus an annotation that starts above the view starts on the top line, and an arrow that points up starts on its top end. So the order can be different from normal mode.

@@ -202,7 +202,7 @@ A `callout` from [`:callout`](commands/annotate.md#callout), as its frame shows 
 | `from_line` | integer | Required when there are no `ids` | The first line that the spotlight does not dim. |
 | `to_line` | integer | `from_line` | The last line that the spotlight does not dim, not before `from_line`. |
 | `ids` | array of ids | Required when there is no `from_line`, else `[]` | The ids of annotations in the document that the spotlight does not dim, also outside its lines. |
-| `until` | integer | No default | The last step at which the spotlight is active. When `until` is before `step`, the spotlight never shows, and `tiza check` gives the error `until`. Tiza opens such a document, but `:until`, `annotation.add` and `annotation.update` refuse such a spotlight. |
+| `until` | integer | No default | The last step at which the spotlight is active. When `until` is before `step`, the spotlight never shows, and `tiza check` gives the error `until`. Tiza opens such a document. `:until`, `:step ID S`, `:set ID step=S`, the `+` key, `annotation.add`, and `annotation.update` with `step` or `shape` refuse such a spotlight. |
 
 A `spotlight` from [`:spot`](commands/annotate.md#spot), as its frame shows it:
 
