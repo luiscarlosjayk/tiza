@@ -2,15 +2,15 @@
 //! `scripts/release-local.sh` run before a release: the README status gives
 //! the version of the workspace and of the tag, the links of release.yml go
 //! to headings of CONTRIBUTING.md, and its release section gives the steps
-//! in order and the crates in dependency order.
+//! in order, with the publish of the workspace after `cargo login`.
 //!
 //! The script runs on a small workspace of its own in a scratch folder, not
 //! on the docs of this repository: the job that builds the site and the
 //! release check those.
 //!
 //! Corner cases: CRLF and a byte order mark; a heading inside a code
-//! block; an empty file, and one that is not UTF-8; a crate that is not
-//! published.
+//! block; an empty file, and one that is not UTF-8; a publish before
+//! `cargo login`.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -38,8 +38,7 @@ scripts/release-check.py vX.Y.Z
 git push origin main
 git tag vX.Y.Z && git push origin vX.Y.Z
 cargo login
-cargo publish --locked -p tiza-core
-cargo publish --locked -p tiza          # the binary
+cargo publish --workspace --locked      # the crates, in dependency order
 ```
 
 ## After a release
@@ -218,29 +217,23 @@ fn a_step_out_of_order_or_missing_is_refused() {
     refused(&check(&dir, &[]), &["has no `cargo login`"]);
 }
 
+/// The crates go to crates.io with one command, after `cargo login`.
 #[test]
-fn a_crate_before_its_dependency_or_left_out_is_refused() {
-    let page = CONTRIBUTING.replace(
-        "cargo publish --locked -p tiza-core\ncargo publish --locked -p tiza          # the binary\n",
-        "cargo publish --locked -p tiza\ncargo publish --locked -p tiza-core\n",
-    );
-    let dir = workspace("deps", &[("CONTRIBUTING.md", page.as_bytes())]);
+fn a_publish_missing_or_before_the_login_is_refused() {
+    let publish = "cargo publish --workspace --locked      # the crates, in dependency order\n";
+    let page = CONTRIBUTING.replace(publish, "");
+    let dir = workspace("no-publish", &[("CONTRIBUTING.md", page.as_bytes())]);
     refused(
         &check(&dir, &[]),
-        &["tiza depends on tiza-core, which is published after it"],
+        &["has no `cargo publish --workspace --locked`"],
     );
-    let page = CONTRIBUTING.replace("cargo publish --locked -p tiza-core\n", "");
-    let dir = workspace("left-out", &[("CONTRIBUTING.md", page.as_bytes())]);
-    refused(&check(&dir, &[]), &["does not publish tiza-core"]);
-    // A crate with `publish = false` is not a step.
-    let page = CONTRIBUTING.replace(
-        "cargo login\n",
-        "cargo login\ncargo publish --locked -p tiza-internal\n",
-    );
-    let dir = workspace("internal", &[("CONTRIBUTING.md", page.as_bytes())]);
+    let page = CONTRIBUTING
+        .replace(publish, "")
+        .replace("cargo login\n", &format!("{publish}cargo login\n"));
+    let dir = workspace("publish-first", &[("CONTRIBUTING.md", page.as_bytes())]);
     refused(
         &check(&dir, &[]),
-        &["tiza-internal is not a crate of the workspace that is published"],
+        &["`cargo publish --workspace --locked` comes before `cargo login`"],
     );
 }
 
@@ -308,17 +301,6 @@ fn a_fence_that_closes_with_an_indent_and_spaces_closes() {
         "  ```  \n\n## Releases (maintainers)\n",
     );
     let dir = workspace("fence", &[("CONTRIBUTING.md", page.as_bytes())]);
-    let o = check(&dir, &[]);
-    assert!(o.status.success(), "{}", err(&o));
-}
-
-/// A dev-dependency does not have to be on crates.io before the crate.
-#[test]
-fn a_dev_dependency_does_not_order_the_crates() {
-    let core =
-        b"[package]\nname = \"tiza-core\"\nversion.workspace = true\nedition.workspace = true\n\n\
-                 [dev-dependencies]\ntiza = { path = \"../tiza\" }\n";
-    let dir = workspace("dev-dep", &[("core/Cargo.toml", core)]);
     let o = check(&dir, &[]);
     assert!(o.status.success(), "{}", err(&o));
 }

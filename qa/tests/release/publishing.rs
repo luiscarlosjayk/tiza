@@ -13,8 +13,9 @@
 //! - Publication (changed by Luis on 2026-10-22): no workflow publishes to
 //!   crates.io and no secret is needed. `scripts/release-check.py` checks,
 //!   before the tag, that CONTRIBUTING.md (`## Releases (maintainers)`, the
-//!   section release.yml names) gives every manual step in order, and the
-//!   crates in dependency order (`release_check` tests the script). That
+//!   section release.yml names) gives every manual step in order, with
+//!   `cargo publish --workspace --locked` after `cargo login`
+//!   (`release_check` tests the script). That
 //!   every `.crate` carries the licence texts and `tiza` leaves out its
 //!   tests is checked in `policy::package_licences`.
 //! - AC2 crates.io page of `tiza`: a readme packaged in the crate with no

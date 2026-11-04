@@ -10,10 +10,9 @@
 - CONTRIBUTING.md has the section `## Releases (maintainers)`, and
   .github/workflows/release.yml links it. Each link `CONTRIBUTING.md#ANCHOR`
   of release.yml goes to a heading of CONTRIBUTING.md.
-- The commands in the code blocks of that section come in their order, and
-  its `cargo publish --locked -p NAME` lines name each crate that is
-  published, each one after the crates that it depends on (not counting
-  dev-dependencies).
+- The commands in the code blocks of that section come in their order.
+  The last one, `cargo publish --workspace --locked`, publishes the crates:
+  cargo puts them in dependency order.
 
 It writes one line for each problem and exits 1. It needs python3 (3.9 or
 later) and cargo, for `cargo metadata`. .github/workflows/release.yml and
@@ -40,8 +39,8 @@ STEPS = [
     "git push origin main",
     "git tag vX.Y.Z && git push origin vX.Y.Z",
     "cargo login",
+    "cargo publish --workspace --locked",
 ]
-PUBLISH = re.compile(r"^cargo publish --locked -p (\S+)\s*(?:#.*)?$")
 FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 
 problems = []
@@ -103,7 +102,7 @@ def anchor(heading):
 
 
 def workspace():
-    """(version of the tiza package, {publishable crate: its tiza deps})."""
+    """The version of the tiza package."""
     try:
         out = subprocess.run(
             ["cargo", "metadata", "--no-deps", "--format-version", "1", "--offline"],
@@ -117,17 +116,7 @@ def workspace():
     version = next((p["version"] for p in packages if p["name"] == "tiza"), None)
     if version is None:
         sys.exit("release-check: the workspace has no package named tiza")
-    crates = {
-        p["name"]: [
-            d["name"]
-            for d in p["dependencies"]
-            # A dev-dependency does not have to be on crates.io first.
-            if d["name"].startswith("tiza") and d.get("kind") != "dev"
-        ]
-        for p in packages
-        if p.get("publish") != []
-    }
-    return version, crates
+    return version
 
 
 def check_status(version, tag):
@@ -146,7 +135,7 @@ def check_status(version, tag):
                 "run scripts/bump-version.sh first")
 
 
-def check_contributing(crates):
+def check_contributing():
     page = read("CONTRIBUTING.md")
     if page is None:
         return
@@ -181,23 +170,6 @@ def check_contributing(crates):
     for (n1, s1), (n2, s2) in zip(at, at[1:]):
         if n2 < n1:
             problem(f"CONTRIBUTING.md:{n2}: `{s2}` comes before `{s1}` (line {n1})")
-    # The crates, after their dependencies and after `cargo login`.
-    published = [(n, m.group(1)) for n, l in section for m in [PUBLISH.match(l)] if m]
-    login = next((n for n, s in at if s == "cargo login"), 0)
-    order = [name for _, name in published]
-    for n, name in published:
-        if n < login:
-            problem(f"CONTRIBUTING.md:{n}: `cargo publish -p {name}` comes before `cargo login`")
-        if name not in crates:
-            problem(f"CONTRIBUTING.md:{n}: {name} is not a crate of the workspace that is published")
-            continue
-        for dep in crates[name]:
-            if dep in order and order.index(dep) > order.index(name):
-                problem(f"CONTRIBUTING.md:{n}: {name} depends on {dep}, which is published after it")
-    for name in sorted(set(crates) - set(order)):
-        problem(f"CONTRIBUTING.md: the section `## {SECTION}` does not publish {name}")
-    for name in sorted({x for x in order if order.count(x) > 1}):
-        problem(f"CONTRIBUTING.md: the section `## {SECTION}` publishes {name} more than once")
 
 
 def main(args):
@@ -214,9 +186,9 @@ def main(args):
             print(f"the tag is vX.Y.Z or vX.Y.Z-suffix (for example v0.1.0 or "
                   f"v0.1.0-rc.1), got '{args[0]}'", file=sys.stderr)
             return 2
-    version, crates = workspace()
+    version = workspace()
     check_status(version, tag)
-    check_contributing(crates)
+    check_contributing()
     for p in problems:
         print(f"release-check: {p}", file=sys.stderr)
     return 1 if problems else 0

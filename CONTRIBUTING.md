@@ -85,16 +85,14 @@ scripts/release-check.py vX.Y.Z                     # the README status and this
 git push origin main
 git tag vX.Y.Z && git push origin vX.Y.Z            # release.yml: the three archives and the GitHub Release
 cargo login                                         # once per machine, with a crates.io API token
-cargo publish --locked -p tiza-core
-cargo publish --locked -p tiza-export
-cargo publish --locked -p tiza-tui
-cargo publish --locked -p tiza-mcp
-cargo publish --locked -p tiza
+cargo publish --workspace --locked                  # the five crates, in dependency order
 ```
 
 `scripts/bump-version.sh` sets the workspace version and the `version` of the four internal crates in `[workspace.dependencies]` of `Cargo.toml` (a 0.x requirement is exact, so all five move together), runs `cargo update --workspace` for `Cargo.lock`, turns the `## [Unreleased]` entries of `CHANGELOG.md` into `## [X.Y.Z] - date`, under a new empty `## [Unreleased]`, and moves the version of the README's status line; it changes nothing else. The dry run packages and builds the five crates against each other and uploads nothing; it only means something for a version that is not on crates.io yet (a dry run of one crate alone, or of a version already published, builds against the crates already on crates.io). If it fails, fix it, commit, and run it again: nothing is tagged or pushed yet.
 
-The crates go to crates.io once the GitHub Release is out, one at a time, in dependency order. Each `cargo publish` returns only once the crate is in the crates.io index (`Waiting for … to be available at registry crates-io`), so the next one finds it. If one stops waiting with `timed out waiting for … to be available`, check that the version is in the index before running the next — `curl -s https://index.crates.io/ti/za/tiza-core | grep '"vers":"X.Y.Z"'` (same path for every `tiza*` crate) — and go on when it prints a line. A crate that is already published fails with `already exists on crates.io index`: skip it and go on with the next. A tag with a suffix (`vX.Y.Z-rc.N`) is a prerelease on GitHub and never goes to crates.io.
+The crates go to crates.io once the GitHub Release is out. `cargo publish --workspace` publishes the five crates in dependency order. It skips the crates with `publish = false`. Before it publishes a crate, it waits until the crates that the crate needs are in the crates.io index. A tag with a suffix (`vX.Y.Z-rc.N`) is a prerelease on GitHub and never goes to crates.io.
+
+If the command stops before it publishes all five crates, do not run it again. It stops at the start when one of the crates is already on crates.io (`already exists on crates.io index`). Find the crates that are not in the index. For each crate, run `curl -s https://index.crates.io/ti/za/NAME | grep '"vers":"X.Y.Z"'`, with the name of the crate in place of `NAME`. The crate is in the index when the command prints a line. Then publish each crate that is not in the index with `cargo publish --locked -p NAME`, in this order: `tiza-core`, `tiza-export`, `tiza-tui`, `tiza-mcp`, `tiza`.
 
 A `vX.Y.Z` tag with no suffix also deploys the docs site to GitHub Pages (`.github/workflows/docs.yml`). The site then shows the docs of that tag. First, the workflow checks the docs of the tag against its code (`site/checks`). If a check fails, the site does not deploy, and only a new tag can fix it. So before you push the tag, make sure that the "Docs site" workflow passed on the version commit. A push to `main` or a pull request only checks the docs, builds the site and checks its links. To deploy the latest release again, run the "Docs site" workflow by hand. If a check of the docs then fails on a release that deployed before (for example, after a change of the runner), run it again with "checks" off.
 
