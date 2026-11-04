@@ -93,7 +93,7 @@ printf '%s\n' '{"id":1,"method":"annotation.add","params":{"type":"note","line":
 | `render.text` | `width` | Gives the take at the current step as plain text. | `render_text` |
 | `check` | `width` | Gives the report of `tiza check --json` for the live document. | `check` |
 
-- `width` of `check` is from 20 to 400. The default is the `width` of the config file, else 100.
+- `width` of `check` is the columns of code, from 20 to 400, as `render.text` takes it. The default is the `width` of the config file, else 100. `tiza check --width` takes the width of a terminal, and its report also has `terminal`. See [Check report](cli.md#check-report).
 
 ### Annotations
 

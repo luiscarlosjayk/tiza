@@ -421,14 +421,21 @@ fn check_counts_the_new_rows() {
     let p = path("consecutive.tiza");
     let out = tiza_ok(&["check", &p, "--width", "100"]);
     assert!(out.contains("0 errors, 0 warnings"), "{out}");
-    assert!(out.contains("no label is clipped at 81 or wider"), "{out}");
+    // In a terminal: 2 columns more, its padding of 1 at each side.
+    assert!(
+        out.contains("no label is clipped at 83 or wider (81 columns of code"),
+        "{out}"
+    );
     // two-labels-hl is clean under the lines from 30 columns, but at 62,
     // where the margin first appears, step 2 clips the note of L3: the
     // narrowest width from which every wider one is clean is 63.
     let p = path("two-labels-hl.tiza");
     let out = tiza_ok(&["check", &p, "--width", "100"]);
     assert!(out.contains("0 errors, 0 warnings"), "{out}");
-    assert!(out.contains("no label is clipped at 63 or wider"), "{out}");
+    assert!(
+        out.contains("no label is clipped at 65 or wider (63 columns of code"),
+        "{out}"
+    );
     // The library agrees, step by step.
     let doc = open("consecutive.tiza");
     assert!(lay(&doc, 100, 1, false).clipped_labels.is_empty());
@@ -546,7 +553,10 @@ fn a_margin_callout_with_no_room_counts_as_a_label_of_its_line() {
     let p = path("callout-short2.tiza");
     let out = tiza_ok(&["check", &p, "--width", "100"]);
     assert!(out.contains("0 errors, 0 warnings"), "{out}");
-    assert!(out.contains("no label is clipped at 30 or wider"), "{out}");
+    assert!(
+        out.contains("no label is clipped at 32 or wider (30 columns of code"),
+        "{out}"
+    );
     // A callout whose block fits stays a block in the margin, beside the
     // two labels under L1.
     let t = render("callout-fits.tiza", 100, &[]);

@@ -107,10 +107,11 @@ fn render(name: &str, width: usize) -> String {
 }
 
 /// `tiza check --json --width W`: each `clipped_label` finding as (id, has
-/// no room).
+/// no room). `width` is columns of code: `tiza check` takes the terminal
+/// that has them.
 fn check_cuts(name: &str, width: usize) -> Vec<(String, bool)> {
-    let w = width.to_string();
     let p = path(name);
+    let w = tiza_qa::check_width_for_code(&p, width);
     let out = tiza_qa::tiza(&["check", "--json", "--width", &w, &p]);
     let v: Value = serde_json::from_slice(&out.stdout).unwrap();
     v["findings"]
@@ -699,7 +700,7 @@ fn reply_agrees_with_check(name: &str) {
                 Some(base_dir.as_path()),
                 &CheckOptions {
                     width: Some(w),
-                    numbers: None,
+                    ..CheckOptions::default()
                 },
             );
             let mine: Vec<bool> = report

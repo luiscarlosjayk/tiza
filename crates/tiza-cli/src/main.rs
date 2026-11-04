@@ -285,7 +285,7 @@ enum Cmd {
     Check {
         /// `.tiza` document, a source file with a `.tiza` document next to it, or `-` for stdin
         file: String,
-        /// Width to check the labels and the code lines at (default: as `render`: `width` in config.toml, else 100)
+        /// Width of the terminal to check the labels and the code lines at (default: `width` in config.toml, else 100). The side padding of the document (else `pad` in config.toml) comes off it, as in the TUI
         #[arg(long)]
         width: Option<usize>,
         /// Print the findings as JSON (for agents and scripts)
@@ -359,7 +359,8 @@ enum SceneCmd {
     /// Show what is on screen as text
     Text {
         /// Columns of the take. Without it, the width of the screen's code
-        /// area, as the agents' `visible` judges it (and `check` at that width).
+        /// area, as the agents' `visible` judges it (and the `check` method at
+        /// that width, in columns of code).
         #[arg(long)]
         width: Option<u32>,
     },
@@ -1115,12 +1116,16 @@ fn real_main() -> anyhow::Result<()> {
                 .map(tiza_core::layout::check_width)
                 .transpose()
                 .map_err(|e| anyhow::anyhow!("{e}"))?;
-            // As `render` draws it: the config file's width and gutter
-            // unless the flag or the document says otherwise.
+            // The width of the terminal that records it (the flag, else the
+            // config file's width), less the side padding of the document or
+            // of the config file, as the TUI lays it out; the config file's
+            // gutter unless the document says otherwise.
             let config = load_config();
             let opts = tiza_core::check::CheckOptions {
                 width: width.or(config.defaults.width),
                 numbers: config.defaults.numbers,
+                terminal: true,
+                pad: config.defaults.pad,
             };
             let (name, report) = if file == "-" {
                 let mut text = String::new();
@@ -1281,7 +1286,7 @@ fn config_report(cfg: &tiza_core::config::Config) -> String {
     }
     let d = &cfg.defaults;
     let on = |b: bool| if b { "on" } else { "off" }.to_string();
-    let (pv, ph) = tiza_tui::ui::DEFAULT_PADDING;
+    let (pv, ph) = tiza_core::layout::DEFAULT_PADDING;
     let rows: [(&str, Option<String>, String); 7] = [
         (
             "pad",

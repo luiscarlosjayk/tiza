@@ -347,6 +347,40 @@ pub fn check_width(width: usize) -> Result<usize, crate::Error> {
     }
 }
 
+/// Blank cells `(rows, columns)` kept between the terminal edge and the
+/// code when neither the document (`padding`) nor the config file (`pad`)
+/// sets them.
+pub const DEFAULT_PADDING: (u16, u16) = (0, 1);
+
+/// The blank columns that a terminal of `cols` columns keeps at each side
+/// of the code, of the `pad` asked: the code keeps at least [`MIN_WIDTH`]
+/// columns. The one rule of the screen, `tiza check` and `code needs N
+/// cols`.
+pub fn side_padding(pad: u16, cols: usize) -> u16 {
+    let room = cols.saturating_sub(MIN_WIDTH) / 2;
+    pad.min(u16::try_from(room).unwrap_or(u16::MAX))
+}
+
+/// The columns of code in a terminal of `cols` columns with `pad` blank
+/// columns asked at each side ([`side_padding`]).
+pub fn code_columns(cols: usize, pad: u16) -> usize {
+    cols.saturating_sub(2 * usize::from(side_padding(pad, cols)))
+}
+
+/// The narrowest terminal from which [`code_columns`] gives `code` columns
+/// or more, in that terminal and in every wider one: what `code needs N
+/// cols` and `tiza check` name. (Below `MIN_WIDTH + 2 × pad` columns the
+/// padding shrinks, so a terminal one column wider can have fewer columns
+/// of code.)
+pub fn terminal_columns_for(code: usize, pad: u16) -> usize {
+    // From here on the padding is whole and the code grows with the terminal.
+    let top = code.max(MIN_WIDTH) + 2 * usize::from(pad) + 2;
+    (0..=top)
+        .rev()
+        .find(|&cols| code_columns(cols, pad) < code)
+        .map_or(0, |cols| cols + 1)
+}
+
 /// The width of an export of what a terminal of `cols` columns shows, for
 /// an instance whose `status` gives no `width` (older than that field):
 /// the columns less 2, from 40 to [`MAX_WIDTH`]. A wider terminal exports

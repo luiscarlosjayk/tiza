@@ -101,10 +101,13 @@ fn check_cuts(tiza: &std::path::Path, width: usize) -> Vec<(String, bool)> {
         .collect()
 }
 
-/// [`check_cuts`] with the first step of each finding.
+/// [`check_cuts`] with the first step of each finding. `width` is columns
+/// of code, as the screen lays them out: `tiza check` takes the terminal
+/// that has them.
 fn check_findings(tiza: &std::path::Path, width: usize) -> Vec<(String, bool, u64)> {
+    let terminal = tiza_qa::check_width_for_code(tiza.to_str().unwrap(), width);
     let out = tiza_qa::command()
-        .args(["check", "--json", "--width", &width.to_string()])
+        .args(["check", "--json", "--width", &terminal])
         .arg(tiza)
         .output()
         .unwrap();

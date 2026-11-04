@@ -66,6 +66,13 @@ fn check_json(file: &Path, extra: &[&str]) -> (i32, Value) {
     (code, v)
 }
 
+/// `tiza check --json` as the live check gives it at `code` columns of code
+/// (the live check takes columns of code; `tiza check`, a terminal).
+fn cli_as_live(file: &Path, code: usize) -> Value {
+    let width = tiza_qa::check_width_for_code(file.to_str().unwrap(), code);
+    tiza_qa::as_live_report(check_json(file, &["--width", &width]).1)
+}
+
 fn findings(v: &Value) -> Vec<Value> {
     v["findings"].as_array().unwrap().clone()
 }
@@ -319,7 +326,8 @@ fn a_step_with_nothing_new_warns() {
 fn clipped_labels_at_the_default_width_and_the_narrowest_clean_one() {
     let file = fixture("check/preflight/ownership.rs.tiza");
     let file = file.to_str().unwrap();
-    // Plain `check`: the default width (100, as `render`).
+    // Plain `check`: the default width, a terminal of 100 columns. The
+    // document has a padding of 2 at each side: 96 columns of code.
     let (code, plain, _) = check(&[file]);
     assert_eq!(code, 0, "{plain}");
     let (_, at100, _) = check(&[file, "--width", "100"]);
@@ -336,11 +344,21 @@ fn clipped_labels_at_the_default_width_and_the_narrowest_clean_one() {
         ),
         "{plain}"
     );
-    assert_eq!(plain.matches("is clipped with").count(), 2, "{plain}");
     assert!(
-        plain
-            .trim_end()
-            .ends_with("no label is clipped at 108 or wider (`tiza render --width 108`)"),
+        plain.contains(
+            "warning: a3, step 4, L4: label «s no longer owns it: using it here does not compile» is clipped with «…» at width 100"
+        ),
+        "{plain}"
+    );
+    assert_eq!(plain.matches("is clipped with").count(), 3, "{plain}");
+    assert!(
+        plain.contains("labels at width 100: 96 columns of code, padding 2"),
+        "{plain}"
+    );
+    assert!(
+        plain.trim_end().ends_with(
+            "no label is clipped at 112 or wider (108 columns of code: `tiza render --width 108`)"
+        ),
         "{plain}"
     );
     // The step a clipped label names is the first one it is clipped at. At
@@ -353,8 +371,13 @@ fn clipped_labels_at_the_default_width_and_the_narrowest_clean_one() {
         &fixture("check/preflight/ownership.rs.tiza"),
         &["--width", "100"],
     );
-    assert_eq!(v["width"], 100);
+    assert_eq!(v["width"], 96);
     assert_eq!(v["min_clean_width"], 108);
+    assert_eq!(
+        v["terminal"],
+        json!({"width": 100, "padding": 2, "min_clean_width": 112}),
+        "{v}"
+    );
     let clipped = with_code(&findings(&v), "clipped_label");
     let texts: Vec<(&str, &str)> = clipped
         .iter()
@@ -364,12 +387,16 @@ fn clipped_labels_at_the_default_width_and_the_narrowest_clean_one() {
         texts,
         vec![
             ("a1", "move: s moves into takes"),
+            ("a3", "s no longer owns it: using it here does not compile"),
             ("a6", "read: shared borrow")
         ]
     );
-    // At 108 nothing is clipped, and the renders agree: no «…» at any step.
-    let (_, at108, _) = check(&[file, "--width", "108"]);
-    assert!(!at108.contains("is clipped with"), "{at108}");
+    // In a terminal of 112 (108 columns of code) nothing is clipped, and the
+    // renders at 108 agree: no «…» at any step. At 111, a label is cut.
+    let (_, at112, _) = check(&[file, "--width", "112"]);
+    assert!(!at112.contains("is clipped with"), "{at112}");
+    let (_, at111, _) = check(&[file, "--width", "111"]);
+    assert!(at111.contains("is clipped with"), "{at111}");
     for s in 0..=7 {
         let step = s.to_string();
         let r = tiza(&[
@@ -590,15 +617,17 @@ fn mcp_check(name: &str, file: &Path, args: Value) -> Value {
 
 #[test]
 fn mcp_check_is_the_cli_check() {
-    for (name, args, cli) in [
-        ("w-label-under", json!({}), vec![]),
-        ("w-label-under", json!({"width": 60}), vec!["--width", "60"]),
-        ("markers", json!({}), vec![]),
+    // The MCP `check` takes columns of code (100 by default); `tiza check`
+    // the terminal that has them.
+    for (name, args, code) in [
+        ("w-label-under", json!({}), 100),
+        ("w-label-under", json!({"width": 60}), 60),
+        ("markers", json!({}), 100),
     ] {
         let file = fixture(&format!("check/preflight/{name}.tiza"));
-        let (_, want) = check_json(&file, &cli);
+        let want = cli_as_live(&file, code);
         let got = mcp_check(&format!("mcp-{name}"), &file, args);
-        assert_eq!(got, want, "{name} {cli:?}: MCP\n{got}\nCLI\n{want}");
+        assert_eq!(got, want, "{name} {code}: MCP\n{got}\nCLI\n{want}");
     }
     // A width that the MCP refuses on its own: the error names it.
     let dir = scratch("mcp-width3");
@@ -632,7 +661,7 @@ fn the_live_check_sees_unsaved_changes_and_linked_files() {
     let r = live.api("check", json!({"width": 3}));
     assert!(r.error.is_some_and(|e| e.message.contains("width=3")));
     // A linked file: the message names it.
-    let (_, cli) = check_json(&fixture("shared/linked/linked.tiza"), &[]);
+    let cli = cli_as_live(&fixture("shared/linked/linked.tiza"), 100);
     let got = mcp_check(
         "mcp-linked",
         &fixture("shared/linked/linked.tiza"),
@@ -796,41 +825,49 @@ fn check_help_has_no_socket_or_session() {
 fn a_clean_width_below_the_narrowest_one_says_so() {
     let file = fixture("check/preflight/ownership.rs.tiza");
     let file = file.to_str().unwrap();
-    // 85: no label clipped (notes under the lines), below 108.
-    let (code, out, _) = check(&[file, "--width", "85"]);
+    // The document has a padding of 2 at each side: a terminal has 4
+    // columns more than the code. A terminal of 89 (85 columns of code): no
+    // label clipped (notes under the lines), below 112 (108 of code).
+    let (code, out, _) = check(&[file, "--width", "89"]);
     assert_eq!(code, 0);
     assert!(out.contains("0 errors, 0 warnings"), "{out}");
     assert!(
         out.trim_end().ends_with(
-            "no label is clipped at 108 or wider; 79-93 are clean too (notes go under the lines below 94 columns)"
+            "no label is clipped at 112 or wider; 83-97 are clean too (notes go under the lines below 98 columns)"
         ),
         "{out}"
     );
-    // 66: no label clipped, but the code is cut (QA 2: line 4 below 79):
-    // a warning, so `--strict` fails.
-    let (code, out, _) = check(&[file, "--width", "66"]);
+    // 70 (66 of code): no label clipped, but the code is cut (QA 2: line 4
+    // below 79 of code): a warning, so `--strict` fails.
+    let (code, out, _) = check(&[file, "--width", "70"]);
     assert_eq!(code, 0, "{out}");
     assert!(
         out.contains(
-            "warning: step 0, L4: code is cut with «…» at width 66, first at step 0, then at steps 1-7: L4 (every code line of the take fits from width 79, `tiza render --width 79`)"
+            "warning: step 0, L4: code is cut with «…» at width 70, first at step 0, then at steps 1-7: L4 (every code line of the take fits from width 83 (79 columns of code: `tiza render --width 79`))"
         ),
         "{out}"
     );
     // The warning says it: the summary does not say it again.
     assert!(!out.contains("but code lines are"), "{out}");
-    let (code, _, _) = check(&[file, "--width", "66", "--strict"]);
+    let (code, _, _) = check(&[file, "--width", "70", "--strict"]);
     assert_eq!(code, 1);
-    assert!(out.contains("79-93 are clean too"), "{out}");
+    assert!(out.contains("83-97 are clean too"), "{out}");
     let (_, v) = check_json(
         &fixture("check/preflight/ownership.rs.tiza"),
-        &["--width", "85"],
+        &["--width", "89"],
     );
+    // In columns of code, and in columns of the terminal.
     assert_eq!(
         v["narrower"],
         json!({"clean": [[79, 93]], "code_fits_from": 79, "margin_from": 94})
     );
-    // At 100 labels are clipped and at 108 nothing is: no `narrower`.
-    for w in ["100", "108"] {
+    assert_eq!(
+        v["terminal"]["narrower"],
+        json!({"clean": [[83, 97]], "code_fits_from": 83, "margin_from": 98})
+    );
+    // At 104 (100 of code) labels are clipped and at 112 nothing is: no
+    // `narrower`.
+    for w in ["104", "112"] {
         let (_, v) = check_json(
             &fixture("check/preflight/ownership.rs.tiza"),
             &["--width", w],

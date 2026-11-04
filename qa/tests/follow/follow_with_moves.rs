@@ -133,15 +133,19 @@ fn save_while_waiting(live: &Live, src: &Path, content: &str) {
     });
 }
 
+/// `tiza check --json` of `path`, as the live check gives it at its default
+/// width (100 columns of code): `tiza check` takes the terminal that has
+/// them.
 fn check_file(path: &Path) -> (i32, Value) {
+    let width = tiza_qa::check_width_for_code(path.to_str().unwrap(), 100);
     let out = tiza_qa::command()
-        .args(["check", "--json"])
+        .args(["check", "--json", "--width", &width])
         .arg(path)
         .output()
         .unwrap();
     let v = serde_json::from_slice(&out.stdout)
         .unwrap_or_else(|e| panic!("{e}: {}", String::from_utf8_lossy(&out.stdout)));
-    (out.status.code().unwrap_or(-1), v)
+    (out.status.code().unwrap_or(-1), tiza_qa::as_live_report(v))
 }
 
 /// `tiza render SOURCE --all-steps --format txt`: one text per step.

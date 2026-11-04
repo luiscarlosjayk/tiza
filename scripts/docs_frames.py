@@ -21,7 +21,7 @@ code does not have) stops the script.
 
 - The theme is dark. `theme=light` gives light, `theme=doc` the theme that
   the commands gave the document.
-- The width W is `width=`, or else the narrowest width from 20 columns at
+- The width W is `width=`, or else the narrowest width of code from 20 columns at
   which `tiza check` finds nothing and the text export cuts no label with
   `…` (unless the code itself has `…`).
 - The image goes where the src of its <img> points, and the `width` of the
@@ -232,10 +232,14 @@ def make_doc(tiza, fid, path, rng, cmds, work, sock, files=()):
 
 
 def narrowest_width(tiza, doc, work, code_has_ellipsis):
-    for w in range(20, 401):
-        c = json.loads(run(tiza, "check", doc, "--width", str(w), "--json", cwd=work).stdout)
+    # `tiza check --width` takes a terminal and takes off its side padding;
+    # its report gives the columns of code in `width`, which is the width
+    # of the export. Wider terminals give the same or more columns of code.
+    for t in range(20, 401):
+        c = json.loads(run(tiza, "check", doc, "--width", str(t), "--json", cwd=work).stdout)
         if c["errors"] or c["warnings"]:
             continue
+        w = c["width"]
         txt = run(tiza, "render", doc, "--format", "txt", "--width", str(w), "--out", "-", cwd=work).stdout
         if "…" in txt and not code_has_ellipsis:
             continue

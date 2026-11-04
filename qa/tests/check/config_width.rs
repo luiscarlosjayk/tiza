@@ -1,6 +1,7 @@
-//! `tiza check` measures as `tiza render` draws: the `width` of the config
-//! file when no `--width` is given (the flag wins), and its `numbers` when
-//! the document does not set the gutter.
+//! `tiza check` measures as the TUI shows it: in a terminal as wide as the
+//! `width` of the config file when no `--width` is given (the flag wins),
+//! less the `pad` of the config file when the document has no `padding`,
+//! and with its `numbers` when the document does not set the gutter.
 
 use serde_json::{Value, json};
 use tiza_qa::{fixture, scratch, tiza_with_config};
@@ -19,21 +20,20 @@ fn check_takes_the_width_of_the_config_and_the_flag_wins() {
         )
         .unwrap();
     }
+    // The config file has `width = 60` and `pad = "2 5"`; the document no
+    // `padding`: 5 blank columns at each side of the code.
     let width = |args: &[&str]| {
         let (_, out, err) = tiza_with_config(&dir, "cfg.toml", args);
         let report: Value = serde_json::from_str(&out).unwrap_or_else(|_| panic!("{out}{err}"));
-        report["width"].clone()
+        (report["width"].clone(), report["terminal"].clone())
     };
-    assert_eq!(
-        width(&["check", "doc.tiza", "--json"]),
-        json!(60),
-        "the config's width"
-    );
-    assert_eq!(
-        width(&["check", "doc.tiza", "--json", "--width", "80"]),
-        json!(80),
-        "the flag wins"
-    );
+    let (code, terminal) = width(&["check", "doc.tiza", "--json"]);
+    assert_eq!(code, json!(50), "the config's width less its pad");
+    assert_eq!(terminal["width"], json!(60), "the config's width");
+    assert_eq!(terminal["padding"], json!(5), "the config's pad");
+    let (code, terminal) = width(&["check", "doc.tiza", "--json", "--width", "80"]);
+    assert_eq!(code, json!(70), "the flag wins");
+    assert_eq!(terminal["width"], json!(80), "the flag wins");
 }
 
 #[test]

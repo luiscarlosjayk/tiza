@@ -51,7 +51,7 @@ trap 'rm -rf "$no_config"' EXIT
 export TIZA_CONFIG="$no_config/config.toml" XDG_CONFIG_HOME="$no_config"
 
 # The README images are 92 columns wide. Every label of the example fits
-# from 91 columns on (`tiza check` says so).
+# from 91 columns of code on (`tiza check` says so: a terminal of 95).
 WIDTH=92
 EXAMPLE=examples/ownership.rs.tiza
 # The last step of the example: the highest step of an annotation or a move.

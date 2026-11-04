@@ -4,6 +4,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 
 ## [Unreleased]
 
+### Changed
+- `tiza check --width N` takes the width of the terminal that you record in, and takes off the side padding, as the TUI does: the `padding` of the document, else `pad` of the config file, else 1 column at each side. Before, it checked `N` columns of code. A terminal of `N` columns shows fewer, so `check` could give no warning for a label that the recording cut. **If a script gives `--width` the columns of code, add the padding of both sides to the width.** The default width (`width` of the config file, else 100) is also a terminal. The report gives the width of the terminal, its columns of code and the padding, and the narrowest clean width of the terminal. `--json` adds `terminal`. `tiza render --width` and the `check` of the socket and MCP keep columns of code.
+
+### Fixed
+- In a terminal too narrow for its padding, `status` and the status bar measured the code at a width that the screen did not use. Now they use the width of the screen.
+
 ## [0.2.0] - 2026-10-30
 
 ### Added

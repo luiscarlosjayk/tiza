@@ -292,7 +292,7 @@ fn check(job: &Job, width: usize) -> Result<tiza_core::check::Report, String> {
             job.base.as_deref(),
             &CheckOptions {
                 width: Some(width),
-                numbers: None,
+                ..CheckOptions::default()
             },
         );
         // Test hook, only with the `test-hooks` feature: a panic

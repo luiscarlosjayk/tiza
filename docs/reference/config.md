@@ -53,7 +53,7 @@ Tiza takes the path of the file from the first item of this list that applies:
 |---|---|---|
 | The TUI | When it starts. | All the tables. |
 | `tiza render` | At each export. | `[theme]`, `numbers` and `width`. |
-| `tiza check` | At each check. | `numbers` and `width`. |
+| `tiza check` | At each check. | `pad`, `numbers` and `width`. |
 | `tiza config` | Each time that you run it. | All the tables, to show them. |
 | `tiza mcp` | At each `export_image`. | `[theme]`. |
 
@@ -61,7 +61,7 @@ Tiza takes the path of the file from the first item of this list that applies:
 - `tiza config` only shows the file. It changes nothing.
 - Without a `FILE` argument, `tiza render` exports the live instance. Then it takes the width and `numbers` from the instance, and only `[theme]` from the config file.
 - `tiza mcp` reads its own config file: the file that its environment gives, not the file of the instance. `export_image` takes `numbers` from the instance.
-- `tiza check` uses `numbers` for the gutter when the document does not set it.
+- `tiza check` uses `numbers` for the gutter when the document does not set it. It takes `pad` off the width of the terminal when the document does not set `padding`.
 - The `check` method of the socket and the `check` MCP tool use the `width` of the config file of the instance.
 
 ## `[defaults]`
@@ -70,7 +70,7 @@ The values that a session starts with.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `pad` | string or integer | `"0 1"` | The blank cells around the code on the screen: `"V H"` gives `V` rows and `H` columns. |
+| `pad` | string or integer | `"0 1"` | The blank cells around the code on the screen: `"V H"` gives `V` rows and `H` columns. `tiza check` takes the `H` columns off each side of the terminal. |
 | `numbers` | `true` or `false` | `true` | The line-number gutter. |
 | `mouse` | `true` or `false` | `false` | Mouse capture. |
 | `autosave` | `true` or `false` | `true` | Autosave of the document. |
@@ -103,7 +103,7 @@ A flag, a [`:` command](commands.md) and the document win over the config file. 
 - **`mouse`:** Mouse capture is on at start when you give `--mouse` or the file sets `mouse = true`. The file cannot turn off `--mouse`. `:mouse` changes it for the session.
 - **`autosave`:** `--no-save` wins over `autosave = true`. `:autosave` changes it for the session. `:autosave on` also ends no-save mode.
 - **`layout`:** `:layout` changes it for the session.
-- **`width`:** For `tiza render` and `tiza check`, `--width` wins, then the file, then 100. For the `check` method and the `check` MCP tool, their `width` argument wins, then the file of the instance, then 100.
+- **`width`:** For `tiza render` and `tiza check`, `--width` wins, then the file, then 100. For the `check` method and the `check` MCP tool, their `width` argument wins, then the file of the instance, then 100. For `tiza check`, the width is a terminal, and the side padding comes off it. For `tiza render` and the `check` method, it is columns of code.
 - **`effect_fps`:** Only the file sets it, for every session.
 
 ## `[styles]`
