@@ -21,8 +21,8 @@ const CODE: &str = "fn main() {\n    let a = 1;\n    let b = 2;\n    let c = 3;\
 /// The text of the refusal, after the id of the annotation.
 fn never_shows(until: u32, step: u32) -> String {
     format!(
-        "until {until} is before its step {step}: the spotlight never shows. \
-         Give an until of {step} or later, or remove it."
+        "give until {step} or later, or remove it \
+         (until {until} is before step {step}: the spotlight never shows)"
     )
 }
 
@@ -85,10 +85,7 @@ fn spot(id: &str, step: u32, until: Option<u32>) -> Value {
 fn an_add_with_until_before_its_step_is_refused() {
     let live = Live::from_code(CODE, "rs", "until-add");
     let e = refused(&live, "annotation.add", spot("s1", 3, Some(2)));
-    assert_eq!(
-        e,
-        format!("invalid_argument: annotation s1: {}", never_shows(2, 3))
-    );
+    assert_eq!(e, format!("invalid_argument: s1: {}", never_shows(2, 3)));
     assert!(
         document(&live)["annotations"]
             .as_array()
@@ -136,10 +133,7 @@ fn an_update_that_moves_the_step_past_until_is_refused() {
     let live = Live::from_code(CODE, "rs", "until-update-step");
     live.api_ok("annotation.add", spot("s1", 2, Some(3)));
     let e = refused(&live, "annotation.update", json!({"id": "s1", "step": 5}));
-    assert_eq!(
-        e,
-        format!("invalid_argument: annotation s1: {}", never_shows(3, 5))
-    );
+    assert_eq!(e, format!("invalid_argument: s1: {}", never_shows(3, 5)));
     // To the `until` itself is a step of its own.
     live.api_ok("annotation.update", json!({"id": "s1", "step": 3}));
     assert_eq!(annotation(&live, "s1")["step"], json!(3));
@@ -160,10 +154,7 @@ fn an_update_whose_shape_puts_until_before_its_step_is_refused() {
         json!({"id": "s1",
             "shape": {"type": "spotlight", "from_line": 2, "to_line": 4, "until": 1}}),
     );
-    assert_eq!(
-        e,
-        format!("invalid_argument: annotation s1: {}", never_shows(1, 3))
-    );
+    assert_eq!(e, format!("invalid_argument: s1: {}", never_shows(1, 3)));
     live.api_ok(
         "annotation.update",
         json!({"id": "s1",
@@ -247,7 +238,7 @@ fn a_supervised_add_with_until_before_its_step_is_refused_when_accepted() {
         .unwrap_or_else(|| panic!("accepted: {:?}", r.result));
     assert_eq!(
         format!("{}: {}", e.code, e.message),
-        format!("invalid_argument: annotation s1: {}", never_shows(2, 3))
+        format!("invalid_argument: s1: {}", never_shows(2, 3))
     );
     assert!(
         document(&live)["annotations"]

@@ -444,7 +444,7 @@ fn an_until_before_its_step_is_an_error() {
     assert_eq!(until[0]["line"], 3);
     assert_eq!(
         until[0]["message"],
-        "until 2 is before its step 3: the spotlight never shows. Give an until of 3 or later, or remove it."
+        "give until 3 or later, or remove it (until 2 is before step 3: the spotlight never shows)"
     );
     // It never dims: step 4 draws as step 3.
     assert_eq!(checked_against_takes(&file), [2, 4]);

@@ -58,24 +58,33 @@ fn annotation_what(id: &str) -> String {
 /// The text that says so, or `None` when the annotation keeps the rule (not
 /// a spotlight, no `until`, or an `until` at or after its step). `tiza
 /// check` gives it as the error `until`; `annotation.add`,
-/// `annotation.update` and `:until` refuse with it.
+/// `annotation.update` and `:until` refuse with it. The fix comes first:
+/// the status bar cuts the end of a long message.
 pub fn until_before_step(step: u32, shape: &Shape) -> Option<String> {
     match shape {
         Shape::Spotlight {
             until: Some(until), ..
         } if *until < step => Some(format!(
-            "until {until} is before its step {step}: the spotlight never shows. \
-             Give an until of {step} or later, or remove it."
+            "give until {step} or later, or remove it \
+             (until {until} is before step {step}: the spotlight never shows)"
         )),
         _ => None,
     }
 }
 
 /// [`until_before_step`] as the refusal of a request, named by the id of
-/// the annotation (`annotation` alone when it has none yet).
+/// the annotation (`spotlight` when it has none yet): `a17: give until 1
+/// or later, …`.
 pub fn check_until(id: &str, step: u32, shape: &Shape) -> Result<(), Error> {
     match until_before_step(step, shape) {
-        Some(text) => Err(Error::Invalid(format!("{}: {text}", annotation_what(id)))),
+        Some(text) => {
+            let who = if id.trim().is_empty() {
+                "spotlight"
+            } else {
+                id
+            };
+            Err(Error::Invalid(format!("{who}: {text}")))
+        }
         None => Ok(()),
     }
 }

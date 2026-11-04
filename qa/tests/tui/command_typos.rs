@@ -89,9 +89,12 @@ fn table_of_typos_is_rejected_with_a_way_forward() {
         ("box 0-0 x", "line 0 does not exist"),
         (
             "until a2 0",
-            "annotation a2: until 0 is before its step 1: the spotlight never shows",
+            "a2: give until 1 or later, or remove it (until 0 is before step 1: the spotlight never shows)",
         ),
-        ("step a2 2", "until 1 is before its step 2"),
+        (
+            "step a2 2",
+            "a2: give until 2 or later, or remove it (until 1 is before step 2",
+        ),
         ("until a1 3", "a1 is not a spotlight"),
         ("step a1 99999", "beyond the last step (2)"),
         ("step a1 0", "steps ≥ 1"),
