@@ -7,8 +7,9 @@ Some pages are maintainer notes outside this repository, in `../dev/` next to th
 ## Always
 
 - Before every push, run the checks for your kind of change. Every command must pass.
-  - A change of code: `cargo fmt --all && cargo clippy --all-targets -- -D warnings && cargo test --no-fail-fast`.
-  - A change of only `docs/`, `site/`, images or the scripts that make the images of the docs: `cargo fmt --all && cargo test -p tiza-qa --test policy && cargo test -p tiza-site-checks && cargo clippy -p tiza-site-checks --all-targets -- -D warnings`.
+  - A change of code: `cargo fmt --all && cargo clippy --all-targets --all-features -- -D warnings && cargo test --all-features --no-fail-fast`.
+  - A change of only the docs (`docs/`, `site/`, images, `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `AGENTS.md`, `scripts/docs-frames.sh`, `scripts/readme-images.sh` or `scripts/tui-captures.sh`): `cargo fmt --all && cargo test -p tiza-qa --test policy && cargo test -p tiza-site-checks && cargo clippy -p tiza-site-checks --all-targets -- -D warnings`.
+  - If you change `CONTRIBUTING.md` or `README.md`, also run `cargo test -p tiza-qa --test release -- release_check publishing`.
   - A change of a `Cargo.toml` or of `deny.toml`: also `cargo deny check bans licenses sources`.
 - Do not push a change that adds a CI failure. If CI fails on your commit, fix it first.
 - Write every user-facing string in English. Commands, JSON fields and the Spanish color aliases stay as they are.
