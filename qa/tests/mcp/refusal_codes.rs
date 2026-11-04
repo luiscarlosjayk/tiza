@@ -49,6 +49,11 @@ fn every_refusal_of_the_mcp_tools_has_its_code() {
             "export_image",
             json!({"path": out.join("a.png").to_str().unwrap(), "scale": 99}),
         ),
+        // A spotlight that never shows: its `until` is before its step.
+        (
+            "add_spotlight",
+            json!({"from_line": 1, "to_line": 2, "step": 3, "until": 2}),
+        ),
         // A move of a newer Tiza: a file can hold it, a tool cannot add it.
         ("add_move", json!({"at_step": 1, "action": "teleport"})),
         (

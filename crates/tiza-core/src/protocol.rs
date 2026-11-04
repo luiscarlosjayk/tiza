@@ -220,6 +220,8 @@ pub enum ShapeSpec {
         find_end: Option<String>,
         #[serde(default)]
         ids: Vec<String>,
+        /// The last step at which the spotlight is active: its `step` or a
+        /// later one (an earlier one is refused). Absent: only at its `step`.
         #[serde(default)]
         until: Option<u32>,
     },

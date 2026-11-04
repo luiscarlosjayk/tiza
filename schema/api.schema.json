@@ -2344,6 +2344,7 @@
               },
               "until": {
                 "default": null,
+                "description": "The last step at which the spotlight is active: its `step` or a\nlater one (an earlier one is refused). Absent: only at its `step`.",
                 "format": "uint32",
                 "minimum": 0,
                 "type": [
@@ -2988,6 +2989,7 @@
                   },
                   "until": {
                     "default": null,
+                    "description": "The last step at which the spotlight is active: its `step` or a\nlater one (an earlier one is refused). Absent: only at its `step`.",
                     "format": "uint32",
                     "minimum": 0,
                     "type": [

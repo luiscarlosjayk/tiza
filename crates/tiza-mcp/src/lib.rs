@@ -461,7 +461,9 @@ pub struct SpotlightParams {
     pub ids: Option<Vec<String>>,
     #[schemars(description = "Step at which it activates (defaults to the current one)")]
     pub step: Option<u32>,
-    #[schemars(description = "Last step at which it stays active; defaults to `step` only")]
+    #[schemars(
+        description = "Last step at which it stays active: `step` or later (an earlier one is refused); defaults to `step` only"
+    )]
     pub until: Option<u32>,
     pub id: Option<String>,
     #[schemars(

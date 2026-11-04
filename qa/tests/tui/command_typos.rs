@@ -62,6 +62,9 @@ fn rejected(live: &Live, cmd: &str, expect: &str) {
 #[test]
 fn table_of_typos_is_rejected_with_a_way_forward() {
     let live = fresh("table");
+    // The spotlight a2 (step 1) ends at step 1: a move of its step past
+    // that is refused like an `until` before its step.
+    live.command("until a2 1");
     let n0 = count(&live);
     assert_eq!(n0, 3);
     for (cmd, expect) in [
@@ -84,7 +87,11 @@ fn table_of_typos_is_rejected_with_a_way_forward() {
         ("focus 0", "line 0 does not exist"),
         ("focus 99-100", "line 99 does not exist"),
         ("box 0-0 x", "line 0 does not exist"),
-        ("until a2 0", "needs N ≥ 1"),
+        (
+            "until a2 0",
+            "annotation a2: until 0 is before its step 1: the spotlight never shows",
+        ),
+        ("step a2 2", "until 1 is before its step 2"),
         ("until a1 3", "a1 is not a spotlight"),
         ("step a1 99999", "beyond the last step (2)"),
         ("step a1 0", "steps ≥ 1"),

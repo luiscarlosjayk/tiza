@@ -167,6 +167,7 @@ The arguments of the MCP tools are in [Arguments](mcp-tools.md#arguments). The s
 - `annotation.update` takes `heads` with one end only. The other end stays.
 - `annotation.add` and `annotation.update` take `effect`, the experimental [enter effect](document-format.md#enter-effects-experimental): `draw`, `fade` or `null`. In `annotation.update`, an absent `effect` keeps the effect, and `null` removes it.
 - `draw` on an annotation without a stroke fails with `invalid_argument`. `annotation.update` checks it when the request has `effect`, `shape` or `emphasis`. Other updates keep the effect, also on an annotation from a file.
+- A spotlight with an `until` before its `step` never shows. Thus a request that makes one fails with `invalid_argument`. `annotation.add` checks it at the step that the spotlight gets, also when the request has no `step`. `annotation.update` checks it when the request has `step` or `shape`. An update without `step` or `shape` does not check it. This is also true for a spotlight from a file that already has such an `until`.
 - `theme.set` without `theme` changes between dark and light, as [Agents and themes](themes.md#agents-and-themes) tells. The MCP tool `set_theme` needs `theme`.
 
 ### `scene.clear`
@@ -198,6 +199,7 @@ The arguments of the MCP tools are in [Arguments](mcp-tools.md#arguments). The s
 - `deleted` for an id that the document does not have fails with `invalid_argument`.
 - A replaced annotation keeps its step without `step`, and its file without `file`. `file: null` is the main file.
 - A new id gets the defaults of `annotation.add`. `file: null` is then the file on screen at its step.
+- `scene.put` and `scene.patch` accept a spotlight with an `until` before its `step`, as Tiza does when it opens a file. `tiza check` reports it with the error `until`.
 
 For example:
 

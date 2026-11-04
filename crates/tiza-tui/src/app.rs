@@ -2700,6 +2700,11 @@ impl App {
         {
             return Err(Error::Invalid(format!("style: {}", unknown_color())));
         }
+        let step = step.unwrap_or(self.doc.step).max(1);
+        // A spotlight that never shows, judged at the step it gets. Only
+        // here: `scene.put`, `scene.patch` and a reload keep one, as a file
+        // does, and `check` reports it.
+        tiza_core::model::check_until(id.as_deref().unwrap_or(""), step, &shape)?;
         self.history.record(&self.doc, "add");
         // A personal style comes into the document with its first mark, in
         // the same undo step.
@@ -2709,7 +2714,6 @@ impl App {
             }
             _ => None,
         };
-        let step = step.unwrap_or(self.doc.step).max(1);
         let kind = shape.kind_name();
         let res = self.doc.add(Annotation {
             id: id.unwrap_or_default(),
@@ -2939,6 +2943,12 @@ impl App {
             && !ann.shape.has_stroke()
         {
             return Err(Error::Invalid(DRAW_NEEDS_A_STROKE.into()));
+        }
+        // A spotlight that never shows: checked when the update moves its
+        // step or gives its shape (and so its `until`). One from a file
+        // keeps its `until` through the other updates; `check` reports it.
+        if p.step.is_some() || p.shape.is_some() {
+            tiza_core::model::check_until(&ann.id, ann.step, &ann.shape)?;
         }
         // Nothing to change: no undo entry, no new revision, no save.
         if self.doc.find_annotation(&p.id) == Some(&ann) {
@@ -6610,13 +6620,8 @@ impl App {
                     let Shape::Spotlight { until, .. } = &mut ann.shape else {
                         return Err(Error::Invalid(format!("{id} is not a spotlight")));
                     };
-                    if n < ann.step {
-                        return Err(Error::Invalid(format!(
-                            "{id} starts at step {}: :until {id} N needs N ≥ {}",
-                            ann.step, ann.step
-                        )));
-                    }
                     *until = Some(n);
+                    tiza_core::model::check_until(&ann.id, ann.step, &ann.shape)?;
                     self.history.record(&self.doc, format!("{id} until {n}"));
                     self.doc.update(ann)?;
                     self.touch();

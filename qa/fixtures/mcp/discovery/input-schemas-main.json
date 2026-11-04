@@ -889,7 +889,7 @@
         ]
       },
       "until": {
-        "description": "Last step at which it stays active; defaults to `step` only",
+        "description": "Last step at which it stays active: `step` or later (an earlier one is refused); defaults to `step` only",
         "format": "uint32",
         "minimum": 0,
         "type": [

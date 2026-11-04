@@ -1,0 +1,32 @@
+{
+ "schema": 1,
+ "title": "A spotlight whose until is before its step",
+ "source": {
+  "language": "rs",
+  "first_line": 1
+ },
+ "code": [
+  "fn main() {",
+  "    let a = 1;",
+  "    let b = 2;",
+  "    let c = 3;",
+  "}"
+ ],
+ "annotations": [
+  {
+   "id": "n1",
+   "step": 3,
+   "type": "note",
+   "line": 4,
+   "text": "last"
+  },
+  {
+   "id": "s1",
+   "step": 3,
+   "type": "spotlight",
+   "from_line": 2,
+   "to_line": 3,
+   "until": 2
+  }
+ ]
+}

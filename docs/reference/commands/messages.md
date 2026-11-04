@@ -56,7 +56,7 @@ The commands are in [`:` commands](../commands.md).
 | `the callout text is empty` | `:callout` got no text. |
 | `unknown placement: use @below, @margin or @auto` | `:callout` got another `@` word. |
 | `ID is not a spotlight` | `:until` got an annotation that is not a spotlight. |
-| `ID starts at step S: :until ID N needs N ≥ S` | `:until` got a step before the step of the spotlight. |
+| `annotation ID: until N is before its step S: the spotlight never shows. Give an until of S or later, or remove it.` | `:until` got a step before the step of the spotlight, or `:step ID S` moved the step of a spotlight after its `until`. |
 | `unknown mark kind (kinds: KINDS; or define one with :style, or use a glyph/emoji)` | `:mark` got a kind that it does not know. |
 | `a style needs at least a glyph` | `:style` defined a new style with no glyph, and `NAME` is not a built-in kind. |
 | `unknown style field (glyph, legend, color)` | `:style` got another key. |

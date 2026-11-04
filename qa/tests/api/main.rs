@@ -21,6 +21,7 @@ mod replies_say_where;
 mod scene_put_and_patch;
 mod scene_round_trip;
 mod socket_and_runtime_folder;
+mod spotlight_until;
 mod stdin_and_schema;
 mod supervised_turn_off;
 mod unknown_update_keys;

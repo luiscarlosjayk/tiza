@@ -190,7 +190,7 @@ The fields of each annotation type are in [Annotations](document-format.md#annot
 - In the margin, a long title can make the block wider. Below the code, Tiza cuts a long title.
 - `kind` is a [kind](document-format.md#kinds), the name of a style, the name of a personal style of the config file of the instance, or any name when `style` has a `glyph`. `list_kinds` gives the personal styles in `personal`.
 - `style` is a [mark style](document-format.md#mark-style) for this mark only: `glyph`, `legend` and `color`.
-- `until` is the last step at which a spotlight is active. Without it, the spotlight is active only at its `step`.
+- `until` is the last step at which a spotlight is active. Without it, the spotlight is active only at its `step`. A spotlight with an `until` before its `step` never shows. Thus the call fails with `invalid_argument`. `update_annotation` checks it when the call has `step`.
 
 ### `define_style`
 

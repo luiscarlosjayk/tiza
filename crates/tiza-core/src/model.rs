@@ -53,6 +53,33 @@ fn annotation_what(id: &str) -> String {
     }
 }
 
+/// The rule of a spotlight's `until`: a spotlight is active from its step to
+/// its `until`, so an `until` before its step makes it active at no step.
+/// The text that says so, or `None` when the annotation keeps the rule (not
+/// a spotlight, no `until`, or an `until` at or after its step). `tiza
+/// check` gives it as the error `until`; `annotation.add`,
+/// `annotation.update` and `:until` refuse with it.
+pub fn until_before_step(step: u32, shape: &Shape) -> Option<String> {
+    match shape {
+        Shape::Spotlight {
+            until: Some(until), ..
+        } if *until < step => Some(format!(
+            "until {until} is before its step {step}: the spotlight never shows. \
+             Give an until of {step} or later, or remove it."
+        )),
+        _ => None,
+    }
+}
+
+/// [`until_before_step`] as the refusal of a request, named by the id of
+/// the annotation (`annotation` alone when it has none yet).
+pub fn check_until(id: &str, step: u32, shape: &Shape) -> Result<(), Error> {
+    match until_before_step(step, shape) {
+        Some(text) => Err(Error::Invalid(format!("{}: {text}", annotation_what(id)))),
+        None => Ok(()),
+    }
+}
+
 /// A hold of `ms` milliseconds for `what` within [`MAX_HOLD_MS`].
 pub fn check_hold_ms(ms: u64, what: &str) -> Result<(), Error> {
     if ms > MAX_HOLD_MS {

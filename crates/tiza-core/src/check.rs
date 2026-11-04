@@ -1727,25 +1727,14 @@ fn check_loaded(
         }
         // A spotlight active from its step to an `until` before it: at no
         // step.
-        if let Shape::Spotlight {
-            until: Some(until), ..
-        } = a.shape
-            && until < a.step
-        {
+        if let Some(text) = crate::model::until_before_step(a.step, &a.shape) {
             bad.insert(a.id.clone());
             out.push(
-                Finding::new(
-                    Level::Error,
-                    "until",
-                    format!(
-                        "until {until} is before its step {step}: the spotlight never shows. Give an until of {step} or later, or remove it.",
-                        step = a.step
-                    ),
-                )
-                .id(a.id.clone())
-                .step(a.step)
-                .file(a.file.clone())
-                .line(anchor_line(&a.shape)),
+                Finding::new(Level::Error, "until", text)
+                    .id(a.id.clone())
+                    .step(a.step)
+                    .file(a.file.clone())
+                    .line(anchor_line(&a.shape)),
             );
         }
         // An effect of a newer Tiza: the file opens, with no effect there.
