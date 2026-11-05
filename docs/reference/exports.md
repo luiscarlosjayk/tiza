@@ -24,7 +24,7 @@ tiza render --out shot.png
 
 For example, this is the last step of `examples/ownership.rs.tiza` as a PNG at 92 columns:
 
-![The last step of the ownership example: arrows and marks for a move, a borrow and a mutable borrow, a drop mark and a box on each function](../img/ownership-final.png)
+![The last step of the ownership example: arrows and marks for a move, a borrow and a mutable borrow, a drop mark and a box around each of the functions takes, len and push](../img/ownership-final.png)
 
 ## Record all the steps
 
