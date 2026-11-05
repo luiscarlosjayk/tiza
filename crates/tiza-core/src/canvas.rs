@@ -633,13 +633,25 @@ impl Canvas {
     /// Plain text, no styles, no trailing spaces, no trailing blank rows
     /// (the padding at the bottom would only add noise in a README).
     pub fn to_plain_text(&self) -> String {
-        let mut rows: Vec<String> = (0..self.height)
-            .map(|y| self.row_text(y).trim_end().to_string())
-            .collect();
-        while rows.last().is_some_and(|r| r.is_empty()) {
-            rows.pop();
+        // One buffer for the whole text: `render.text` and the text exports
+        // make one for each layout.
+        let mut out = String::with_capacity(self.cells.len() + self.height);
+        for y in 0..self.height {
+            if y > 0 {
+                out.push('\n');
+            }
+            let start = out.len();
+            for c in &self.cells[y * self.width..(y + 1) * self.width] {
+                out.push_str(&c.sym);
+            }
+            let kept = out[start..].trim_end().len();
+            out.truncate(start + kept);
         }
-        rows.join("\n")
+        // The blank rows at the bottom: a row that is not blank never ends
+        // in a newline, because its trailing white space is gone.
+        let kept = out.trim_end_matches('\n').len();
+        out.truncate(kept);
+        out
     }
 
     /// Plain text inside a fenced code block, ready to paste into a README,
@@ -848,6 +860,31 @@ mod tests {
         let mut c = Canvas::new(5, 1);
         c.put_str_clipped(0, 0, "abcdefgh", 5, CellStyle::new());
         assert_eq!(c.row_text(0), "abcd…");
+    }
+
+    #[test]
+    fn plain_text_keeps_the_rows_between_and_drops_the_blank_ones_at_the_end() {
+        let style = CellStyle::new();
+        // No cells, or only blank rows: no text.
+        assert_eq!(Canvas::new(0, 0).to_plain_text(), "");
+        assert_eq!(Canvas::new(0, 3).to_plain_text(), "");
+        assert_eq!(Canvas::new(4, 3).to_plain_text(), "");
+        // Trailing spaces go; a blank row between rows stays; the blank
+        // rows at the bottom go.
+        let mut c = Canvas::new(6, 5);
+        c.put_str(0, 0, "ab", style);
+        c.put_str(1, 2, "c", style);
+        assert_eq!(c.to_plain_text(), "ab\n\n c");
+        // A wide grapheme fills two cells and is written once.
+        let mut c = Canvas::new(6, 1);
+        c.put_str(0, 0, "日本", style);
+        assert_eq!(c.to_plain_text(), "日本");
+        // White space that is not a space goes at the end of a row too, as
+        // `str::trim_end` takes it.
+        let mut c = Canvas::new(4, 2);
+        c.put_str(0, 0, "a\u{3000}", style);
+        c.put_str(0, 1, "b", style);
+        assert_eq!(c.to_plain_text(), "a\nb");
     }
 
     #[test]
