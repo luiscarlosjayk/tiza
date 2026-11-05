@@ -192,4 +192,4 @@ Turns mouse capture on or off, or shows its state.
 :mouse
 ```
 
-The mouse is in [Use the mouse](../../guides/present.md).
+The mouse is in [Use the mouse](../../guides/use-the-mouse.md).

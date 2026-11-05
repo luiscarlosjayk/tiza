@@ -145,14 +145,14 @@ The follow-mode task, `--follow` and `:follow on` reload the code each time that
 
 ### The Zed terminal
 
-- Set `"line_height": "standard"` in the `terminal` settings of Zed. Then the box-drawing characters join with no gaps.
+- Set `"line_height": "standard"` in the `terminal` settings of Zed. Then the box-drawing characters and the block characters, such as `█`, join with no gaps. With the default line height, there are thin gaps between the rows of block characters.
 - In the Zed terminal, Cmd-click on a URL in a comment opens it. This also works while mouse capture is on.
 - Press `t` to change between the dark and the light theme. Use the theme that matches your Zed theme in a video. See [Themes](reference/themes.md).
 
 ## See also
 
 - [Follow the editor](guides/follow-the-editor.md)
-- [Use the mouse](guides/present.md)
+- [Use the mouse](guides/use-the-mouse.md)
 - [Terminal support](reference/terminals.md)
 - [Keys](reference/keys.md)
 - [Check before you record](guides/check-before-you-record.md)

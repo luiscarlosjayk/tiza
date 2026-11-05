@@ -508,8 +508,9 @@ impl UpdateParams {
 }
 
 /// Partial re-anchoring of an existing annotation. Which fields apply depends
-/// on the shape: `at` for highlights, marks and notes; `from`/`to` for arrows;
-/// `from_line`/`to_line` for boxes, callouts, spotlights and notes. A field
+/// on the shape: `at` for highlights and marks; `at` or `from_line` for notes
+/// (a note has no `to_line`); `from`/`to` for arrows; `from_line`/`to_line`
+/// for boxes, callouts and spotlights. A field
 /// that does not apply to the annotation's type is an `invalid_argument`
 /// error, never silently ignored; so is an unknown key (`{"find": …}`
 /// without `at` is rejected, not ignored).
@@ -938,7 +939,7 @@ pub struct Status {
     /// Proposals waiting for a decision.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub pending: usize,
-    /// Whether every change is written to the sidecar as it happens
+    /// Whether every change is saved to the `.tiza` document as it happens
     /// (`--no-save`, `:autosave off` and a `scene.put` of another document
     /// turn it off; `:w` saves explicitly either way).
     #[serde(default = "yes")]

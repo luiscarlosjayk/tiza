@@ -201,7 +201,7 @@ def normal(cid, pages, do, step="3", files=OWNERSHIP, doc="ownership.rs.tiza", s
 CAPTURES = [
     {
         "id": "present-step",
-        "pages": ["docs/reference/keys.md", "docs/guides/present.md"],
+        "pages": ["docs/reference/keys.md", "docs/guides/use-the-mouse.md"],
         "files": OWNERSHIP,
         "args": ["--present", "--step", "3", "ownership.rs.tiza"],
         "size": (100, 30),
@@ -329,7 +329,7 @@ CAPTURES = [
            command(":pad 0 0") + [("sleep", 500), ("shot", 0)]),
     # VHS sends no mouse events: `v` and `e` make the same selection as a drag
     # over `String` with the left button, and the screen is the same.
-    normal("selection", ["docs/guides/present.md", "docs/reference/keys.md"],
+    normal("selection", ["docs/guides/use-the-mouse.md", "docs/reference/keys.md"],
            keys("g", "j", "j", "j", "j", "j", "0", "w", "w", "w", "v", "e")
            + [("wait", r"SELECT"), ("sleep", 300), ("shot", 0)]),
     {

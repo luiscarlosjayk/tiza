@@ -5,7 +5,8 @@ The pages in docs/ stay plain GitHub Markdown: no front matter, no shortcodes.
 This script copies the pages that nav.json lists into content/, and:
 
 - takes the title from the H1 of the page and removes that H1,
-- adds the front matter (title, path, weight, source),
+- adds the front matter (title, path, weight, source, and the old paths
+  of a page that moved: see MOVED),
 - writes the _index.md of each section,
 - gives every heading the same id as GitHub ({#slug}), so #anchor links work,
 - rewrites relative links: a page on the site becomes an @/ internal link,
@@ -547,6 +548,15 @@ def toml_str(s):
     return json.dumps(s, ensure_ascii=False)
 
 
+# A page that moved: each old URL path redirects to the page (a Zola alias),
+# so that a link to the old address keeps working. Key: the repo path of the
+# page. Value: its old URL paths, in the form of page_path (no `docs/`, no
+# `.md`).
+MOVED = {
+    "docs/guides/use-the-mouse.md": ["guides/present"],
+}
+
+
 def plain_title(md):
     return re.sub(r"`", "", md)
 
@@ -581,6 +591,8 @@ def write_page(path, src, title, url_path, weight, body, search=True, **extra):
     ]
     if not search:
         fm.append("in_search_index = false")
+    if src in MOVED:
+        fm.append("aliases = [%s]" % ", ".join(toml_str("/%s/" % old) for old in MOVED[src]))
     fm += [
         "",
         "[extra]",

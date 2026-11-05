@@ -114,7 +114,7 @@ These flags work with `tiza [FILE]`:
 - `--padding V` sets `H` to two times `V`. Tiza does not save `--padding` in the document. `:pad` saves it.
 - Follow mode is in [Follow the editor](../guides/follow-the-editor.md).
 - The themes and `--theme-file` are in [Themes](themes.md).
-- Mouse capture is in [Use the mouse](../guides/present.md).
+- Mouse capture is in [Use the mouse](../guides/use-the-mouse.md).
 - No-save mode is in [Saving](../concepts/saving.md).
 
 For example:

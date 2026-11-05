@@ -2007,8 +2007,8 @@ fn document_or_code_for_put(file: &str, as_code: bool) -> anyhow::Result<tiza_co
 
 fn override_language(doc: &mut tiza_core::Document, lang: Option<&str>) {
     if let Some(l) = lang {
-        // A path (`--lang "${ZED_FILE##*.}"` on a file without extension
-        // expands to the whole path): detect from its name and the code.
+        // A path, for example from an editor task that takes the extension
+        // of a file that has none: detect from its name and the code.
         if l.contains('/') || l.contains('\\') {
             doc.source.language =
                 tiza_core::highlight::detect_language(Some(l), &doc.code).language;

@@ -601,10 +601,11 @@ Tiza finds a target on the code as it is at the step of the move. The target mus
 With `"typing": "line"` or `"char"`, Tiza types the content on the screen.
 
 - `speed_ms` is the time for each line or each character.
+- With `"char"`, Tiza also types the spaces and the tabs at the start of a line, and the end of each line but the last. Each takes `speed_ms`. Thus a line with a large indent waits before its first letter shows.
 - The annotations of the step appear when the typing ends.
 - Any key except Ctrl-C finishes the typing. Tiza uses that key only to finish the typing.
-- In presentation mode, with the live pointer off, a key that only moves the view does not finish the typing: `↑`, `↓`, `j`, `k`, `J`, `K`, `g`, `G`, `Home` and `End`. The view moves, and the typing continues.
 - Thus an `n` during the typing finishes the typing. It does not go to the next step. Press `n` again.
+- In presentation mode, with the live pointer off, a key that only moves the view does not finish the typing: `↑`, `↓`, `j`, `k`, `J`, `K`, `g`, `G`, `Home` and `End`. The view moves, and the typing continues.
 
 Each image in this section is a real `tiza render` export of the document above it, from step 0 to step 1. An animated export types as the TUI does.
 
@@ -930,6 +931,7 @@ With `auto_advance_ms`, the TUI goes to the next step by itself. The time starts
 
 - A key during the typing only finishes the typing. In presentation mode, with the live pointer off, a key that only moves the view moves the view and does not finish the typing.
 - An open `:` line, a `v` or `V` selection, the help, the list or the review holds the countdown until it closes.
+- While it waits, the TUI checks the time about every 60 ms. It goes to the next step at the first check after `auto_advance_ms`. Thus a step stays for at least about 60 ms, and for up to about 60 ms more than its `auto_advance_ms`. For example, `1` and `50` give about 60 ms, `100` gives about 115 ms, and `1000` gives about 1045 ms.
 
 Exports use `auto_advance_ms` in different ways:
 

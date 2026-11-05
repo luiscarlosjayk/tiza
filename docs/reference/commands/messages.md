@@ -247,7 +247,7 @@ A command with wrong arguments shows its usage:
 - `KINDS` lists the styles of the document and the built-in kinds. `NAMES` lists the color names. `X` is the value that you typed.
 - When `:mark` gets a kind and an anchor with no `:`, the usage also explains `L:TEXT`.
 - The message for a wrong `:theme` name is in [Messages](../themes.md#messages).
-- The usage message of `:mouse` is in [Messages](../../guides/present.md#messages).
+- The usage message of `:mouse` is in [Messages](../../guides/use-the-mouse.md#messages).
 
 ## Unknown commands
 

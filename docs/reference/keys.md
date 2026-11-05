@@ -64,7 +64,7 @@ While a selection is open, these keys move the cursor and change the selection: 
 - A text selection that goes to another line becomes a line selection. The status bar still shows `SELECT`.
 - `?` and `L` also work in a selection. Other keys do nothing in a selection. Examples are `g`, `p`, `u`, `q` and `P`. The exceptions are the keys of [Annotate a selection](#annotate-a-selection) and [Ctrl-C](#ctrl-c).
 
-To select with the mouse, see [Use the mouse](../guides/present.md).
+To select with the mouse, see [Use the mouse](../guides/use-the-mouse.md).
 
 ## Annotate a selection
 
@@ -86,7 +86,7 @@ Press one of these keys while a selection is open:
 - `a` works only on a text selection on one line. The arrow end is the first character of the selection.
 - On a line selection, `m` opens `:mark` without a text. Type the kind and `L:TEXT`.
 - `b`, `m`, `n` and `C` add nothing until you press `Enter`.
-- The selection keys do different things on text and on lines. See [Selection keys](../guides/present.md#selection-keys).
+- The selection keys do different things on text and on lines. See [Selection keys](../guides/use-the-mouse.md#selection-keys).
 - A new annotation goes to the step on screen. At step 0, it goes to step 1. See [Annotations](document-format.md#annotations).
 
 ## Edit an annotation
@@ -151,7 +151,7 @@ Step 3 of `examples/ownership.rs.tiza` in presentation mode: an image of the TUI
 - Only the result of a `:` command shows. When Tiza opens in presentation mode and the document has entries that this version does not know, the message at start, with their count, also shows there for 2 seconds. The messages of the keys, for example after `f`, do not show in presentation mode, also in the 2 seconds after the result of a command. The next key hides that result. With mouse capture, a notch of the wheel also hides it.
 - In presentation mode, `u`, `U` and `Ctrl-R` do nothing, because you present and do not edit. In the list (`L`), `x`, `u`, `U` and `Ctrl-R` do nothing too. To undo or redo while you present, type `:undo` or `:redo`: the last row shows the result.
 - `Ctrl-C` quits in presentation mode when no item of the [Ctrl-C](#ctrl-c) list is open.
-- In presentation mode, a click or a drag does nothing. See [Presentation mode](../guides/present.md#presentation-mode).
+- In presentation mode, a click or a drag does nothing. See [Presentation mode](../guides/use-the-mouse.md#presentation-mode).
 - While an enter effect plays, the keys that only move the view do not end it. See [Enter effects](document-format.md#enter-effects-experimental).
 
 ### The live pointer
@@ -415,7 +415,7 @@ The rest of the status bar shows the first of these that applies:
 | `rejected pN: SUMMARY` | `n` or `x` rejected a change. |
 
 - With one line or one annotation, the paste messages say `line` and `annotation`. With one change, `accepted` and `rejected` say `agent change`.
-- The messages of `h`, `s` and `a` in a selection are in [Messages](../guides/present.md#messages). That table also has `arrow cancelled`.
+- The messages of `h`, `s` and `a` in a selection are in [Messages](../guides/use-the-mouse.md#messages). That table also has `arrow cancelled`.
 - A message about a new annotation, or after `+` or `-`, can end with a step hint. Examples are `(step N, press n)`, `(press n)`, `(step N, :step N shows it)` and `(FILE, not shown at step N)`. See [Messages of the annotation commands](commands/messages.md#messages-of-the-annotation-commands).
 
 ## How it works

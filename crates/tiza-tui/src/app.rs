@@ -4185,7 +4185,7 @@ impl App {
         Ok((m, warning))
     }
 
-    /// `scene.list` / `:list`: one line per annotation, in document order.
+    /// `scene.list`: one line per annotation, in document order.
     /// With moves, the coordinates are where the annotation is drawn at the
     /// current step (shifted through the patches); one that lost its anchor
     /// keeps its authoring coordinates and is marked `(unanchored)`.

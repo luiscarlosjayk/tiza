@@ -113,9 +113,9 @@ Tiza turns on bracketed paste at start. Then the terminal marks the start and th
 
 Tiza asks the terminal for mouse events only while mouse capture is on. Without mouse capture, the terminal keeps its own text selection.
 
-- To turn mouse capture on or off, see [Turn the mouse on](../guides/present.md#turn-the-mouse-on).
+- To turn mouse capture on or off, see [Turn the mouse on](../guides/use-the-mouse.md#turn-the-mouse-on).
 - While mouse capture is on, a drag selects code in Tiza, not text in the terminal.
-- To select text in the terminal, see [Copy text from the terminal](../guides/present.md#copy-text-from-the-terminal).
+- To select text in the terminal, see [Copy text from the terminal](../guides/use-the-mouse.md#copy-text-from-the-terminal).
 
 ### Signs that some terminals draw wide
 

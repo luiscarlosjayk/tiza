@@ -657,7 +657,7 @@
     },
     "MoveSpec": {
       "additionalProperties": false,
-      "description": "Partial re-anchoring of an existing annotation. Which fields apply depends\non the shape: `at` for highlights, marks and notes; `from`/`to` for arrows;\n`from_line`/`to_line` for boxes, callouts, spotlights and notes. A field\nthat does not apply to the annotation's type is an `invalid_argument`\nerror, never silently ignored; so is an unknown key (`{\"find\": …}`\nwithout `at` is rejected, not ignored).",
+      "description": "Partial re-anchoring of an existing annotation. Which fields apply depends\non the shape: `at` for highlights and marks; `at` or `from_line` for notes\n(a note has no `to_line`); `from`/`to` for arrows; `from_line`/`to_line`\nfor boxes, callouts and spotlights. A field\nthat does not apply to the annotation's type is an `invalid_argument`\nerror, never silently ignored; so is an unknown key (`{\"find\": …}`\nwithout `at` is rejected, not ignored).",
       "properties": {
         "at": {
           "anyOf": [

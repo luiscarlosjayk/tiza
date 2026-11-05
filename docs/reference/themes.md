@@ -105,7 +105,7 @@ The table lists each token that you can set, with its main use.
 | Token | What it colors |
 |---|---|
 | `bg` | The background of the code, also in an image export. |
-| `fg` | The default text. |
+| `fg` | The text of a highlight that has no color, of the command line and of the panels. The cursor of a `cursor` or `select` move. The syntax theme gives the color of the code. |
 | `muted` | The secondary text, such as the line numbers and the legends. |
 | `dimmed` | The code outside the focus, and the annotations that a spotlight leaves out. |
 | `accent` | The selection, the `:` of the command line, and a mark that has no color of its own. |
