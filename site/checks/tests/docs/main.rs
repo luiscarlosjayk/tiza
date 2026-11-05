@@ -10,6 +10,7 @@ mod frame_tabs;
 mod install_command;
 mod keys_page;
 mod readme_images;
+mod reference_rows;
 mod reporting_links;
 mod scenario_12;
 mod scenario_paths;
