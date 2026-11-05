@@ -722,4 +722,43 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn a_box_of_an_earlier_step_stays_on_its_line_in_each_typed_frame() {
+        // A box on `&s` at step 1. Step 2 types a line at the top, waits,
+        // then types an insert above `&s`: in each frame the box is around
+        // `&s`, also before the insert pushes it down.
+        let doc = json!({
+            "schema": 1, "source": {"language": "rs", "first_line": 1},
+            "code": ["fn main() {", "    let r = dangle();", "}", "", "fn dangle() -> &String {",
+                     "    let s = String::from(\"hello\");", "    &s", "}"],
+            "annotations": [{"id": "b1", "step": 1, "type": "box", "from_line": 7, "to_line": 7}],
+            "moves": [
+                {"at_step": 2, "action": "code.patch", "op": "replace", "find": "fn main() {",
+                 "content": "fn main() { // go", "typing": "char", "speed_ms": 50},
+                {"at_step": 2, "action": "wait", "ms": 500},
+                {"at_step": 2, "action": "code.patch", "op": "insert", "after": "let s",
+                 "content": "    let t = 1;", "typing": "char", "speed_ms": 50}
+            ]
+        });
+        let d = crate::fs::parse_document(&doc.to_string(), None).unwrap();
+        let f = frames(&d, &Theme::dark(), &AnimOptions::default());
+        let texts: Vec<String> = f
+            .iter()
+            .filter(|x| x.typing)
+            .map(|x| x.canvas.to_plain_text())
+            .collect();
+        assert!(texts.len() > 3);
+        // Both stages are there: before the insert and while it types.
+        assert!(texts.iter().any(|t| !t.contains("let t")));
+        assert!(texts.iter().any(|t| t.contains("let t")));
+        for (k, t) in texts.iter().enumerate() {
+            let rows: Vec<&str> = t.lines().collect();
+            let at = rows.iter().position(|r| r.contains("&s")).unwrap();
+            assert!(
+                rows[at - 1].contains('╭') && rows[at + 1].contains('╰'),
+                "frame {k}: the box is not around `&s`:\n{t}"
+            );
+        }
+    }
 }

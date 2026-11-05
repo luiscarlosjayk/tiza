@@ -603,13 +603,14 @@ With `"typing": "line"` or `"char"`, Tiza types the content on the screen.
 - `speed_ms` is the time for each line or each character.
 - With `"char"`, Tiza also types the spaces and the tabs at the start of a line, and the end of each line but the last. Each takes `speed_ms`. Thus a line with a large indent waits before its first letter shows.
 - The annotations of the step appear when the typing ends.
-- A typed move waits for the typed moves and the `wait` moves before it in the step. Until its turn:
-  - a `replace` with as many new lines as old lines shows its old lines;
-  - another typed move shows blank lines. Thus the lines below it do not move while Tiza types.
-- When its turn comes, a `replace` makes all its old lines blank. Then Tiza types the new lines.
+- Tiza plays the moves of the step in the order of the list. Each move changes the code in its turn, also a move without `typing`. Until its turn, the code shows nothing of it.
+- When a typed move adds lines, the lines below them move down when its typing starts.
+- A `replace` keeps each old line until the typing gets to its new line. When the new content has fewer lines, the old lines after them go when its typing starts.
 - When two typed moves change the same line, Tiza types them one after the other.
-- When a `replace` of the step hides a highlight, a mark or an arrow end (see [Annotations after a `code.patch` move](#annotations-after-a-codepatch-move)), the annotation goes away when the step starts, not at the turn of the `replace`.
-- While Tiza types, each line has the colors of the code at the end of the step. A line that shows only in part has the colors of its full line. Thus, if the content opens a comment or a string, the lines below it change color when the typing starts, not when it ends.
+- An annotation of an earlier step moves with its lines in the turn of the move that moves them. When a `replace` hides a highlight, a mark or an arrow end (see [Annotations after a `code.patch` move](#annotations-after-a-codepatch-move)), the annotation goes away in the turn of the `replace`.
+- While Tiza types, each line has the colors of the code at the end of the move that types. A line that shows only in part has the colors of its full line. Thus, if the content opens a comment or a string, the lines below it change color when the typing starts, not when it ends.
+- While a step types, the cursor and the live pointer stay on the lines of the end of the step. Until the turn of a later move that adds or removes lines above them, they can be on other text.
+- Without a `scroll` move, the view does not move with the code when a move adds lines above it.
 - Any key except Ctrl-C finishes the typing. Tiza uses that key only to finish the typing.
 - Thus an `n` during the typing finishes the typing. It does not go to the next step. Press `n` again.
 - In presentation mode, with the live pointer off, a key that only moves the view does not finish the typing: `↑`, `↓`, `j`, `k`, `J`, `K`, `g`, `G`, `Home` and `End`. The view moves, and the typing continues.

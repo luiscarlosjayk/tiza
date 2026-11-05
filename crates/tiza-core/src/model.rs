@@ -1805,6 +1805,14 @@ impl Document {
     /// current step the in-memory `code` is kept (it may be a typing
     /// animation in progress).
     pub fn view_at(&self, step: u32) -> View {
+        self.view_at_stage(step, None)
+    }
+
+    /// [`Document::view_at`] at a stage of `step` while it types: with
+    /// `Some(upto)`, only the moves of `step` before number `upto` of the
+    /// list ([`moves::project_until`]), so each annotation of an earlier
+    /// step goes where the code of that stage puts it.
+    pub fn view_at_stage(&self, step: u32, upto: Option<usize>) -> View {
         let plain = || View {
             doc: self.clone(),
             unanchored: Vec::new(),
@@ -1816,7 +1824,8 @@ impl Document {
         if self.moves.is_empty() {
             return plain();
         }
-        let Ok(proj) = moves::project(self, &self.moves, step) else {
+        let upto = upto.unwrap_or(usize::MAX);
+        let Ok(proj) = moves::project_until(self, &self.moves, step, upto) else {
             // An invalid move was reported at load/add time; show the base.
             return plain();
         };

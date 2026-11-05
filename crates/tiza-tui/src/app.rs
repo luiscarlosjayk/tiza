@@ -157,6 +157,11 @@ pub struct TypingState {
     /// due (the start of the typing before the first one): `typing_tick_at`
     /// measures the time from it.
     pub last: std::time::Instant,
+    /// The code of a stage can end before the line of the cursor: the
+    /// cursor waits on the last line, and goes back to its line and column
+    /// when the typing ends, if it is still there. The line and the column,
+    /// and the line where it waits.
+    held: Option<(u32, u32, u32)>,
 }
 
 /// An enter effect in progress (experimental): the new annotations of the
@@ -3904,6 +3909,7 @@ impl App {
             cue: 0,
             then_effect: true,
             last: std::time::Instant::now(),
+            held: None,
         });
         self.refresh_typing_code();
         self.apply_cues(0);
@@ -3933,6 +3939,15 @@ impl App {
         self.doc.code = t
             .plan
             .code_at(self.doc.source.first_line, t.index, t.revealed);
+        let last = self.doc.last_line();
+        let Some(t) = &mut self.typing else { return };
+        if self.cursor_line > last {
+            let (line, col) = t
+                .held
+                .map_or((self.cursor_line, self.cursor_col), |(l, c, _)| (l, c));
+            t.held = Some((line, col, last));
+            self.cursor_line = last;
+        }
     }
 
     /// Advances the typing animation by the time elapsed. Returns true when
@@ -4003,6 +4018,12 @@ impl App {
         }
         if let Some(t) = self.typing.take() {
             self.doc.code = t.plan.full;
+            if let Some((line, col, at)) = t.held
+                && self.cursor_line == at
+            {
+                (self.cursor_line, self.cursor_col) = (line, col);
+                self.clamp_cursor();
+            }
             // The take was sized from the code typed so far.
             *self.geometry.get_mut() = None;
             // The step is ready: its auto-advance countdown starts.

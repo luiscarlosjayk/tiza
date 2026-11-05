@@ -1108,9 +1108,22 @@ pub(crate) fn replay_order(moves: &[Move], step: u32) -> Vec<(usize, &Move)> {
 /// list order, each on the view shown at its point. A stale move is
 /// skipped. An error names the move that failed.
 pub fn project(doc: &Document, moves: &[Move], step: u32) -> Result<Projection, Error> {
+    project_until(doc, moves, step, usize::MAX)
+}
+
+/// [`project`] at a point inside `step`: the moves of the steps before it,
+/// and of the moves of `step` only those before number `upto` of the list.
+/// A step that types plays its moves in their turn: each of its stages is
+/// the projection until the move after it.
+pub fn project_until(
+    doc: &Document,
+    moves: &[Move],
+    step: u32,
+    upto: usize,
+) -> Result<Projection, Error> {
     let mut p = Projection::start(doc);
     for (i, m) in replay_order(moves, step) {
-        if m.stale.is_some() {
+        if m.stale.is_some() || (m.at_step == step && i >= upto) {
             continue;
         }
         p.apply_move(doc, i, m)
@@ -1916,7 +1929,13 @@ pub const EXPORT_TYPING_FRAME_MS: u64 = 20;
 /// One typed move inside a [`TypingPlan`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypingItem {
-    /// Lines of the step's full code (absolute) the content occupies.
+    /// The number of its move in the list. Its stage is the step until the
+    /// move after it ([`project_until`]).
+    pub index: usize,
+    /// The code of its stage, as shown: the moves of the step before it
+    /// and the item itself applied, the later ones not yet.
+    pub code: Vec<String>,
+    /// Lines of the code of its stage (absolute) the content occupies.
     pub range: std::ops::Range<u32>,
     pub lines: Vec<String>,
     /// The lines that a `replace` writes over, as they were before it
@@ -1929,22 +1948,34 @@ pub struct TypingItem {
 }
 
 impl TypingItem {
-    /// What the lines of the item show before its turn: the lines that it
-    /// writes over, when they are as many as its new lines; else blank
-    /// lines, so that the line count of the step does not change while it
-    /// types.
-    pub fn waiting(&self) -> Vec<String> {
-        if self.before.len() == self.lines.len() {
-            self.before.clone()
-        } else {
-            vec![String::new(); self.lines.len()]
+    /// The lines of the item with `revealed` units shown: the part typed,
+    /// and each line that the typing has not reached yet as the line that
+    /// it writes over (blank when there is none).
+    pub fn shown(&self, revealed: usize) -> Vec<String> {
+        let mut out = partial_content(&self.lines, self.mode, revealed);
+        let mut start = 0;
+        for (i, line) in out.iter_mut().enumerate() {
+            let reached = match self.mode {
+                Typing::Instant => true,
+                Typing::Line => i < revealed,
+                // The line that the typing is on is reached, also before
+                // its first character.
+                Typing::Char => revealed >= start,
+            };
+            start += self.lines[i].graphemes(true).count() + 1;
+            if !reached && let Some(old) = self.before.get(i) {
+                *line = old.clone();
+            }
         }
+        out
     }
 }
 
 /// The typing animation of a step: the code with every move of the step
-/// applied, and the typed moves in order. The TUI reveals it over time;
-/// the GIF export turns the same plan into frames.
+/// applied, and the typed moves and the `wait` moves in list order, each
+/// with the code of its stage. The moves of the step change the code in
+/// their turn. The TUI reveals it over time; the GIF export turns the same
+/// plan into frames.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypingPlan {
     pub full: Vec<String>,
@@ -1957,7 +1988,8 @@ pub struct TypingPlan {
 
 /// A `scroll` in the typing of a step: the view moves to `camera` before
 /// item `before` of [`TypingPlan::items`] (after the last one when
-/// `before` is their count), its lines in the code of the end of the step.
+/// `before` is their count), its lines in the code of the stage of that
+/// item (of the end of the step after the last one).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Cue {
     pub before: usize,
@@ -1965,49 +1997,30 @@ pub struct Cue {
 }
 
 impl TypingPlan {
-    /// The code while item `index` has `revealed` units shown: earlier
-    /// items complete, later ones as they wait ([`TypingItem::waiting`]:
-    /// the line count never changes, so every shifted annotation stays put).
+    /// The code while item `index` has `revealed` units shown: the code of
+    /// its stage, with the lines of the item as [`TypingItem::shown`] gives
+    /// them. Past the last item, the full code.
     pub fn code_at(&self, first_line: u32, index: usize, revealed: usize) -> Vec<String> {
-        let mut code = self.full.clone();
-        for (start, shown) in self.pending(index, revealed) {
-            for (i, l) in shown.into_iter().enumerate() {
-                // A typed line outside the shown window is simply not drawn.
-                let Some(at) = (start + i as u32).checked_sub(first_line) else {
-                    continue;
-                };
-                if let Some(slot) = code.get_mut(at as usize) {
-                    *slot = l;
-                }
+        let Some(item) = self.items.get(index) else {
+            return self.full.clone();
+        };
+        let mut code = item.code.clone();
+        for (i, l) in item.shown(revealed).into_iter().enumerate() {
+            // A typed line outside the shown window is simply not drawn.
+            let Some(at) = (item.range.start + i as u32).checked_sub(first_line) else {
+                continue;
+            };
+            if let Some(slot) = code.get_mut(at as usize) {
+                *slot = l;
             }
         }
         code
     }
 
-    /// The lines of the items that are not done while item `index` has
-    /// `revealed` units shown, with the first line of each in the full code:
-    /// the typed item cut to what shows of it, the later items as they wait.
-    /// The last item comes first: when two items type the same line, the
-    /// earlier one paints last, so its typing shows and not the old line of
-    /// the later one.
-    fn pending(
-        &self,
-        index: usize,
-        revealed: usize,
-    ) -> impl Iterator<Item = (u32, Vec<String>)> + '_ {
-        self.items
-            .iter()
-            .enumerate()
-            .skip(index)
-            .rev()
-            .map(move |(k, item)| {
-                let shown = if k == index {
-                    partial_content(&item.lines, item.mode, revealed)
-                } else {
-                    item.waiting()
-                };
-                (item.range.start, shown)
-            })
+    /// The stage of item `index`, for [`project_until`]: the number of the
+    /// move after it. `None` past the last item: the whole step.
+    pub fn stage(&self, index: usize) -> Option<usize> {
+        self.items.get(index).map(|i| i.index + 1)
     }
 
     /// The frames of the typing in a GIF, WebP or video: for each one, the
@@ -2097,10 +2110,11 @@ impl TypingPlan {
     }
 
     /// The colors of the frame that [`TypingPlan::code_at`] gives: every
-    /// line as in the code at the end of the step, the typed line cut to
-    /// what shows of it, the lines still to type as they wait. The half-typed code
-    /// is not highlighted: an open bracket or quote in it would change the
-    /// colors of the lines below it until it closes, and they would blink.
+    /// line as in the code of the stage of item `index` (the code at the
+    /// end of its move), the typed line cut to what shows of it. The
+    /// half-typed code is not highlighted: an open bracket or quote in it
+    /// would change the colors of the lines below it until it closes, and
+    /// they would blink.
     pub fn highlight_at(
         &self,
         first_line: u32,
@@ -2110,41 +2124,46 @@ impl TypingPlan {
         theme: two_face::theme::EmbeddedThemeName,
     ) -> crate::highlight::TypedHighlight {
         use crate::highlight::{cut_segments, highlight, highlight_cached};
-        let base = highlight_cached(&self.full, language, theme);
+        let stage = self.stage(index);
+        let Some(item) = self.items.get(index) else {
+            return crate::highlight::TypedHighlight {
+                base: highlight_cached(&self.full, language, theme),
+                lines: BTreeMap::new(),
+                stage,
+            };
+        };
+        let base = highlight_cached(&item.code, language, theme);
         let mut lines = BTreeMap::new();
-        // The same lines as `code_at`, in the same order.
-        for (start, shown) in self.pending(index, revealed) {
-            for (i, l) in shown.into_iter().enumerate() {
-                let Some(at) = (start + i as u32).checked_sub(first_line) else {
-                    continue;
-                };
-                let at = at as usize;
-                if at >= self.full.len() {
-                    continue;
-                }
-                // A later patch of the step changed the typed line: the
-                // part that shows is highlighted alone.
-                let segs = base
-                    .get(at)
-                    .and_then(|s| cut_segments(s, &l))
-                    .unwrap_or_else(|| {
-                        highlight(std::slice::from_ref(&l), language, theme)
-                            .pop()
-                            .unwrap_or_default()
-                    });
-                lines.insert(at, segs);
+        // The same lines as `code_at`.
+        for (i, l) in item.shown(revealed).into_iter().enumerate() {
+            let Some(at) = (item.range.start + i as u32).checked_sub(first_line) else {
+                continue;
+            };
+            let at = at as usize;
+            if at >= item.code.len() {
+                continue;
             }
+            // An old line that waits for the typing is not the start of
+            // its new line: it is highlighted alone.
+            let segs = base
+                .get(at)
+                .and_then(|s| cut_segments(s, &l))
+                .unwrap_or_else(|| {
+                    highlight(std::slice::from_ref(&l), language, theme)
+                        .pop()
+                        .unwrap_or_default()
+                });
+            lines.insert(at, segs);
         }
-        crate::highlight::TypedHighlight { base, lines }
+        crate::highlight::TypedHighlight { base, lines, stage }
     }
 }
 
 /// The typing animation of `step`, when any move at that step is typed or
-/// waits: the content lines of each typing move of the shown view,
-/// followed through the maps of the patches applied after it (same step,
-/// same view) so they point into the final code, and every `wait` as one
-/// unit of `ms`, all in list order. `None` when nothing is typed or waited
-/// at `step` or the moves do not apply.
+/// waits: each typing move of the shown view and each `wait`, in list
+/// order, with the code of its stage ([`project_until`]): the moves of the
+/// step before it applied, the later ones not yet. `None` when nothing is
+/// typed or waited at `step` or the moves do not apply.
 pub fn typing_plan(doc: &crate::Document, step: u32) -> Option<TypingPlan> {
     if !doc.moves.iter().any(|m| {
         m.at_step == step
@@ -2158,35 +2177,49 @@ pub fn typing_plan(doc: &crate::Document, step: u32) -> Option<TypingPlan> {
     }
     let proj = project(doc, &doc.moves, step).ok()?;
     let (full, _) = proj.shown_code(doc);
-    let mut items: Vec<(usize, TypingItem)> = Vec::new();
-    for (k, ap) in proj.patches.iter().enumerate() {
-        let MoveAction::CodePatch(p) = &doc.moves[ap.index].action else {
+    let shown_file = &proj.shown.file;
+    let mut items: Vec<TypingItem> = Vec::new();
+    for (i, m) in moves_at(&doc.moves, step) {
+        if m.stale.is_some() {
+            continue;
+        }
+        let patch = match &m.action {
+            MoveAction::CodePatch(p) if p.typing != Typing::Instant => Some(p),
+            MoveAction::Wait(_) => None,
+            _ => continue,
+        };
+        let stage = project_until(doc, &doc.moves, step, i + 1).ok()?;
+        let (code, _) = stage.shown_code(doc);
+        let Some(p) = patch else {
+            let MoveAction::Wait(w) = &m.action else {
+                continue;
+            };
+            items.push(TypingItem {
+                index: i,
+                code,
+                range: 0..0,
+                lines: Vec::new(),
+                before: Vec::new(),
+                mode: Typing::Instant,
+                speed_ms: w.ms.max(1),
+                units: 1,
+            });
             continue;
         };
-        if ap.at_step != step
-            || ap.file != proj.shown.file
-            || p.typing == Typing::Instant
+        // Its patch is the last one of its stage.
+        let Some((k, ap)) = stage.patches.iter().enumerate().next_back() else {
+            continue;
+        };
+        if ap.index != i
+            || &ap.file != shown_file
+            || &stage.shown.file != shown_file
             || ap.map.inserted.is_empty()
         {
             continue;
         }
-        let mut range = ap.map.inserted.clone();
-        let mut lost = false;
-        for later in proj.patches[k + 1..].iter().filter(|l| l.file == ap.file) {
-            match (later.map.get(range.start), later.map.get(range.end - 1)) {
-                (Some(a), Some(b)) if b >= a => range = a..b + 1,
-                _ => {
-                    lost = true;
-                    break;
-                }
-            }
-        }
-        if lost {
-            continue;
-        }
         // The lines that a `replace` writes over, as they were before it.
         let base;
-        let old: &[String] = match proj.patches[..k].iter().rev().find(|l| l.file == ap.file) {
+        let old: &[String] = match stage.patches[..k].iter().rev().find(|l| l.file == ap.file) {
             Some(prev) => &prev.after,
             None => {
                 base = doc.view_base_code(&ap.file).unwrap_or_default();
@@ -2202,49 +2235,24 @@ pub fn typing_plan(doc: &crate::Document, step: u32) -> Option<TypingPlan> {
             _ => Vec::new(),
         };
         let lines = p.content_lines();
-        items.push((
-            ap.index,
-            TypingItem {
-                range,
-                units: typing_units(&lines, p.typing),
-                lines,
-                before,
-                mode: p.typing,
-                speed_ms: p.speed().max(1),
-            },
-        ));
-    }
-    for (i, m) in moves_at(&doc.moves, step) {
-        if let MoveAction::Wait(w) = &m.action {
-            items.push((
-                i,
-                TypingItem {
-                    range: 0..0,
-                    lines: Vec::new(),
-                    before: Vec::new(),
-                    mode: Typing::Instant,
-                    speed_ms: w.ms.max(1),
-                    units: 1,
-                },
-            ));
-        }
+        items.push(TypingItem {
+            index: i,
+            code,
+            range: ap.map.inserted.clone(),
+            units: typing_units(&lines, p.typing),
+            lines,
+            before,
+            mode: p.typing,
+            speed_ms: p.speed().max(1),
+        });
     }
     if items.is_empty() {
         return None;
     }
-    items.sort_by_key(|(i, _)| *i);
     let at_step: Vec<(usize, &Move)> = moves_at(&doc.moves, step)
         .filter(|(_, m)| m.stale.is_none())
         .collect();
     let mut cues = Vec::new();
-    let shapes = if at_step
-        .iter()
-        .any(|(_, m)| matches!(m.action, MoveAction::Scroll(_)))
-    {
-        doc.shapes_at(&proj, step)
-    } else {
-        Vec::new()
-    };
     for (k, (i, m)) in at_step.iter().enumerate() {
         if !matches!(m.action, MoveAction::Scroll(_)) {
             continue;
@@ -2258,16 +2266,23 @@ pub fn typing_plan(doc: &crate::Document, step: u32) -> Option<TypingPlan> {
         }) {
             continue;
         }
-        if let Some(camera) = doc.scroll_cam(&proj, step, *i, &shapes) {
-            let before = items.iter().filter(|(t, _)| t < i).count();
+        // The view moves before the next item: its lines are in the code
+        // of the stage of that item.
+        let before = items.iter().filter(|t| t.index < *i).count();
+        let staged;
+        let at = match items.get(before) {
+            Some(next) => {
+                staged = project_until(doc, &doc.moves, step, next.index + 1).ok()?;
+                &staged
+            }
+            None => &proj,
+        };
+        let shapes = doc.shapes_at(at, step);
+        if let Some(camera) = doc.scroll_cam(at, step, *i, &shapes) {
             cues.push(Cue { before, camera });
         }
     }
-    Some(TypingPlan {
-        full,
-        items: items.into_iter().map(|(_, it)| it).collect(),
-        cues,
-    })
+    Some(TypingPlan { full, items, cues })
 }
 
 /// Partial content of a typing animation: `revealed` units of the patch's
@@ -2780,7 +2795,10 @@ mod tests {
             full: Vec::new(),
             items: items
                 .iter()
-                .map(|&(units, speed_ms)| TypingItem {
+                .enumerate()
+                .map(|(index, &(units, speed_ms))| TypingItem {
+                    index,
+                    code: Vec::new(),
                     range: 0..0,
                     lines: Vec::new(),
                     before: Vec::new(),
@@ -2953,24 +2971,30 @@ mod tests {
     const DANGLE: &str = "fn main() {\n    let r = dangle();\n}\n\nfn dangle() -> &String {\n    let s = String::from(\"hello\");\n    &s\n}\n";
 
     /// Each frame of the typing of step 1 of `d`, with its colors: every
-    /// line has segments with its own text; a line that no item types has
-    /// the colors of the code at the end of the step; a typed line has the
-    /// start of the colors of its line there. Returns the frame codes.
+    /// line has segments with its own text; a line that the item does not
+    /// type has the colors of the code of its stage (the end of its move);
+    /// a typed line has the start of the colors of its line there. Returns
+    /// the frame codes.
     fn check_typed_colors(d: &Document) -> Vec<Vec<String>> {
         let theme = crate::theme::Theme::dark().syntax;
         let lang = d.source.language.clone();
         let plan = typing_plan(d, 1).expect("a typing at step 1");
         let first = d.source.first_line;
-        let base = crate::highlight::highlight(&plan.full, &lang, theme);
-        let typed_lines: Vec<usize> = plan
+        // The colors of the code of each stage: the end of its move.
+        let bases: Vec<_> = plan
             .items
             .iter()
-            .flat_map(|it| it.range.clone())
-            .map(|l| (l - first) as usize)
+            .map(|it| crate::highlight::highlight(&it.code, &lang, theme))
             .collect();
         let mut codes = Vec::new();
         plan.each_frame(first, |code, _, at| {
             let Some((index, revealed)) = at else { return };
+            let base = &bases[index];
+            let typed_lines: Vec<usize> = plan.items[index]
+                .range
+                .clone()
+                .map(|l| (l - first) as usize)
+                .collect();
             let th = plan.highlight_at(first, index, revealed, &lang, theme);
             for (i, text) in code.iter().enumerate() {
                 let segs = th.line(i, text).unwrap_or_else(|| {
@@ -3105,34 +3129,52 @@ mod tests {
     }
 
     #[test]
-    fn a_later_typed_patch_with_another_line_count_is_blank_until_its_turn() {
-        // Two lines become one, and an insert: the line count of the step
-        // does not change while it types, so these stay blank, as before.
-        for later in [
-            serde_json::json!({
-                "at_step": 1, "action": "code.patch", "op": "replace", "position": "6-7",
-                "content": "    String::from(\"hello\")", "typing": "char", "speed_ms": 20
-            }),
-            serde_json::json!({
-                "at_step": 1, "action": "code.patch", "op": "insert", "after": "&s",
-                "content": "    // done", "typing": "char", "speed_ms": 20
-            }),
-        ] {
-            let d = insert_wait_then(later);
-            let plan = typing_plan(&d, 1).unwrap();
-            let first = d.source.first_line;
-            let item = &plan.items[2];
-            let at = (item.range.start - first) as usize;
-            for (k, r) in [(0, 3), (1, 0)] {
-                let code = plan.code_at(first, k, r);
-                assert!(
-                    code[at..at + item.lines.len()].iter().all(String::is_empty),
-                    "item {k}, {r} units: {:?}",
-                    &code[at..at + item.lines.len()]
-                );
-            }
-            check_typed_colors(&d);
+    fn a_later_typed_patch_with_another_line_count_changes_the_code_in_its_turn() {
+        // Two lines become one, and an insert: until its turn the code is
+        // as before it, with its old lines and its line count.
+        let replace = serde_json::json!({
+            "at_step": 1, "action": "code.patch", "op": "replace", "position": "6-7",
+            "content": "    String::from(\"hello\")", "typing": "char", "speed_ms": 20
+        });
+        let d = insert_wait_then(replace);
+        let plan = typing_plan(&d, 1).unwrap();
+        let first = d.source.first_line;
+        for (k, r) in [(0, 3), (1, 0)] {
+            let code = plan.code_at(first, k, r);
+            assert_eq!(code.len(), 9, "item {k}, {r} units: {code:?}");
+            assert_eq!(
+                code[5..7],
+                [
+                    "fn dangle() -> &String {",
+                    "    let s = String::from(\"hello\");"
+                ],
+                "item {k}, {r} units"
+            );
         }
+        let code = plan.code_at(first, 2, 0);
+        assert_eq!(
+            (code.len(), code[5].as_str(), code[6].as_str()),
+            (8, "", "    &s")
+        );
+        check_typed_colors(&d);
+
+        let insert = serde_json::json!({
+            "at_step": 1, "action": "code.patch", "op": "insert", "after": "&s",
+            "content": "    // done", "typing": "char", "speed_ms": 20
+        });
+        let d = insert_wait_then(insert);
+        let plan = typing_plan(&d, 1).unwrap();
+        for (k, r) in [(0, 3), (1, 0)] {
+            let code = plan.code_at(first, k, r);
+            assert_eq!(code.len(), 9, "item {k}, {r} units: {code:?}");
+            assert!(!code.iter().any(|l| l.contains("// done")));
+        }
+        let code = plan.code_at(first, 2, 0);
+        assert_eq!(
+            (code.len(), code[8].as_str(), code[9].as_str()),
+            (10, "", "}")
+        );
+        check_typed_colors(&d);
     }
 
     #[test]
@@ -3168,5 +3210,174 @@ mod tests {
             assert_eq!(line1(k, r), shown, "item {k}, {r} units");
         }
         check_typed_colors(&d);
+    }
+
+    #[test]
+    fn an_instant_move_of_the_step_changes_the_code_in_its_turn() {
+        // A typed replace, then an instant delete of line 2: the line is
+        // there while the replace types, and goes at the end of the step.
+        let d = typed_doc(
+            DANGLE,
+            &[
+                serde_json::json!({
+                    "at_step": 1, "action": "code.patch", "op": "replace", "find": "&s",
+                    "content": "    s", "typing": "char", "speed_ms": 20
+                }),
+                serde_json::json!({
+                    "at_step": 1, "action": "code.patch", "op": "delete", "find": "let r = dangle();"
+                }),
+            ],
+        );
+        let plan = typing_plan(&d, 1).unwrap();
+        let first = d.source.first_line;
+        for r in [0, 3] {
+            let code = plan.code_at(first, 0, r);
+            assert_eq!(
+                (code.len(), code[1].as_str()),
+                (8, "    let r = dangle();"),
+                "{r} units"
+            );
+        }
+        assert_eq!(plan.full.len(), 7);
+        check_typed_colors(&d);
+        // Before the typed move in the list: gone from the first frame.
+        let d = typed_doc(
+            DANGLE,
+            &[
+                serde_json::json!({
+                    "at_step": 1, "action": "code.patch", "op": "delete", "find": "let r = dangle();"
+                }),
+                serde_json::json!({
+                    "at_step": 1, "action": "code.patch", "op": "replace", "find": "&s",
+                    "content": "    s", "typing": "char", "speed_ms": 20
+                }),
+            ],
+        );
+        let plan = typing_plan(&d, 1).unwrap();
+        let code = plan.code_at(first, 0, 0);
+        assert_eq!(code.len(), 7);
+        assert!(!code.iter().any(|l| l.contains("let r")));
+    }
+
+    #[test]
+    fn a_replace_typed_by_lines_keeps_each_old_line_until_its_new_line() {
+        let d = typed_doc(
+            DANGLE,
+            &[serde_json::json!({
+                "at_step": 1, "action": "code.patch", "op": "replace", "position": "6-7",
+                "content": "    let s = String::new();\n    s", "typing": "line", "speed_ms": 200
+            })],
+        );
+        let plan = typing_plan(&d, 1).unwrap();
+        let first = d.source.first_line;
+        let lines = |r: usize| plan.code_at(first, 0, r)[5..7].to_vec();
+        assert_eq!(lines(0), ["    let s = String::from(\"hello\");", "    &s"]);
+        assert_eq!(lines(1), ["    let s = String::new();", "    &s"]);
+        check_typed_colors(&d);
+        // One line becomes two, typed by characters: the old line until the
+        // typing reaches it, then the second new line blank until its turn.
+        let d = typed_doc(
+            DANGLE,
+            &[serde_json::json!({
+                "at_step": 1, "action": "code.patch", "op": "replace", "find": "&s",
+                "content": "    let t = s;\n    t", "typing": "char", "speed_ms": 20
+            })],
+        );
+        let plan = typing_plan(&d, 1).unwrap();
+        let lines = |r: usize| plan.code_at(first, 0, r)[6..8].to_vec();
+        assert_eq!(lines(0), ["", ""]);
+        assert_eq!(lines(7), ["    let", ""]);
+        // 14 characters and the end of the line: the second line is reached.
+        assert_eq!(lines(15), ["    let t = s;", ""]);
+        assert_eq!(lines(19), ["    let t = s;", "    "]);
+        check_typed_colors(&d);
+    }
+
+    #[test]
+    fn an_annotation_of_an_earlier_step_moves_in_the_turn_of_the_move() {
+        // A box and a highlight on `&s` at step 1. Step 2 types a replace
+        // above them, waits, types an insert above them, then replaces `&s`.
+        let doc = serde_json::json!({
+            "schema": 1, "source": {"language": "rs", "first_line": 1},
+            "code": DANGLE.lines().collect::<Vec<_>>(),
+            "annotations": [
+                {"id": "b1", "step": 1, "type": "box", "from_line": 7, "to_line": 7},
+                {"id": "h1", "step": 1, "type": "highlight", "span": {"line": 7, "start": 4, "end": 6}}
+            ],
+            "moves": [
+                {"at_step": 2, "action": "code.patch", "op": "replace", "find": "fn main() {",
+                 "content": "fn main() { // go", "typing": "char", "speed_ms": 20},
+                {"at_step": 2, "action": "wait", "ms": 100},
+                {"at_step": 2, "action": "code.patch", "op": "insert", "after": "let r = dangle();",
+                 "content": "    let q = 1;", "typing": "char", "speed_ms": 20},
+                {"at_step": 2, "action": "code.patch", "op": "replace", "find": "&s",
+                 "content": "    s", "typing": "char", "speed_ms": 20}
+            ]
+        });
+        let d = crate::fs::parse_document(&doc.to_string(), None).unwrap();
+        let plan = typing_plan(&d, 2).unwrap();
+        assert_eq!(plan.items.len(), 4);
+        let at = |k: usize| {
+            let v = d.view_at_stage(2, plan.stage(k));
+            let shape = |id: &str| {
+                v.doc
+                    .annotations
+                    .iter()
+                    .find(|a| a.id == id)
+                    .map(|a| a.shape.clone())
+            };
+            let b = match shape("b1") {
+                Some(Shape::Box { from_line, .. }) => Some(from_line),
+                _ => None,
+            };
+            let h = match shape("h1") {
+                Some(Shape::Highlight { span, .. }) => Some(span.line),
+                _ => None,
+            };
+            (b, h)
+        };
+        // The replace above and the wait: nothing moves yet.
+        assert_eq!(at(0), (Some(7), Some(7)));
+        assert_eq!(at(1), (Some(7), Some(7)));
+        // The insert above: both go down one line in its turn.
+        assert_eq!(at(2), (Some(8), Some(8)));
+        // The replace of `&s`: the highlight loses its text in its turn,
+        // not before; the box stays on the line.
+        assert_eq!(at(3), (Some(8), None));
+        assert_eq!(d.view_at(2).doc.annotations.len(), 1);
+    }
+
+    #[test]
+    fn a_scroll_between_two_moves_goes_to_the_line_of_its_stage() {
+        // A typed insert near the top, a `scroll` to `&s`, then a typed insert
+        // above `&s`: the view goes where `&s` is when the scroll runs.
+        let d = typed_doc(
+            DANGLE,
+            &[
+                serde_json::json!({
+                    "at_step": 1, "action": "code.patch", "op": "insert", "after": "fn main() {",
+                    "content": "    // one", "typing": "char", "speed_ms": 20
+                }),
+                serde_json::json!({"at_step": 1, "action": "scroll", "find": "&s"}),
+                serde_json::json!({
+                    "at_step": 1, "action": "code.patch", "op": "insert", "after": "let s",
+                    "content": "    // two", "typing": "char", "speed_ms": 20
+                }),
+                serde_json::json!({
+                    "at_step": 1, "action": "code.patch", "op": "insert", "after": "// two",
+                    "content": "    // three", "typing": "char", "speed_ms": 20
+                }),
+            ],
+        );
+        let plan = typing_plan(&d, 1).unwrap();
+        assert_eq!(plan.cues.len(), 1);
+        let cue = &plan.cues[0];
+        assert_eq!(cue.before, 1);
+        // `&s` is line 7, line 8 after the first insert, line 9 after the
+        // second, line 10 at the end of the step. The second one types after
+        // the scroll, and its stage holds its blank line, so the view goes to
+        // line 9 when it starts.
+        assert_eq!(cue.camera.lines, Some((9, 9)));
+        assert_eq!(plan.code_at(d.source.first_line, 1, 0)[8], "    &s");
     }
 }

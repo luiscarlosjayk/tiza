@@ -646,7 +646,9 @@ fn layout_run(
     let doc = if doc.moves.is_empty() {
         doc
     } else {
-        let v = doc.view_at(opts.step);
+        // A frame of a typing: the annotations go where the code of its
+        // stage puts them.
+        let v = doc.view_at_stage(opts.step, paint.typed.and_then(|t| t.stage));
         (cursor, selection) = (v.cursor, v.selection);
         projected = v.doc;
         &projected

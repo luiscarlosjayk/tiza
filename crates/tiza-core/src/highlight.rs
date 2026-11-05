@@ -288,16 +288,21 @@ pub fn highlight_cached(code: &[String], language: &str, theme: EmbeddedThemeNam
 
 /// The colors of a frame of a typing animation
 /// ([`crate::moves::TypingPlan::highlight_at`]): the highlight of the code
-/// at the end of the step, with the lines that the frame shows otherwise
-/// (the typed line cut to what shows of it, the lines still to type as they wait).
+/// at the end of the move that types, with the lines that the frame shows
+/// otherwise (the typed line cut to what shows of it, the old lines that
+/// wait for the typing).
 /// The half-typed code itself is never highlighted: an open bracket or
 /// quote in it would change the colors of the lines below until it closes.
 #[derive(Debug, Clone)]
 pub struct TypedHighlight {
-    /// The highlight of the code at the end of the step.
+    /// The highlight of the code at the end of the move that types.
     pub base: Highlighted,
     /// The lines that the frame shows otherwise, by index into the code.
     pub lines: std::collections::BTreeMap<usize, Vec<Segment>>,
+    /// The stage of the frame ([`crate::moves::project_until`]): the
+    /// annotations of the earlier steps go where the code of that stage
+    /// puts them. `None` for the end of the step.
+    pub stage: Option<usize>,
 }
 
 impl TypedHighlight {
