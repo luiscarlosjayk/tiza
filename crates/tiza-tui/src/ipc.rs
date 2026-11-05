@@ -20,6 +20,9 @@ pub struct IpcRequest {
     /// disconnects when it could not: the TUI waits for it before it exits
     /// on `app.quit`, so that the client gets the reply.
     pub written: Receiver<()>,
+    /// When the connection got the request: a late `app.quit` is refused
+    /// ([`crate::drain_requests`]).
+    pub since: std::time::Instant,
 }
 
 /// The error of [`start`] when an instance listens on the socket already:
@@ -185,6 +188,7 @@ fn handle(stream: UnixStream, tx: Sender<IpcRequest>) -> std::io::Result<()> {
                     req,
                     reply: rtx,
                     written: wrx,
+                    since: std::time::Instant::now(),
                 });
                 let resp = if sent.is_err() {
                     Response::err(id, "unavailable", "the application is shutting down")
@@ -275,6 +279,9 @@ pub enum Closed {
     Refused(Response),
     /// The instance did not answer, or did not exit, in time.
     Late,
+    /// The connection failed after it started, or the answer is not one
+    /// that Tiza can read.
+    Failed(std::io::Error),
 }
 
 /// The client of `tiza close`: sends `app.quit` and waits for the instance
@@ -283,9 +290,13 @@ pub enum Closed {
 /// exited. A connection that fails means that no instance listens at
 /// `path`.
 pub fn close(path: &Path, force: bool) -> std::io::Result<Closed> {
+    let stream = UnixStream::connect(path)?;
+    Ok(close_on(stream, force).unwrap_or_else(Closed::Failed))
+}
+
+fn close_on(mut stream: UnixStream, force: bool) -> std::io::Result<Closed> {
     use std::io::{ErrorKind, Read};
     use std::time::Instant;
-    let mut stream = UnixStream::connect(path)?;
     let req = Request {
         id: Value::from(1),
         method: "app.quit".to_string(),

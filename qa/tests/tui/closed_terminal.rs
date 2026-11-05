@@ -542,9 +542,11 @@ print("SOCKET", os.path.exists("s.sock"))
     assert!(out.contains("SOCKET False"), "{out}");
 }
 
-/// Runs `tiza --socket s.sock main.rs` on a 500×200 pty whose master side
-/// nobody reads after `?1049h`: the first frame is larger than the buffer
-/// of the pty, so its write blocks. The test sends `signals` (one after the
+/// Runs `tiza --theme dark --socket s.sock main.rs` on a 500×200 pty whose master side
+/// nobody reads after the start of the first frame (`?2026h`): the frame is
+/// larger than the buffer of the pty, so its write blocks. The signal comes
+/// after the start of that frame, thus after the check of the loop before
+/// it. The test sends `signals` (one after the
 /// other) and waits 10 s at most for the exit. Prints `GONE elapsed code`
 /// and `SOCKET exists`.
 fn blocked(dir: &Path, name: &str, signals: &[&str]) -> String {
@@ -557,19 +559,21 @@ for k in ("TIZA_SOCKET", "TIZA_SESSION", "TIZA_TEST_HOOK"):
     env.pop(k, None)
 master, slave = pty.openpty()
 fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 200, 500, 0, 0))
-p = subprocess.Popen([binary, "--socket", "s.sock", "--no-save", "main.rs"], stdin=slave, stdout=slave, stderr=slave, env=env, start_new_session=True)
+# A theme with a background: the first frame writes each of the 100 000
+# cells, more than the buffer of a pty holds.
+p = subprocess.Popen([binary, "--theme", "dark", "--socket", "s.sock", "--no-save", "main.rs"], stdin=slave, stdout=slave, stderr=slave, env=env, start_new_session=True)
 os.close(slave)
 seen = b""
 end = time.monotonic() + 10
-# Read only until the alternate screen: the frame after it stays unread.
-while b"\x1b[?1049h" not in seen and time.monotonic() < end:
+# Read only until the first frame starts: the rest of it stays unread.
+while b"\x1b[?2026h" not in seen and time.monotonic() < end:
     r, _, _ = select.select([master], [], [], 0.05)
     if r:
         try:
             seen += os.read(master, 1)
         except OSError:
             break
-if b"\x1b[?1049h" not in seen or not os.path.exists("s.sock"):
+if b"\x1b[?2026h" not in seen or not os.path.exists("s.sock"):
     print("NOT_STARTED", repr(seen[-200:]), flush=True)
 t0 = time.monotonic()
 for name in sigs:

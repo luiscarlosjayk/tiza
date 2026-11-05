@@ -379,6 +379,7 @@ A character (a grapheme) can be more than one code point, for example `d` with a
 - It does not wait for review in supervised mode. Closing does not change the document, and `tiza close` is for a terminal that nobody can see.
 - No MCP tool sends it. An agent does not close the instance of a presenter.
 - No parameters, or `null`, is the same as `{}`. A key that is not `force` gets `invalid_argument`.
+- An `app.quit` that waited more than 10 s in the instance (it was busy) gets `unavailable`, and the instance stays open. `tiza close` stops waiting then, and tells you that the instance did not close.
 
 ## Error codes
 
@@ -410,6 +411,7 @@ These messages come from the socket itself. The other messages come from each me
 | `invalid request:` | `invalid_json` | The line is not a JSON request. |
 | `the application is shutting down` | `unavailable` | The instance stops. |
 | `no response from the application` | `unavailable` | The instance did not answer the request. |
+| `app.quit waited more than 10 s, and tiza close stops waiting then: the instance stays open. Send it again` | `unavailable` | The instance was busy, and an `app.quit` waited too long. |
 | `` unknown method (`api.methods` lists them) `` | `invalid_argument` | The method does not exist. |
 | `invalid parameters:` | `invalid_argument` | The parameters do not have the form of the method. |
 | `check: replaced by a newer check (width N) before it ran; ask again` | `busy` | A newer `check` replaced this one. |

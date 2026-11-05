@@ -236,7 +236,7 @@ tiza close --session talk
 
 - Tiza sends `app.quit` to the instance and waits until its process exits. Then it writes `closed the Tiza instance of the session NAME` (or `on PATH` for `--socket`) and exits with code 0. The next `tiza --session NAME` starts at once.
 - When the instance has unsaved changes, it does not close, and `tiza close` exits with code 1. `tiza close --force` closes it, and the changes are lost. Unsaved changes are changes with autosave off or `--no-save`, changes that Tiza could not save, and the marks of stale moves.
-- When the instance does not close in 10 s, `tiza close` exits with code 1. Look at the terminal of the instance, or end it with `kill`.
+- When the instance does not answer in 10 s, or does not exit in 10 s after its answer, `tiza close` exits with code 1. Look at the terminal of the instance, or end it with `kill`. The instance does not close later for that request.
 - `tiza close` does not remove a socket file. When no instance listens on the socket (its process was killed with `kill -KILL`), the next `tiza` in the session replaces it.
 - `kill` (SIGTERM) and `kill -INT` (SIGINT) also close an instance in order, with the save rules of Ctrl-C. The instance exits with code 143 or 130. A second signal ends it at once.
 
@@ -276,6 +276,7 @@ Tiza writes these messages on stderr:
 | `closed the Tiza instance of the session NAME` | `tiza close` closed the instance, and its process exited. With `--socket` or `TIZA_SOCKET`, the message says `on PATH`. This message is on stdout. |
 | `tiza: the instance has unsaved changes: tiza close --force closes it and loses them` | `tiza close` found unsaved changes. The instance stays open. |
 | `tiza: the Tiza instance on PATH did not close in 10 s: look at its terminal, or end it with kill` | `tiza close` got no reply in 10 s, or the instance did not exit 10 s after its reply. |
+| `tiza: the Tiza instance on PATH gave no answer that Tiza can read: ERROR` | `tiza close` reached the socket, but the connection failed, or the answer is not a Tiza answer. |
 
 - The messages `no grammar for …` and `config ignored: …` are warnings. Tiza goes on.
 - When the text after the last `:` does not start with a digit and has other characters than digits, `-` and `.`, Tiza reads the whole text as a file name, for example `a:b.rs`. Then the message is `could not open FILE`.

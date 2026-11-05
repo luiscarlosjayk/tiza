@@ -11,12 +11,22 @@
 //!   With `force` it closes.
 //! - AC3 In supervised mode it does not wait for review, also while an
 //!   agent change waits.
+//! - AC4 The requests that wait after an `app.quit` that closes the
+//!   instance are not applied. An `app.quit` that waited 10 s or more (`tiza
+//!   close` stopped waiting and said that the instance did not close) gets
+//!   `unavailable`, and the instance stays.
 //!
 //! The loop that ends on the flag is the TUI's: `qa/tests/tui/close_instance.rs`.
 
+use std::sync::mpsc::{Receiver, channel};
+use std::time::{Duration, Instant};
+
 use serde_json::{Value, json};
+use tiza_core::protocol::{Request, Response};
 use tiza_qa::ipc::{send_async, wait_pending};
 use tiza_qa::{Live, scratch};
+use tiza_tui::app::App;
+use tiza_tui::ipc::{CLOSE_ANSWER_WAIT, IpcRequest};
 
 const CODE: &str = "fn main() {\n    let a = 1;\n}\n";
 
@@ -174,4 +184,75 @@ fn app_quit_does_not_wait_for_review_in_supervised_mode() {
     live.with(|a| a.proposals.clear());
     let r = parked.join().unwrap();
     assert!(r.error.is_some(), "{r:?}");
+}
+
+// ---------------------------------------------------------------- AC4
+
+/// A request as the connection gives it to the TUI, that came at `since`,
+/// and the channel of its reply.
+fn request(method: &str, params: Value, since: Instant) -> (IpcRequest, Receiver<Response>) {
+    let (reply, replied) = channel();
+    let (_written, written) = channel();
+    let req = Request {
+        id: json!(1),
+        method: method.to_string(),
+        params,
+    };
+    (
+        IpcRequest {
+            req,
+            reply,
+            written,
+            since,
+        },
+        replied,
+    )
+}
+
+fn app(name: &str) -> App {
+    let dir = scratch(name);
+    App::new(
+        tiza_core::Document::from_code(CODE, "rs", None),
+        dir.join("doc.tiza"),
+    )
+}
+
+#[test]
+fn the_requests_after_app_quit_are_not_applied() {
+    let mut app = app("quit-drain");
+    let now = Instant::now();
+    let (quit, quit_reply) = request("app.quit", json!({}), now);
+    let note = json!({"type": "note", "line": 2, "text": "late"});
+    let (add, add_reply) = request("annotation.add", note, now);
+    let drained = tiza_tui::drain_requests(&mut app, vec![quit, add].into_iter());
+    assert!(drained.quit_written.is_some());
+    assert!(app.quit);
+    assert_eq!(
+        quit_reply.recv().unwrap().result,
+        Some(json!({"closing": true}))
+    );
+    assert!(
+        app.doc.annotations.is_empty(),
+        "the add after it was applied"
+    );
+    // Not answered: its connection gives `unavailable`.
+    assert!(add_reply.recv().is_err());
+}
+
+#[test]
+fn an_app_quit_that_waited_too_long_is_refused() {
+    let mut app = app("quit-late");
+    let since = Instant::now()
+        .checked_sub(CLOSE_ANSWER_WAIT + Duration::from_secs(1))
+        .unwrap();
+    let (quit, reply) = request("app.quit", json!({"force": true}), since);
+    let drained = tiza_tui::drain_requests(&mut app, std::iter::once(quit));
+    assert!(drained.quit_written.is_none());
+    assert!(!app.quit, "the late app.quit closed the instance");
+    let e = reply.recv().unwrap().error.expect("a refusal");
+    assert_eq!(e.code, "unavailable");
+    assert_eq!(
+        e.message,
+        "app.quit waited more than 10 s, and tiza close stops waiting then: the instance stays open. Send it again"
+    );
 }

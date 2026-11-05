@@ -133,20 +133,32 @@ fn the_docs_give_the_waits_of_tiza_close_and_of_a_signal() {
                         min: 1,
                     },
                     Cite {
-                        before: "does not close in ",
+                        before: "does not answer in ",
                         after: " s",
                         min: 1,
+                    },
+                    Cite {
+                        before: "waited more than ",
+                        after: " s",
+                        min: 2,
                     },
                 ],
             },
             Value {
                 name: "CLOSE_EXIT_WAIT",
                 number: whole_seconds("CLOSE_EXIT_WAIT", CLOSE_EXIT_WAIT),
-                cites: &[Cite {
-                    before: "and then ",
-                    after: " s more to exit",
-                    min: 1,
-                }],
+                cites: &[
+                    Cite {
+                        before: "and then ",
+                        after: " s more to exit",
+                        min: 1,
+                    },
+                    Cite {
+                        before: "does not exit in ",
+                        after: " s",
+                        min: 1,
+                    },
+                ],
             },
             Value {
                 name: "SIGNAL_EXIT_WAIT",

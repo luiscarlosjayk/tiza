@@ -5,7 +5,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 ## [Unreleased]
 
 ### Added
-- `tiza close` closes the live instance of a session, as `:q` does, and waits until it exits. Use it when you lost the terminal of an instance. With unsaved changes it refuses and exits with code 1. `tiza close --force` closes the instance, and the changes are lost. When the instance does not close in 10 s, `tiza close` exits with code 1. See [Close an instance](docs/reference/cli.md#close-an-instance).
+- `tiza close` closes the live instance of a session, as `:q` does, and waits until it exits. Use it when you lost the terminal of an instance. With unsaved changes it refuses and exits with code 1. `tiza close --force` closes the instance, and the changes are lost. When the instance does not answer in 10 s, or does not exit in 10 s after its answer, `tiza close` exits with code 1, and the instance does not close later for that request. See [Close an instance](docs/reference/cli.md#close-an-instance).
 - The socket method `app.quit` closes the instance. It takes `force`, and it refuses with the new error code `unsaved_changes` when closing loses work. It does not wait for review in supervised mode. No MCP tool sends it.
 - A guide, [Animate an explanation](docs/guides/animate-an-explanation.md), tells how to make an explanation that plays by itself. It covers enter effects, typed code, the view, the pace, presentation mode and the export.
 - A guide, [Present a take](docs/guides/present-a-take.md), tells how to present a document to people: get it ready, set up the terminal, go through the steps, point at the code and finish.

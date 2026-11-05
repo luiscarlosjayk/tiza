@@ -225,15 +225,20 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<Exit> {
         "start:hold",
         Duration::from_secs(10),
     );
-    // A SIGTERM or SIGINT while the document loaded or the colour query
-    // waited: Tiza exits before it takes the screen.
-    if let Some(n) = signals.ended() {
+    // A SIGTERM, a SIGINT or a hang-up while the document loaded or the
+    // colour query waited: Tiza exits before it takes the screen.
+    let ended_early = match signals.ended() {
+        Some(n) => Some(Exit::Signal(n)),
+        None => signals.hung_up().then_some(Exit::Normal),
+    };
+    if let Some(exit) = ended_early {
         let _ = crossterm::terminal::disable_raw_mode();
+        let gone = silence_dead_stderr();
         if let Some(s) = app.unsaved_summary() {
-            eprintln!("tiza: {}", tiza_core::printable::printable_text(&s));
+            say_on_exit(gone, &s);
         }
         drop(ipc);
-        return Ok(Exit::Signal(n));
+        return Ok(exit);
     }
     // No terminal at all (a service, `setsid` with no tty): a plain error,
     // not a crash; nothing was drawn, so only the raw mode may need undoing.
@@ -672,21 +677,11 @@ fn event_loop(
             };
         }
         if let Some(server) = ipc {
-            while let Ok(r) = server.rx.try_recv() {
-                let method = r.req.method.clone();
-                let before = (app.revision, app.message.clone());
-                app.handle_ipc(r.req, r.reply);
-                // `app.quit` ends the loop at once: the requests after it
-                // are not applied (their clients get `unavailable` when the
-                // server goes), and Tiza waits for its reply to go out.
-                if method == "app.quit" && app.quit {
-                    *quit_written = Some(r.written);
-                    return Ok(End::Quit);
-                }
-                let changed = (app.revision, app.message.clone()) != before;
-                if request_redraws(&method, changed) {
-                    needs_draw = true;
-                }
+            let drained = drain_requests(app, std::iter::from_fn(|| server.rx.try_recv().ok()));
+            needs_draw |= drained.redraw;
+            if let Some(written) = drained.quit_written {
+                *quit_written = Some(written);
+                return Ok(End::Quit);
             }
         }
         if app.follow_tick() {
@@ -854,6 +849,52 @@ pub fn frame_wait(due: Option<Instant>, now: Instant) -> Duration {
 /// (`status`, `render.text`, `code.get`…) only when it changed something
 /// anyway (`changed`: the revision or the bar's message). A frame of a long
 /// file is a full layout, and agents poll `status`.
+/// What [`drain_requests`] did.
+pub struct Drained {
+    /// A request changed the screen.
+    pub redraw: bool,
+    /// An `app.quit` closes the instance: its connection says on this
+    /// channel when it wrote the reply.
+    pub quit_written: Option<std::sync::mpsc::Receiver<()>>,
+}
+
+/// Answers the socket requests that wait, in order. An `app.quit` that
+/// closes the instance stops it: the requests after it are not applied
+/// (their clients get `unavailable` when the server goes). An `app.quit`
+/// older than [`ipc::CLOSE_ANSWER_WAIT`] gets `unavailable`: `tiza close`
+/// stopped waiting for it and told the user that the instance did not close.
+pub fn drain_requests(app: &mut App, requests: impl Iterator<Item = ipc::IpcRequest>) -> Drained {
+    let mut redraw = false;
+    for r in requests {
+        let method = r.req.method.clone();
+        if method == "app.quit" && r.since.elapsed() >= ipc::CLOSE_ANSWER_WAIT {
+            let _ = r.reply.send(tiza_core::protocol::Response::err(
+                r.req.id,
+                "unavailable",
+                format!(
+                    "app.quit waited more than {} s, and tiza close stops waiting then: the instance stays open. Send it again",
+                    ipc::CLOSE_ANSWER_WAIT.as_secs()
+                ),
+            ));
+            continue;
+        }
+        let before = (app.revision, app.message.clone());
+        app.handle_ipc(r.req, r.reply);
+        if method == "app.quit" && app.quit {
+            return Drained {
+                redraw,
+                quit_written: Some(r.written),
+            };
+        }
+        let changed = (app.revision, app.message.clone()) != before;
+        redraw |= request_redraws(&method, changed);
+    }
+    Drained {
+        redraw,
+        quit_written: None,
+    }
+}
+
 pub fn request_redraws(method: &str, changed: bool) -> bool {
     changed || !app::READ_ONLY_METHODS.contains(&method)
 }

@@ -2102,6 +2102,10 @@ fn close(path: &Path, origin: &socket::Origin, force: bool) -> anyhow::Result<()
             Some(e) => bail!("{} ({})", e.message, e.code),
             None => bail!("the Tiza instance on {} did not close", path.display()),
         },
+        Closed::Failed(e) => bail!(
+            "the Tiza instance on {} gave no answer that Tiza can read: {e}",
+            path.display()
+        ),
         Closed::Late => bail!(
             "the Tiza instance on {} did not close in {} s: look at its terminal, or end it with kill",
             path.display(),
