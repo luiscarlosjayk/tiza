@@ -94,8 +94,8 @@ pub const REPORTS: usize = PROBED.len() + 2;
 
 /// How this terminal draws Tiza's signs, as the start-up probe measured
 /// them: which glyphs of [`PROBED`] it draws two cells wide, and whether
-/// it draws a sign with VS16 in one cell. Nothing when the terminal did
-/// not answer.
+/// it draws a sign with VS16 in one cell. When the probe could not
+/// measure them, see [`Wide::from_probe`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Wide {
     glyphs: [bool; PROBED.len()],
@@ -124,6 +124,26 @@ impl Wide {
         Wide {
             glyphs,
             vs16_narrow,
+        }
+    }
+
+    /// How Tiza draws the signs after the start-up probe, from its
+    /// `reports`. When the reports of the signs came, as
+    /// [`Wide::from_reports`] gives. When only the first report came (the
+    /// signs did not go at the right edge, or their reports came after the
+    /// wait), the plain form of every sign: a plain form is one cell in
+    /// every terminal, so the bar fits its row. When no report came, the
+    /// signs as they are.
+    pub fn from_probe(reports: &[(u16, u16)]) -> Wide {
+        if reports.len() > PROBED.len() {
+            Wide::from_reports(reports)
+        } else if !reports.is_empty() {
+            Wide {
+                glyphs: [true; PROBED.len()],
+                vs16_narrow: false,
+            }
+        } else {
+            Wide::default()
         }
     }
 
@@ -408,7 +428,7 @@ pub fn query_host(colors: bool) -> StartUp {
     StartUp {
         owed,
         host,
-        wide: Wide::from_reports(&reports),
+        wide: Wide::from_probe(&reports),
         typed,
         cut,
         size,

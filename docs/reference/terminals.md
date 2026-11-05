@@ -126,7 +126,9 @@ Unicode gives `⚠` (U+26A0), `↪` (U+21AA), `⏸` (U+23F8) and `▶` (U+25B6) 
 - A step title, a label and a message that you write get the plain form there too.
 - The code and the annotations keep the signs, also in the exports. In such a terminal, a `⚠` in a line of code moves the rest of that line by one cell. At the right edge of the screen, the line can then go past the edge: the screen moves up one row, or the end of the line is lost.
 - What you type in the command line keeps the signs.
-- When the terminal draws the signs one cell wide, or does not answer, Tiza shows them as they are.
+- When the terminal draws the signs one cell wide, Tiza shows them as they are.
+- If Tiza could not measure the signs, and the terminal answered the first cursor report, the bar uses the plain forms. A plain form is one cell in every terminal, so the bar fits its row. This also occurs in a terminal that draws the signs one cell wide.
+- When the terminal does not answer, Tiza shows the signs as they are.
 
 A sign followed by the emoji selector VS16 (U+FE0F), for example `⚠️`, is two cells wide in Unicode, and most terminals draw it so. Some terminals draw it in one cell. The status bar counts two cells, so in such a terminal the bar has one blank cell too many.
 
@@ -218,10 +220,12 @@ At start, also with a theme that needs no color query, Tiza measures how wide th
 
 - Tiza saves the cursor and asks for its position (`ESC [ 6 n`). When the answer comes, Tiza writes the signs if the cursor is two columns or more before the last column. For each sign, it puts the cursor back, writes the sign and asks again. The column of each answer (`ESC [ row ; col R`), less the first column, gives the width of the sign.
 - Then Tiza puts the cursor back and clears the line from there. The signs show for a moment where the cursor was. The text before the cursor stays.
-- When the cursor is nearer to the right edge, Tiza writes no sign and clears nothing. Thus it measures no sign, and shows the signs as they are. There, a sign can go to the next row and move the screen up, and the answer can give a wrong column.
-- The cursor is near the right edge only when the line where you start Tiza has text up to that edge. An example is output of `printf` with no line end. In a terminal that draws the signs two cells wide, the status bar can then be too long for its row, as before.
+- When the cursor is nearer to the right edge, Tiza writes no sign and clears nothing. There, a sign can go to the next row and move the screen up, and the answer can give a wrong column. Thus Tiza measures no sign, and the bar uses the plain forms.
+- The cursor is near the right edge only when the line where you start Tiza has text up to that edge. An example is output of `printf` with no line end.
 - The probe uses the same wait as the color query. Tiza writes the signs after the first answer. Thus the probe adds two round trips to the terminal at start. With a theme that needs the color query, it adds one round trip. A terminal that does not answer the probe adds 100 ms.
-- An answer that comes after the wait is not a key, and Tiza does not use it: it shows the signs as they are. On a slow link, such as SSH with more than 100 ms of round trip, this can be the case. Then the status bar can be too long for its row, as before.
+- An answer that comes after the wait is not a key, and Tiza does not use it. On a slow link, such as SSH with more than 100 ms of round trip, this can be the case.
+  - When the first answer came in the wait and the answers for the signs came after it, the bar uses the plain forms.
+  - When no answer came in the wait, Tiza shows the signs as they are. In a terminal that draws the signs two cells wide, the status bar can then be too long for its row.
 - When the wait stops in the middle of an answer, Tiza takes its rest out of the keys too, as for the color query. This is also true when the wait stops right after the `ESC` of the first answer. There is one exception: the terminal answered nothing else, and the wait stops right after the `ESC [` of the first answer. Then that `ESC [` is a key, as an arrow key that you type, and the rest of the answer comes as key presses.
 - On a slow link, an answer can come after the wait but before the TUI starts. Then the terminal can show it, for example `^[[1;2R`, on the line where you started Tiza. This is also true for an answer to the color query.
 - `TIZA_NO_OSC` stops the width probe too.

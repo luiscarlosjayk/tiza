@@ -10,10 +10,14 @@
 //!   own text outside the code shows its plain form (`!`, `>`, `||`): the
 //!   bar is whole, with no scroll. Where they are narrow, or where the
 //!   terminal does not answer, the bar is as before.
+//! - Where the probe could not measure the signs, but the terminal
+//!   answered its first report (the right edge, or the reports of the
+//!   signs came late), the bar shows the plain forms: it fits its row.
 //! - AC2 An answer of the probe that comes late, whole or cut by the
 //!   wait, is never taken as keys.
 //! - At the right edge (less than two cells after the cursor), the probe
 //!   writes no sign: the shell's line stays, and the screen does not move.
+//!   The bar shows the plain forms.
 //! - The probe also measures U+26A0 with VS16. Where the terminal draws it
 //!   in one cell, Tiza's own text outside the code leaves out every
 //!   VS16: the bar counts one cell for the sign, as the terminal draws it.
@@ -34,6 +38,8 @@ const MAIN: &str =
     "fn main() {\n    let s = String::from(\"hi\");\n    let r = &s;\n    println!(\"{r}\");\n}\n";
 const OTHER: &str = "fn other() {\n    let n = 1;\n}\n";
 const TITLE: &str = "\u{26A0} the borrow \u{26A0}";
+/// [`TITLE`] in the plain forms.
+const PLAIN: &str = "! the borrow !";
 /// A light terminal's answers to the colour query (OSC 11, then OSC 10).
 const LIGHT: &[u8] = b"\x1b]11;rgb:f7f7/f5f5/efef\x1b\\\x1b]10;rgb:1f1f/2323/2828\x1b\\";
 
@@ -358,8 +364,9 @@ fn at_the_right_edge_the_probe_writes_no_sign_on_the_shell_line() {
     // The shell's line fills the last row, 135 columns: the cursor waits
     // in the last column for the wrap. A sign there went to the next row,
     // the screen moved up, and `ESC [ K` cleared the last letter. Now
-    // Tiza asks for the cursor only.
-    let mut c = cfg("", 135, true, "", TITLE);
+    // Tiza asks for the cursor only. It measured no sign, so the bar
+    // shows the plain forms, also where the terminal draws them narrow.
+    let mut c = cfg("", 135, true, "", PLAIN);
     c["xs"] = json!(135);
     c["last_row"] = json!(true);
     let r = run("edge-last-column", false, c);
@@ -375,16 +382,23 @@ fn at_the_right_edge_the_probe_writes_no_sign_on_the_shell_line() {
         "{}",
         r.out
     );
-    assert!(r.bar.contains(TITLE), "{}", r.out);
+    assert!(r.bar.contains(PLAIN), "{}", r.out);
     // One column before the last: a wide sign fits, but the cursor after
     // it waits at the edge and reports the last column again, one cell.
-    // Tiza measures nothing there: the signs stay as they are.
-    let mut c = cfg("\u{26A0}", 80, true, "", "");
+    // Tiza measures nothing there: the bar shows the plain forms, and fits
+    // in a terminal that draws the signs wide.
+    let mut c = cfg("\u{26A0}", 80, true, "numbers off", PLAIN);
     c["xs"] = json!(78);
     let r = run("edge-one-before", false, c);
     assert!(r.out.contains("ASKED 1"), "{}", r.out);
     assert!(!signs(&r.main) && !r.main.contains("\x1b[K"), "{}", r.out);
     assert_eq!(r.shell[0].trim_end(), "x".repeat(78), "{}", r.out);
+    assert!(
+        r.bar.contains(PLAIN) && r.bar.contains("numbers"),
+        "{}",
+        r.out
+    );
+    assert_eq!(r.scrolls, 0, "{}", r.out);
     // Two columns before the last: the cursor after a wide sign is still
     // in the row. The probe measures it, and clears what it wrote.
     let mut c = cfg("\u{26A0}", 80, true, "", "! the borrow !");
@@ -436,6 +450,55 @@ fn an_answer_of_the_probe_that_comes_late_is_not_keys() {
         let r = run("late-answer", false, c);
         assert_eq!(r.bar.trim_end(), ":x", "{what}\n{}", r.out);
     }
+}
+
+#[test]
+fn where_the_reports_of_the_signs_come_late_the_bar_shows_the_plain_forms() {
+    // The first report comes in time, so the signs go; their reports come
+    // after the start-up wait (a slow link). Tiza measured no sign, but
+    // the terminal answers: the bar shows the plain forms, and fits in a
+    // terminal that draws the signs wide.
+    let mut c = cfg("\u{26A0}", 80, true, "numbers off", PLAIN);
+    c["answers"] = json!("cut");
+    // The five reports after the first one, six bytes each.
+    c["rest"] = json!(5 * 6);
+    let r = run("signs-late", false, c);
+    assert!(r.out.contains("ASKED 6"), "{}", r.out);
+    assert!(
+        r.bar.contains(PLAIN) && r.bar.contains("numbers"),
+        "{}",
+        r.out
+    );
+    assert!(!r.bar.contains('\u{26A0}'), "{}", r.out);
+    assert_eq!(r.scrolls, 0, "{}", r.out);
+    // The code and the annotations keep the sign.
+    assert!(r.take.contains("\u{26A0} a shared borrow"), "{}", r.out);
+    // The first report late too: no answer in the wait, so the signs as
+    // they are, as before (a limit of the docs). A terminal that draws
+    // them narrow: the plain forms would show there too.
+    let mut c = cfg("", 80, true, "", TITLE);
+    c["answers"] = json!("late");
+    let r = run("first-late", false, c);
+    assert!(r.out.contains("ASKED 1"), "{}", r.out);
+    assert!(r.bar.contains(TITLE), "{}", r.out);
+}
+
+#[test]
+fn the_signs_are_plain_when_the_probe_answered_but_did_not_measure_them() {
+    use tiza_tui::appearance::Wide;
+    let shown = |w: Wide| w.plain("\u{26A0} \u{21AA} \u{23F8} \u{25B6}").into_owned();
+    let as_is = "\u{26A0} \u{21AA} \u{23F8} \u{25B6}";
+    let plain = "! > || >";
+    // Every report: the measure.
+    let narrow = [(1, 1), (1, 2), (1, 2), (1, 2), (1, 2), (1, 3)];
+    let wide = [(1, 1), (1, 3), (1, 3), (1, 3), (1, 3), (1, 3)];
+    assert_eq!(shown(Wide::from_probe(&narrow)), as_is);
+    assert_eq!(shown(Wide::from_probe(&wide)), plain);
+    // Only the first report: the signs did not go (the right edge) or
+    // their reports came late. The plain forms.
+    assert_eq!(shown(Wide::from_probe(&[(1, 79)])), plain);
+    // No report: the signs as they are, as before.
+    assert_eq!(shown(Wide::from_probe(&[])), as_is);
 }
 
 /// Every sign measured wide, as `tiza_tui::appearance::query_host` gives
