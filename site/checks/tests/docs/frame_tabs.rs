@@ -94,12 +94,47 @@ fn attr<'a>(tag: &'a str, name: &str) -> &'a str {
     &tag[at..at + tag[at..].find('"').unwrap()]
 }
 
+/// The frames are not in the repository: `site/build.sh` makes them with
+/// `scripts/docs_frames.py`. This check reads only the pages, so an empty
+/// file stands for each image of a page that the repository does not have,
+/// in a folder that build.py takes with `--frames`.
+fn stand_in_frames(root: &Path, frames: &Path) {
+    for page in doc_pages(root) {
+        let text = std::fs::read_to_string(root.join(&page)).unwrap();
+        let dir = Path::new(&page).parent().unwrap();
+        for part in text.split("<img src=\"").skip(1) {
+            let src = &part[..part.find('"').unwrap()];
+            if src.contains("://") {
+                continue;
+            }
+            // The path of the image in the repository, with its `..` taken out.
+            let mut rel = PathBuf::new();
+            for c in dir.join(src).components() {
+                match c {
+                    std::path::Component::ParentDir => {
+                        rel.pop();
+                    }
+                    std::path::Component::CurDir => {}
+                    c => rel.push(c),
+                }
+            }
+            if !root.join(&rel).exists() {
+                let dest = frames.join(&rel);
+                std::fs::create_dir_all(dest.parent().unwrap()).unwrap();
+                std::fs::write(dest, b"").unwrap();
+            }
+        }
+    }
+}
+
 /// Runs build.py of a copy of `site/` on the repository, and gives the
 /// folder of the copy.
 fn build_a_copy() -> PathBuf {
     let root = repo_root();
     let site = scratch("frame-tabs").join("site");
     std::fs::create_dir_all(&site).unwrap();
+    let frames = site.join("frames");
+    stand_in_frames(&root, &frames);
     for f in ["build.py", "nav.json"] {
         std::fs::copy(root.join("site").join(f), site.join(f)).unwrap();
     }
@@ -107,6 +142,8 @@ fn build_a_copy() -> PathBuf {
         .args(["-I", "-B"])
         .arg(site.join("build.py"))
         .args(["--repo", root.to_str().unwrap(), "--ref", "main"])
+        .arg("--frames")
+        .arg(&frames)
         .output()
         .expect("run python3");
     assert!(

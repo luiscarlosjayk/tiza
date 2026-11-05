@@ -7,3 +7,8 @@ qa/herdr/latest/
 /examples/tally/target
 scripts/agent-trials/runs/
 /dist/
+# The frames of the docs pages: site/build.sh makes them (scripts/docs_frames.py).
+/docs/images/commands/
+/docs/images/format/
+/docs/images/guides/
+/docs/images/themes/

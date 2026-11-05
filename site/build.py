@@ -36,7 +36,9 @@ This script copies the pages that nav.json lists into content/, and:
   in docs/frames/, as it is. On GitHub the page does not change,
 - puts each table in a <div class="table-wrap">, so a wide table scrolls in
   its own box and the page does not scroll sideways,
-- copies the images and the favicon into static/,
+- copies the images and the favicon into static/. The frames of the pages
+  are not in the repository: build.sh makes them with scripts/docs_frames.py,
+  and --frames gives their folder,
 - gives the navigation a short title and a group of pages under a page,
   when nav.json has them (see section_pages),
 - lists the release notes by itself: an entry "docs/release-notes/" in
@@ -170,8 +172,12 @@ def section_pages(sec):
 
 
 class Site:
-    def __init__(self, repo, site, nav, version, ref):
+    def __init__(self, repo, site, nav, version, ref, frames=None):
         self.repo = repo
+        # The output of scripts/docs_frames.py: the pages with a frame, with
+        # the width of each <img>, and their images. They come before the
+        # files of the repository, which has no frames.
+        self.frames = frames
         self.version = version
         self.ref = ref
         self.site = site
@@ -194,11 +200,17 @@ class Site:
                 else:
                     self.pages[p] = "%s/%s" % (sec["id"], posixpath.basename(p))
         self.assets = dict(nav.get("assets", {}))
-        # The frames of the reference pages: every file in docs/images/ is an asset.
-        for root, _, files in os.walk(os.path.join(repo, "docs", "images")):
-            for name in files:
-                rel = os.path.relpath(os.path.join(root, name), repo).replace(os.sep, "/")
-                self.assets.setdefault(rel, rel[len("docs/"):])
+        # Every file in docs/images/ is an asset: the images of the TUI in
+        # the repository, and the frames that docs_frames.py made.
+        # repo path of an asset -> the file to copy.
+        self.asset_files = {}
+        for top in [repo] + ([frames] if frames else []):
+            for root, _, files in os.walk(os.path.join(top, "docs", "images")):
+                for name in files:
+                    full = os.path.join(root, name)
+                    rel = os.path.relpath(full, top).replace(os.sep, "/")
+                    self.assets.setdefault(rel, rel[len("docs/"):])
+                    self.asset_files[rel] = full
         # (tag, path) -> site path of a raw file at a release tag, from git.
         self.tag_assets = {}
         self.warnings = []
@@ -454,7 +466,9 @@ class Site:
         """The title (the first H1) and the Zola Markdown of a page. shift
         moves each other heading down that many levels, to put the page
         under a heading of another page."""
-        with open(os.path.join(self.repo, src), encoding="utf-8") as f:
+        made = os.path.join(self.frames, src) if self.frames else None
+        path = made if made and os.path.isfile(made) else os.path.join(self.repo, src)
+        with open(path, encoding="utf-8") as f:
             lines = f.read().split("\n")
         title = None
         seen = {}
@@ -638,6 +652,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--repo", default=os.path.dirname(HERE))
     ap.add_argument("--ref", default="main")
+    ap.add_argument("--frames", help="the folder that scripts/docs_frames.py wrote (--out)")
     args = ap.parse_args()
     repo = os.path.abspath(args.repo)
     with open(os.path.join(HERE, "nav.json"), encoding="utf-8") as f:
@@ -649,14 +664,14 @@ def main():
                 # The notes of a prerelease are not on the site.
                 nav.setdefault("skip", []).append(RELEASE_NOTES)
         version = workspace_version(repo)
-        build(repo, nav, version, args.ref)
+        build(repo, nav, version, args.ref, args.frames and os.path.abspath(args.frames))
     except BuildError as e:
         print("build.py: error: %s" % e, file=sys.stderr)
         sys.exit(1)
 
 
-def build(repo, nav, version, ref):
-    site = Site(repo, HERE, nav, version, ref)
+def build(repo, nav, version, ref, frames=None):
+    site = Site(repo, HERE, nav, version, ref, frames)
 
     content = os.path.join(HERE, "content")
     shutil.rmtree(content, ignore_errors=True)
@@ -697,7 +712,7 @@ def build(repo, nav, version, ref):
     for src, dst in site.assets.items():
         out = os.path.join(static, dst)
         os.makedirs(os.path.dirname(out), exist_ok=True)
-        shutil.copyfile(os.path.join(repo, src), out)
+        shutil.copyfile(site.asset_files.get(src, os.path.join(repo, src)), out)
     for (tag, path), dst in site.tag_assets.items():
         out = os.path.join(static, dst)
         os.makedirs(os.path.dirname(out), exist_ok=True)

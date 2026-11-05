@@ -8,7 +8,7 @@ Some pages are maintainer notes outside this repository, in `../dev/` next to th
 
 - Before every push, run the checks for your kind of change. Every command must pass.
   - A change of code: `cargo fmt --all && cargo clippy --all-targets --all-features -- -D warnings && cargo test --all-features --no-fail-fast`.
-  - A change of only the docs (`docs/`, `site/`, images, `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `AGENTS.md`, `scripts/docs-frames.sh`, `scripts/readme-images.sh` or `scripts/tui-captures.sh`): `cargo fmt --all && cargo test -p tiza-qa --test policy && cargo test -p tiza-site-checks && cargo clippy -p tiza-site-checks --all-targets -- -D warnings`.
+  - A change of only the docs (`docs/`, `site/`, images, `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `AGENTS.md`, `scripts/docs-frames.sh`, `scripts/docs_frames.py`, `scripts/readme-images.sh` or `scripts/tui-captures.sh`): `cargo fmt --all && cargo test -p tiza-qa --test policy && cargo test -p tiza-site-checks && cargo clippy -p tiza-site-checks --all-targets -- -D warnings`.
   - If you change `CONTRIBUTING.md` or `README.md`, also run `cargo test -p tiza-qa --test release -- release_check publishing`.
   - A change of a `Cargo.toml` or of `deny.toml`: also `cargo deny check bans licenses sources`.
 - Do not push a change that adds a CI failure. If CI fails on your commit, fix it first.
@@ -65,6 +65,7 @@ Some pages are maintainer notes outside this repository, in `../dev/` next to th
 - When you change what the renderer draws, run `scripts/readme-images.sh` in the same commit.
 - When you change a panel, the status bar or presentation mode, run `scripts/tui-captures.sh` in the same commit.
 - A frame in a doc or a brand image is a real `tiza render` export. Do not edit it. Do not make a mockup.
+- The site build makes the frames of the docs pages, one for each `<!-- frame … -->` comment, with the binary of the ref that it publishes. Do not commit a frame. To see the frames before a push, run `scripts/docs-frames.sh`. It writes them to `target/docs-frames/`.
 - An image of the TUI is the only other kind of image of Tiza in a doc. Use it only for what `tiza render` does not draw: presentation mode, the status bar, the live pointer, the focus, the padding and the layout of normal mode, a panel or the view of a `scroll` move. Make it with `scripts/tui-captures.sh`. Do not edit it.
 - Keep images out of the repository unless they are necessary. Tests use text exports, not PNG files.
 - Before you push a new dependency or an embedded asset, run `scripts/size-check.sh` and `scripts/bench.sh`. CI does not run them.

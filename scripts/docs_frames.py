@@ -47,12 +47,12 @@ commands, for a move or a field that no `:` command makes:
 - The page shows the JSON of the document next to its frame. The document
   and its code go in docs/frames/.
 
-Usage: docs_frames.py TIZA [--out DIR] [--only-doc] [PAGE...]
-Without PAGE: every page under docs/ with a frame comment. With --out, the
-pages and the images go under DIR, at their paths in the repository, and
-the repository does not change. With --only-doc, only the `doc=` frames:
-the check of the docs site makes them again and compares them with the
-committed images (site/checks).
+Usage: docs_frames.py TIZA [--out DIR] [PAGE...]
+Without PAGE: every page under docs/ with a frame comment. The pages, with
+the width of each <img>, and the images go under DIR (default
+target/docs-frames), at their paths in the repository. The repository does
+not change: the frames are not in it. site/build.sh runs this script and
+builds the site from DIR, so the site shows frames of its own binary.
 """
 import argparse
 import atexit
@@ -278,9 +278,8 @@ def main():
     no_config()
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("tiza", help="the tiza binary")
-    ap.add_argument("--out", default=ROOT, help="write the pages and the images under this folder")
-    ap.add_argument("--only-doc", action="store_true",
-                    help="only the doc= frames (no TUI): the check of the docs site")
+    ap.add_argument("--out", default=os.path.join(ROOT, "target", "docs-frames"),
+                    help="write the pages and the images under this folder (default: target/docs-frames)")
     ap.add_argument("pages", nargs="*", help="pages relative to the repository (default: every page with a frame)")
     # Intermixed: `TIZA --out DIR PAGE` and `TIZA PAGE --out DIR` both work.
     a = ap.parse_intermixed_args()
@@ -346,8 +345,6 @@ def main():
         for page_path in pages:
             page = read(os.path.join(ROOT, page_path))
             for fid, opts, cmds, end in frames_of(page_path, page):
-                if a.only_doc and "doc" not in opts:
-                    continue
                 img = re.search(r'<img src="([^"]*/%s\.webp)"' % re.escape(fid), page[end:])
                 dest = os.path.realpath(os.path.join(out, os.path.dirname(page_path), img.group(1)))
                 work = os.path.join(tmp, fid)

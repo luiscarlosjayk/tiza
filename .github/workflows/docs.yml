@@ -29,6 +29,8 @@ on:
       - "qa/src/**"
       - "qa/fixtures/mcp/agent_scenarios/**"
       - "scripts/readme-images.sh"
+      - "scripts/docs-frames.sh"
+      - "scripts/docs_frames.py"
       - "site/**"
       - ".github/workflows/docs.yml"
   pull_request:
@@ -47,6 +49,8 @@ on:
       - "qa/src/**"
       - "qa/fixtures/mcp/agent_scenarios/**"
       - "scripts/readme-images.sh"
+      - "scripts/docs-frames.sh"
+      - "scripts/docs_frames.py"
       - "site/**"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
@@ -112,6 +116,9 @@ jobs:
           fi
           # A release from before the checks of the docs has no site/checks.
           # A manual run can turn the checks off, to deploy a release again.
+          # A ref whose site build makes the frames needs the binary; an
+          # earlier release has its frames in the repository.
+          if grep -q docs_frames site/build.sh; then frames=true; else frames=false; fi
           if [ ! -f site/checks/Cargo.toml ]; then
             checks=false
             echo "::notice::$ref has no site/checks: the checks of the docs do not run"
@@ -121,18 +128,19 @@ jobs:
           else
             checks=true
           fi
-          echo "The site describes $ref (deploy: $deploy, checks: $checks)."
+          echo "The site describes $ref (deploy: $deploy, checks: $checks, frames: $frames)."
           {
             echo "ref=$ref"
             echo "deploy=$deploy"
             echo "checks=$checks"
+            echo "frames=$frames"
           } >> "$GITHUB_OUTPUT"
       # The toolchain is the one rust-toolchain.toml pins, as in ci.yml.
       - name: Rust toolchain (rust-toolchain.toml)
-        if: steps.ref.outputs.checks == 'true'
+        if: steps.ref.outputs.checks == 'true' || steps.ref.outputs.frames == 'true'
         run: rustup toolchain install && rustc --version
       - uses: Swatinem/rust-cache@v2
-        if: steps.ref.outputs.checks == 'true'
+        if: steps.ref.outputs.checks == 'true' || steps.ref.outputs.frames == 'true'
       - name: Lint the checks of the docs
         if: steps.ref.outputs.checks == 'true'
         run: cargo clippy -p tiza-site-checks --all-targets --locked -- -D warnings
@@ -150,9 +158,13 @@ jobs:
           tar -xzf "$dl/$archive" -C "$bin" zola
           echo "$bin" >> "$GITHUB_PATH"
           "$bin/zola" --version
-      - name: Build the site and check its links
+      - name: Build the binary that makes the frames
+        if: steps.ref.outputs.frames == 'true'
+        run: cargo build --release --locked -p tiza
+      - name: Make the frames, build the site and check its links
         env:
           DOCS_REF: ${{ steps.ref.outputs.ref }}
+          TIZA: ${{ steps.ref.outputs.frames == 'true' && format('{0}/target/release/tiza', github.workspace) || '' }}
         run: site/build.sh
       - uses: actions/upload-pages-artifact@v5
         if: steps.ref.outputs.deploy == 'true'

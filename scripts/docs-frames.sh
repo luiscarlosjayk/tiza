@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # Makes the frames of the docs pages: one real `tiza render` export, a
 # lossless WebP, for each `<!-- frame … -->` comment of a page. See
-# scripts/docs_frames.py for the comment and the rules.
+# scripts/docs_frames.py for the comment and the rules. The frames are not in
+# the repository: site/build.sh makes them for the site. Run this script to
+# see them before a push.
 #
-#   scripts/docs-frames.sh                     # every page of docs/ with a frame
+#   scripts/docs-frames.sh                     # every page with a frame, into target/docs-frames/
 #   scripts/docs-frames.sh docs/reference/commands/view.md
-#   scripts/docs-frames.sh --out /tmp/frames   # the repository does not change
+#   scripts/docs-frames.sh --out /tmp/frames   # another folder
 #   TIZA=path/to/tiza scripts/docs-frames.sh   # no build
 #
 # Needs python3 on macOS or Linux. It drives the TUI on a pseudo-terminal,
