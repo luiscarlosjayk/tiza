@@ -27,9 +27,13 @@
 //!   `idle_cpu_max_pct` (1 %) in `qa/bench/baseline.json`. Over it, bench
 //!   prints FAIL for each case and exits 1: a loop that does not sleep is a
 //!   bug, not noise.
+//! - AC8 The release measures each target: `release.yml` and
+//!   `release-local.sh` run `size_check.py --target T --archive A` on what
+//!   they packed, every target of the matrix has a baseline, and a named
+//!   target with no baseline fails.
 //!
 //! The scripts are exercised here with fake binaries and temporary budget and
-//! baseline files (`--bin`, `--budgets`, `--committed`, `--baseline`,
+//! baseline files (`--bin`, `--archive`, `--target`, `--budgets`, `--committed`, `--baseline`,
 //! `--latest`), so the test never builds a release binary and never rewrites
 //! the committed files. The real numbers are on the card.
 
@@ -136,9 +140,6 @@ fn committed_budgets_hold_the_limits_and_a_baseline_per_target() {
     assert_eq!(b["limits"]["archive_bytes"], 8 * MB);
     assert_eq!(b["limits"]["growth_pct"], 10);
     let targets = b["targets"].as_object().unwrap();
-    for t in ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin"] {
-        assert!(targets.contains_key(t), "no baseline for {t}");
-    }
     for (t, e) in targets {
         let bin = e["binary_bytes"].as_u64().unwrap();
         let arch = e["archive_bytes"].as_u64().unwrap();
@@ -150,6 +151,153 @@ fn committed_budgets_hold_the_limits_and_a_baseline_per_target() {
         );
         assert!(e["measured"].as_str().unwrap().starts_with("2026-"));
     }
+}
+
+/// The targets of the build matrix of `.github/workflows/release.yml`.
+fn release_targets() -> Vec<String> {
+    let yml = std::fs::read_to_string(repo_root().join(".github/workflows/release.yml")).unwrap();
+    yml.lines()
+        .filter(|l| l.trim_start().starts_with("- {"))
+        .filter_map(|l| l.split("target:").nth(1))
+        .map(|t| t.trim().trim_end_matches('}').trim().to_string())
+        .collect()
+}
+
+#[test]
+fn every_release_target_is_measured_against_its_baseline() {
+    let targets = release_targets();
+    assert!(targets.len() >= 3, "the matrix of release.yml: {targets:?}");
+    let b = read_json("qa/budgets.json");
+    for t in &targets {
+        assert!(
+            b["targets"].get(t).is_some(),
+            "no baseline for {t} in qa/budgets.json"
+        );
+    }
+    // The build job measures what it packed, for the target of its matrix
+    // entry, before the archive goes up; release-local.sh does the same.
+    let yml = std::fs::read_to_string(repo_root().join(".github/workflows/release.yml")).unwrap();
+    let packed = yml
+        .find("tar -C dist -czf")
+        .expect("release.yml packs the archive");
+    let measured = yml
+        .find("scripts/size_check.py --target ${{ matrix.target }}")
+        .expect("release.yml runs size_check.py with the target of the matrix");
+    let uploaded = yml
+        .find("actions/upload-artifact")
+        .expect("release.yml uploads");
+    assert!(
+        packed < measured && measured < uploaded,
+        "measure after the pack, before the upload"
+    );
+    assert!(
+        yml[measured..uploaded].contains("--archive"),
+        "the archive that is published"
+    );
+    let local = std::fs::read_to_string(repo_root().join("scripts/release-local.sh")).unwrap();
+    assert!(
+        local.contains("scripts/size_check.py --target \"$target\""),
+        "release-local.sh checks the size of each target"
+    );
+}
+
+#[test]
+fn a_named_target_uses_its_own_baseline_and_fails_without_one() {
+    let dir = scratch("size-target");
+    // A baseline only for a target that is not this machine.
+    let other = "x86_64-unknown-test-other";
+    let b = write_json(
+        &dir,
+        "budgets.json",
+        &budgets(json!({ other: {
+            "binary_bytes": MB, "archive_bytes": 4 * MB, "commit": "abc1234",
+            "measured": "2026-11-04", "reason": "first baseline"
+        }})),
+    );
+    let b = b.to_str().unwrap();
+    let grown = fake_binary(&dir, "grown", 1_150_000, false);
+    let grown = grown.to_str().unwrap();
+    let common = ["--bin", grown, "--budgets", b, "--committed", b];
+
+    // Against the baseline of `other`: 15 % over it.
+    let r = run(
+        "size_check.py",
+        &[&common[..], &["--target", other]].concat(),
+    );
+    assert!(!ok(&r), "{}", r.stdout);
+    assert!(
+        r.stdout.contains(&format!("target   {other} @")),
+        "{}",
+        r.stdout
+    );
+    assert!(
+        r.stdout
+            .contains("FAIL: binary grew 15.0 % over the baseline"),
+        "{}",
+        r.stdout
+    );
+
+    // Without --target: the host, which has no baseline here, only a note.
+    let r = run("size_check.py", &common);
+    assert!(ok(&r), "{}\n{}", r.stdout, r.stderr);
+    assert!(
+        r.stdout.contains(&format!(
+            "note: qa/budgets.json has no baseline for {}",
+            host_target()
+        )),
+        "{}",
+        r.stdout
+    );
+
+    // A named target with no baseline fails: nobody measured it.
+    let r = run(
+        "size_check.py",
+        &[&common[..], &["--target", "x86_64-unknown-test-none"]].concat(),
+    );
+    assert!(!ok(&r), "{}", r.stdout);
+    assert!(
+        r.stdout
+            .contains("FAIL: qa/budgets.json has no baseline for x86_64-unknown-test-none"),
+        "{}",
+        r.stdout
+    );
+}
+
+#[test]
+fn archive_measures_the_given_file_instead_of_packing_one() {
+    let dir = scratch("size-archive");
+    let b = write_json(&dir, "budgets.json", &budgets(json!({})));
+    let b = b.to_str().unwrap();
+    // Zeros: packed, the archive would be tiny.
+    let small = fake_binary(&dir, "small", 2 * MB as usize, false);
+    let small = small.to_str().unwrap();
+    let common = ["--bin", small, "--budgets", b, "--committed", b];
+
+    let big = fake_binary(&dir, "big.tar.gz", 9 * MB as usize, false);
+    let r = run(
+        "size_check.py",
+        &[&common[..], &["--archive", big.to_str().unwrap()]].concat(),
+    );
+    assert!(!ok(&r), "{}", r.stdout);
+    assert!(
+        r.stdout.contains("archive  9,000,000 bytes"),
+        "{}",
+        r.stdout
+    );
+    assert!(
+        r.stdout
+            .contains("FAIL: archive 9.00 MB is over the 8 MB budget"),
+        "{}",
+        r.stdout
+    );
+
+    let missing = dir.join("none.tar.gz");
+    let r = run(
+        "size_check.py",
+        &[&common[..], &["--archive", missing.to_str().unwrap()]].concat(),
+    );
+    assert!(!ok(&r), "{}", r.stdout);
+    assert!(r.stderr.contains("no archive at"), "{}", r.stderr);
 }
 
 #[test]
