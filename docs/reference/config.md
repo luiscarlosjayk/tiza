@@ -113,7 +113,7 @@ Your personal styles. Each `[styles.NAME]` table is one style, with the fields o
 | Field | Type | Default | Meaning |
 |---|---|---|---|
 | `glyph` | string | Required | The glyph of the mark. It cannot be empty. |
-| `legend` | string | No default | The legend next to the glyph. |
+| `legend` | string | No default | The legend next to the glyph. With an empty legend, the label comes after the glyph. |
 | `color` | string | No default | The color of the mark: a color name or `#rrggbb`. |
 
 - The color names and their aliases are in [Color names](document-format.md#color-names).

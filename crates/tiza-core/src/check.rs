@@ -2319,11 +2319,13 @@ fn take_saturation(take: &Take) -> usize {
             Shape::Mark {
                 kind, style, label, ..
             } => {
-                // `glyph legend: label`, the legend defaulting to the kind.
-                let st = doc.resolve_style(kind, style).unwrap_or_default();
-                st.glyph.as_deref().map_or(0, |g| w(g) + 1)
-                    + st.legend.as_deref().map_or(w(kind), w)
-                    + label.as_deref().map_or(0, |l| 2 + w(l))
+                // The text that the layout draws, `glyph legend: label`.
+                w(&crate::layout::mark_text(
+                    doc,
+                    kind,
+                    style,
+                    label.as_deref(),
+                ))
             }
             Shape::Callout {
                 text, title, width, ..

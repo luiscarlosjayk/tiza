@@ -1249,12 +1249,11 @@ fn layout_pass(
                         label,
                         style,
                         ..
-                    } if span.line == line => Some((
-                        mark_text(doc, kind, style, label.as_deref()),
-                        color_of(a),
-                        false,
-                        Some(span.start),
-                    )),
+                    } if span.line == line => {
+                        // A mark with no text has no row of its own.
+                        let text = mark_text(doc, kind, style, label.as_deref());
+                        (!text.is_empty()).then(|| (text, color_of(a), false, Some(span.start)))
+                    }
                     Shape::Highlight {
                         span,
                         label: Some(l),
@@ -2734,22 +2733,31 @@ fn without_blank_labels(doc: &Document) -> Option<Document> {
     Some(d)
 }
 
-fn mark_text(
+/// The text of a mark, `glyph legend: label`. The legend defaults to the
+/// kind. A blank legend or label ([`crate::canvas::is_blank`]) has no text,
+/// and a separator goes only between two parts that are there: `+ x` for an
+/// empty legend, `+` without a label. Empty when no part is there.
+pub(crate) fn mark_text(
     doc: &Document,
     kind: &str,
     style: &crate::model::MarkStyle,
     label: Option<&str>,
 ) -> String {
     let st = doc.resolve_style(kind, style).unwrap_or_default();
-    let mut out = String::new();
-    if let Some(g) = &st.glyph {
-        out.push_str(g);
-        out.push(' ');
-    }
-    out.push_str(st.legend.as_deref().unwrap_or(kind));
-    if let Some(l) = label {
-        out.push_str(": ");
-        out.push_str(l);
+    let shown = |t: &&str| !crate::canvas::is_blank(t);
+    let legend = Some(st.legend.as_deref().unwrap_or(kind)).filter(shown);
+    let label = label.filter(shown);
+    let mut out = st.glyph.clone().unwrap_or_default();
+    for (part, sep) in [
+        (legend, " "),
+        (label, if legend.is_some() { ": " } else { " " }),
+    ] {
+        if let Some(p) = part {
+            if !out.is_empty() {
+                out.push_str(sep);
+            }
+            out.push_str(p);
+        }
     }
     out
 }

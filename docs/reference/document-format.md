@@ -373,7 +373,7 @@ Each entry of `styles`, and the `style` of a mark, has these fields. The `style`
 | Field | Type | Default | Meaning |
 |---|---|---|---|
 | `glyph` | string | The glyph of the kind | The sign before the legend, which should be one or two columns wide. |
-| `legend` | string | The legend of the kind | The text after the glyph, followed by `: ` and the `label` of the mark. |
+| `legend` | string | The legend of the kind | The text after the glyph, followed by `: ` and the `label` of the mark. With an empty legend, the label comes after the glyph. |
 | `color` | string | The color of the kind | A [color name](#color-names) or `#rrggbb`. |
 
 ### Color names

@@ -19,6 +19,7 @@ mod line_numbers;
 mod line_range;
 mod live_width;
 mod margin_callouts;
+mod mark_legends;
 mod narrow_arrow_labels;
 mod open_notice;
 mod padding;

@@ -1,0 +1,148 @@
+{
+  "schema": 1,
+  "title": "mark legends",
+  "source": {
+    "language": "rs",
+    "first_line": 1
+  },
+  "code": [
+    "fn main() {",
+    "    let s = String::from(\"hi\");",
+    "    let t = s.clone();",
+    "    let n = s.len();",
+    "    let ok = n > 0;",
+    "    let u = t;",
+    "    let v = u;",
+    "    println!(\"{v}\");",
+    "    let w = 1;",
+    "    let x = w + 1;",
+    "    let y = x + 1;",
+    "    println!(\"{y} {ok}\");",
+    "}"
+  ],
+  "styles": {
+    "new": {
+      "glyph": "+",
+      "color": "green",
+      "legend": ""
+    },
+    "spaces": {
+      "glyph": "~",
+      "legend": "   "
+    },
+    "zero": {
+      "glyph": "^",
+      "legend": "\u200b"
+    },
+    "bare": {
+      "legend": ""
+    },
+    "kept": {
+      "glyph": "*",
+      "color": "blue"
+    }
+  },
+  "annotations": [
+    {
+      "id": "heap",
+      "step": 1,
+      "type": "mark",
+      "kind": "new",
+      "span": {
+        "line": 2,
+        "start": 4,
+        "end": 31
+      },
+      "label": "s asks for memory on the heap"
+    },
+    {
+      "id": "glyph-only",
+      "step": 1,
+      "type": "mark",
+      "kind": "new",
+      "span": {
+        "line": 3,
+        "start": 4,
+        "end": 22
+      }
+    },
+    {
+      "id": "spaces",
+      "step": 1,
+      "type": "mark",
+      "kind": "spaces",
+      "span": {
+        "line": 4,
+        "start": 4,
+        "end": 20
+      },
+      "label": "a legend of spaces"
+    },
+    {
+      "id": "zero",
+      "step": 1,
+      "type": "mark",
+      "kind": "zero",
+      "span": {
+        "line": 5,
+        "start": 4,
+        "end": 19
+      },
+      "label": "a zero-width legend"
+    },
+    {
+      "id": "kind",
+      "step": 1,
+      "type": "mark",
+      "kind": "kept",
+      "span": {
+        "line": 6,
+        "start": 4,
+        "end": 14
+      },
+      "label": "the name of the style"
+    },
+    {
+      "id": "nothing",
+      "step": 1,
+      "type": "mark",
+      "kind": "bare",
+      "span": {
+        "line": 7,
+        "start": 4,
+        "end": 14
+      }
+    },
+    {
+      "id": "label-only",
+      "step": 1,
+      "type": "mark",
+      "kind": "bare",
+      "span": {
+        "line": 8,
+        "start": 4,
+        "end": 20
+      },
+      "label": "only the label"
+    },
+    {
+      "id": "builtin",
+      "step": 1,
+      "type": "mark",
+      "kind": "ok",
+      "span": {
+        "line": 9,
+        "start": 4,
+        "end": 14
+      },
+      "label": "the legend of the kind"
+    },
+    {
+      "id": "dim",
+      "step": 2,
+      "type": "spotlight",
+      "from_line": 10,
+      "to_line": 12
+    }
+  ]
+}

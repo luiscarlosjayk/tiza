@@ -7957,6 +7957,7 @@ impl App {
             .resolve_style(&kind, &style)
             .or_else(|| personal.as_ref().map(|p| p.merged(&style)))
             .and_then(|st| st.legend)
+            .filter(|l| !tiza_core::canvas::is_blank(l))
             .unwrap_or_else(|| kind.clone());
         let copied = personal.is_some().then(|| kind.clone());
         let id = self.add_annotation_full(
