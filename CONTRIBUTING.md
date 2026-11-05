@@ -51,7 +51,7 @@ cargo test                                   # core, TUI (incl. socket), command
 cargo clippy --all-targets -- -D warnings
 cargo test -p tiza-site-checks               # the docs against the code (site/checks), as the docs site job runs them
 cargo run -- examples/ownership.rs
-scripts/size-check.sh                        # release binary < 16 MB, download < 8 MB, ≤ 10 % over qa/budgets.json
+scripts/size-check.sh                        # release binary < 16 MB (17 MB on Linux x86_64), download < 8 MB, ≤ 10 % over qa/budgets.json
 scripts/bench.sh                             # timings vs qa/bench/baseline.json (warns > 20 % slower); --install adds a cold `cargo install`
 scripts/docs-frames.sh                       # a preview of the frames of the docs pages in target/docs-frames/; the docs site job makes them
 scripts/tui-captures.sh                      # the images of the TUI in docs/images/tui (VHS, Menlo, macOS): run it after a change to a panel, the status bar, presentation mode or examples/ownership.rs

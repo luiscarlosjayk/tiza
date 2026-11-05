@@ -1,13 +1,14 @@
-//! Size and speed budgets: binary < 16 MB, download < 8 MB,
-//! `cargo install` time tracked, a benchmark baseline that warns on
-//! regressions, and `lto = "fat"` in the release profile.
+//! Size and speed budgets: binary < 16 MB (17 MB on Linux x86_64),
+//! download < 8 MB, `cargo install` time tracked, a benchmark baseline that
+//! warns on regressions, and `lto = "fat"` in the release profile.
 //!
 //! Acceptance criteria:
 //! - AC1 `scripts/size-check.sh` builds `--release`, prints the binary size and
 //!   the size of the tar.gz the release workflow packs, and fails when the
-//!   binary is > 16 MB, the archive > 8 MB, or either grew > 10 % over this
-//!   target's baseline in `qa/budgets.json` — unless that file is updated in
-//!   the same commit with a new one-line reason.
+//!   binary is > 16 MB (or the `binary_limit_bytes` of its target), the
+//!   archive > 8 MB, or either grew > 10 % over this target's baseline in
+//!   `qa/budgets.json` — unless that file is updated in the same commit with
+//!   a new one-line reason.
 //! - AC2 `scripts/bench.sh` times fixed scenarios with the release binary
 //!   (median of N runs after a warm-up), writes `qa/bench/latest.json`,
 //!   compares with `qa/bench/baseline.json` and warns (never fails) on any
@@ -143,7 +144,18 @@ fn committed_budgets_hold_the_limits_and_a_baseline_per_target() {
     for (t, e) in targets {
         let bin = e["binary_bytes"].as_u64().unwrap();
         let arch = e["archive_bytes"].as_u64().unwrap();
-        assert!(bin <= 16 * MB && arch <= 8 * MB, "{t}: {e}");
+        // Only Linux x86_64 has a binary limit of its own (Luis, 2026-11-05),
+        // with its reason; the others keep the 16 MB of `limits`.
+        let limit = match e.get("binary_limit_bytes") {
+            Some(l) => {
+                assert_eq!(t, "x86_64-unknown-linux-gnu", "{t}: {e}");
+                let why = e["binary_limit_reason"].as_str().unwrap_or("");
+                assert!(!why.trim().is_empty() && !why.contains('\n'), "{t}: {e}");
+                l.as_u64().unwrap()
+            }
+            None => 16 * MB,
+        };
+        assert!(bin <= limit && arch <= 8 * MB, "{t}: {e}");
         let reason = e["reason"].as_str().unwrap_or("");
         assert!(
             !reason.trim().is_empty() && !reason.contains('\n'),
@@ -364,6 +376,51 @@ fn over_the_absolute_budgets_fails_naming_the_budget() {
     );
     assert!(ok(&r), "{}\n{}", r.stdout, r.stderr);
     assert!(r.stdout.contains("OK (budget 16 MB / 8 MB"), "{}", r.stdout);
+}
+
+#[test]
+fn a_target_with_its_own_binary_limit_is_checked_against_it() {
+    let dir = scratch("size-own-limit");
+    let linux = "x86_64-unknown-linux-gnu";
+    let b = write_json(
+        &dir,
+        "budgets.json",
+        &budgets(json!({ linux: {
+            "binary_bytes": 16_500_000, "archive_bytes": 4 * MB, "commit": "abc1234",
+            "measured": "2026-11-05", "reason": "first baseline",
+            "binary_limit_bytes": 17 * MB, "binary_limit_reason": "x86_64 and ELF"
+        }})),
+    );
+    let b = b.to_str().unwrap();
+    let check = |name: &str, n: usize, target: &str| {
+        let f = fake_binary(&dir, name, n, false);
+        run(
+            "size_check.py",
+            &[
+                "--bin",
+                f.to_str().unwrap(),
+                "--budgets",
+                b,
+                "--committed",
+                b,
+                "--target",
+                target,
+            ],
+        )
+    };
+    // 16.9 MB: over the 16 MB of `limits`, under the 17 MB of this target.
+    let r = check("under", 16_900_000, linux);
+    assert!(ok(&r), "{}\n{}", r.stdout, r.stderr);
+    assert!(r.stdout.contains("OK (budget 17 MB / 8 MB"), "{}", r.stdout);
+    // 17.1 MB: over the limit of the target, which the message names.
+    let r = check("over", 17_100_000, linux);
+    assert!(!ok(&r), "{}", r.stdout);
+    assert!(
+        r.stdout
+            .contains("FAIL: binary 17.10 MB is over the 17 MB budget"),
+        "{}",
+        r.stdout
+    );
 }
 
 #[test]
