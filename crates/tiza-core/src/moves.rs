@@ -861,15 +861,16 @@ impl Patch {
         if out.is_empty() {
             out.push(String::new());
         }
+        let new_len = out.len() as u32;
         (
-            out.clone(),
+            out,
             LineMap {
                 first_line,
                 map,
                 inserted,
                 replaced,
                 old_len,
-                new_len: out.len() as u32,
+                new_len,
             },
         )
     }
@@ -1135,9 +1136,10 @@ impl Projection {
             MoveAction::CodePatch(patch) => {
                 let key = p.shown.file.clone();
                 let first = doc.view_first_line(&key);
-                let code = p.codes.get(&key).cloned().unwrap_or_default();
-                let target = patch.resolve(&code, first)?;
-                let (new_code, map) = patch.apply_target(&code, first, target);
+                // A borrow, not a copy: the file is read here and replaced below.
+                let code: &[String] = p.codes.get(&key).map_or(&[], |c| c.as_slice());
+                let target = patch.resolve(code, first)?;
+                let (new_code, map) = patch.apply_target(code, first, target);
                 if let Some(c) = p.cursor {
                     p.cursor = map.get(c.line).map(|line| Anchor { line, col: c.col });
                 }
