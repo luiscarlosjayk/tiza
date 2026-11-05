@@ -8,6 +8,7 @@ Each image on this page is a frame of a `tiza render` export. The code is `examp
 
 Tiza puts a label, a legend or a note in the right margin when the margin has room. When it has no room, Tiza puts it under the line. The frames on this page are narrow, so their labels are under the line.
 
+- A line with two or more labels at the step shows them all under it, also when the margin has room.
 - Under the line, the label of a highlight or a mark starts under its span when it fits there.
 - The label of an arrow that goes to another line is beside the code of that line, after the glyph of the arrow, when the code column has room for it. When it has no room, the label goes in the right margin or under the line.
 
@@ -395,7 +396,7 @@ For example, add a callout for lines 6 to 8:
 
 <img src="../../images/commands/callout-default.webp" width="567" alt="In the right margin of lines 6 to 8, a callout with a border holds the text t stays with main.">
 
-When the right margin has no room, Tiza puts the callout under the lines.
+When the right margin has no room, Tiza puts the callout under the lines. A note or a label of the same line stays beside the callout only when it fits there whole. Otherwise it goes under the line, and the callout still starts in the margin, on the row of its line, when its block cuts none of the labels under the line. Otherwise the callout also goes under the line.
 
 ### `:callout` with a place and a title
 

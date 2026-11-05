@@ -601,6 +601,7 @@ Tiza finds a target on the code as it is at the step of the move. The target mus
 With `"typing": "line"` or `"char"`, Tiza types the content on the screen.
 
 - `speed_ms` is the time for each line or each character.
+- Each typed move takes its own time: its lines or characters × its `speed_ms`. A `wait` move takes its `ms`.
 - With `"char"`, Tiza also types the spaces and the tabs at the start of a line, and the end of each line but the last. Each takes `speed_ms`. Thus a line with a large indent waits before its first letter shows.
 - The annotations of the step appear when the typing ends.
 - Tiza plays the moves of the step in the order of the list. Each move changes the code in its turn, also a move without `typing`. Until its turn, the code shows nothing of it.
