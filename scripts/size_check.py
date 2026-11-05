@@ -5,7 +5,9 @@ Builds `tiza` with `cargo build --release --locked -p tiza`, packs it exactly as
 `.github/workflows/release.yml` does (binary + README + licenses + examples/ in
 a folder, `tar -czf`), prints both sizes and fails when:
 
-- the binary is over `limits.binary_bytes` (16 MB) or the archive over
+- the binary is over `limits.binary_bytes` (16 MB), or over the
+  `binary_limit_bytes` of the target when its entry has one (17 MB on Linux
+  x86_64: its code and the ELF format take more room), or the archive is over
   `limits.archive_bytes` (8 MB), or
 - either grew more than `limits.growth_pct` (10 %) over the baseline of this
   target in `qa/budgets.json`.
@@ -132,12 +134,13 @@ def main():
         print(f"baseline of {target} updated in qa/budgets.json — commit it with the change")
 
     fails = []
-    if size > limits["binary_bytes"]:
-        fails.append(f"binary {size / MB:.2f} MB is over the {limits['binary_bytes'] / MB:.0f} MB budget")
+    base = budgets["targets"].get(target)
+    binary_limit = (base or {}).get("binary_limit_bytes", limits["binary_bytes"])
+    if size > binary_limit:
+        fails.append(f"binary {size / MB:.2f} MB is over the {binary_limit / MB:.0f} MB budget")
     if arch > limits["archive_bytes"]:
         fails.append(f"archive {arch / MB:.2f} MB is over the {limits['archive_bytes'] / MB:.0f} MB budget")
 
-    base = budgets["targets"].get(target)
     growth = limits["growth_pct"] / 100
     if base is None and a.target:
         fails.append(f"qa/budgets.json has no baseline for {target}: record one with "
@@ -165,7 +168,7 @@ def main():
         for f in fails:
             print(f"FAIL: {f}")
         sys.exit(1)
-    print(f"OK (budget {limits['binary_bytes'] / MB:.0f} MB / {limits['archive_bytes'] / MB:.0f} MB, "
+    print(f"OK (budget {binary_limit / MB:.0f} MB / {limits['archive_bytes'] / MB:.0f} MB, "
           f"growth ≤ {limits['growth_pct']} % over the baseline)")
 
 

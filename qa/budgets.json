@@ -20,11 +20,13 @@
       "reason": "first baseline: the v0.2.0 release archive, cross-compiled on the arm64 runner"
     },
     "x86_64-unknown-linux-gnu": {
-      "binary_bytes": 15272128,
-      "archive_bytes": 7321269,
-      "commit": "37ba3f3",
-      "measured": "2026-10-26",
-      "reason": "v0.1.1 release build: webp export and the work since 0.1.0"
+      "binary_bytes": 16077760,
+      "archive_bytes": 7710627,
+      "commit": "fb867aa",
+      "measured": "2026-11-05",
+      "reason": "the 0.2.1 code (resvg 0.49), from a cross build with rust-lld that is within 0.04 % of the v0.2.0 release",
+      "binary_limit_bytes": 17000000,
+      "binary_limit_reason": "x86_64 code and the ELF format take about 2.4 MB more than macOS arm64; the simple levers gave too little margin (Luis, 2026-11-05)"
     }
   }
 }
