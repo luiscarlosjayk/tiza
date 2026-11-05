@@ -137,11 +137,10 @@ fn generate(
                 .map(|(_, f)| f)
                 .unwrap_or(d.source.first_line);
             d.source.first_line = first_line;
-            plan.each_frame(first_line, |code, delay, at| {
-                let Some((index, revealed)) = at else {
-                    return; // the full code is the step's own frame below
-                };
-                d.code = code;
+            // As long as on the screen: a frame shows every unit typed in
+            // its time. The full code is the step's own frame below.
+            for (index, revealed, ms) in plan.export_frames() {
+                d.code = plan.code_at(first_line, index, revealed);
                 // The colors of the code at the end of the step, as in the TUI.
                 let typed = plan.highlight_at(
                     first_line,
@@ -151,8 +150,8 @@ fn generate(
                     theme.syntax,
                 );
                 let canvas = layout_typed(&d, theme, &options(&d, step, true), None, &typed).canvas;
-                emit(step, &canvas, delay.min(max), true, false);
-            });
+                emit(step, &canvas, ms.min(max), true, false);
+            }
         }
         // The document's own timing first: a named step's `auto_advance_ms` is how long its
         // frame stays, after its typed frames, as in the TUI.

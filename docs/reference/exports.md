@@ -147,11 +147,12 @@ An agent calls the MCP tool `export_image` with a `path`. The formats are in [Wh
 
 | Format | Each step | The last step | Typed moves and `wait` moves |
 |---|---|---|---|
-| GIF, animated WebP, MP4, WebM | `--interval`, or the `auto_advance_ms` of the step | Two times `--interval`, or its `auto_advance_ms` | One frame for each typed unit, before the annotations of the step |
+| GIF, animated WebP, MP4, WebM | `--interval`, or the `auto_advance_ms` of the step | Two times `--interval`, or its `auto_advance_ms` | Typed frames as long as the typing on the screen, before the annotations of the step |
 | `.cast` | `--interval`, plus the `wait` moves of the step that are not stale | `--interval` | No frames: each step shows its final code |
 | `.tape` | `--interval`, or the time of its typed moves and `wait` moves plus 0.5 s when that is longer | Its own time, plus one more `--interval` | The real TUI types them |
 
 - A GIF counts time in units of 10 ms. Tiza rounds each frame up to a full unit, and to at least 20 ms.
+- A typed frame ends when the next line or character shows, rounded up to 10 ms, and lasts 20 ms or more. When the lines or characters come faster, one frame shows all the lines or characters typed in its time. Thus the typing lasts as long as on the screen, or up to 20 ms more. See [Typing](document-format.md#typing).
 - An animated WebP, an MP4 or a WebM export times each frame as the GIF does. Thus it lasts as long as the GIF.
 - In a GIF, an animated WebP, an MP4 or a WebM, a step with `auto_advance_ms` stays that long after its typed frames. The message of the export names these steps.
 - A `.cast` does not use `auto_advance_ms`.

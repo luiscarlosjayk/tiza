@@ -14,6 +14,7 @@ mod svg_and_png;
 mod svg_font_faces;
 mod text_markdown_ansi;
 mod theme_auto;
+mod typing_pace;
 mod video_last_step;
 mod video_legibility;
 mod webp;

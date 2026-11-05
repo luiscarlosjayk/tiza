@@ -22,15 +22,21 @@ use crate::{Error, Frames};
 /// Shortest delay a GIF frame may have, in milliseconds (the format counts
 /// in 10 ms units and players treat anything under 20 ms as 100 ms).
 pub const MIN_DELAY_MS: u64 = 20;
+// A typed frame of the take lasts as long in the GIF as in the take: the
+// take makes it at least this long, in the format's 10 ms unit.
+const _: () = assert!(
+    tiza_core::moves::EXPORT_TYPING_FRAME_MS >= MIN_DELAY_MS
+        && tiza_core::moves::EXPORT_TYPING_FRAME_MS.is_multiple_of(10)
+);
 /// Longest delay of one frame (u16 centiseconds); longer holds are split.
 const MAX_DELAY_CS: u64 = u16::MAX as u64;
 
 /// How long a frame asked to last `delay_ms` really lasts in the GIF, in
 /// milliseconds: at least [`MIN_DELAY_MS`], at most two maximum holds, and
-/// rounded up to the format's 10 ms unit. MP4/WebM time their frames with
-/// the same function, so a typed move at 25 ms per character lasts
-/// 30 ms per character in every format and the videos add up to the GIF's
-/// length exactly.
+/// rounded up to the format's 10 ms unit. WebP, MP4 and WebM time their
+/// frames with the same function, so they add up to the GIF's length
+/// exactly. A typed frame of the take is a multiple of 10 ms and lasts
+/// [`MIN_DELAY_MS`] or more already, so it keeps its time here.
 pub fn frame_delay_ms(delay_ms: u64) -> u64 {
     delay_ms
         .clamp(MIN_DELAY_MS, tiza_core::model::MAX_HOLD_MS * 2)

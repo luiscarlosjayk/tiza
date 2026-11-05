@@ -1908,6 +1908,11 @@ pub fn shift_shape_by(
     })
 }
 
+/// The shortest frame of a typing in a GIF, WebP or video, in
+/// milliseconds ([`TypingPlan::export_frames`]): the shortest that a GIF
+/// frame can last, since players show a shorter one for 100 ms.
+pub const EXPORT_TYPING_FRAME_MS: u64 = 20;
+
 /// One typed move inside a [`TypingPlan`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypingItem {
@@ -2005,9 +2010,63 @@ impl TypingPlan {
             })
     }
 
+    /// The frames of the typing in a GIF, WebP or video: for each one, the
+    /// item and its units shown (as [`TypingPlan::code_at`] takes them) and
+    /// how long it stays, in order. The full code is not in the list: it
+    /// comes when the last frame ends.
+    ///
+    /// The typing takes as long as on the screen, where unit `r` of an item
+    /// shows `(r + 1) × speed_ms` after the item starts. A frame lasts until
+    /// the next unit shows, rounded up to 10 ms (the unit of a GIF), and at
+    /// least [`EXPORT_TYPING_FRAME_MS`]: when units come faster, one frame
+    /// shows all the units of its time. Thus a frame never lasts less than
+    /// a GIF frame can, and a typing of 1 ms per unit is not one frame of
+    /// 20 ms per unit. The typing ends at most 20 ms after it does on the
+    /// screen. With a speed of 20 ms or more, each unit has its own frame;
+    /// with a multiple of 10, that frame lasts the speed.
+    pub fn export_frames(&self) -> Vec<(usize, usize, u64)> {
+        let ceil10 = |t: u64| t.div_ceil(10).saturating_mul(10);
+        // The item typed now, its units shown, and the time when it starts.
+        let (mut k, mut r, mut start) = (0, 0, 0u64);
+        // Shows the units that show by `time`: of item `k`, then of the
+        // next ones while the item before shows whole.
+        let mut show = |time: u64, k: &mut usize, r: &mut usize| {
+            while let Some(item) = self.items.get(*k) {
+                let speed = item.speed_ms.max(1);
+                let shown = (time.saturating_sub(start) / speed).min(item.units as u64);
+                *r = (*r).max(shown as usize);
+                if *r < item.units {
+                    break;
+                }
+                start = start.saturating_add((item.units as u64).saturating_mul(speed));
+                (*k, *r) = (*k + 1, 0);
+            }
+            start
+        };
+        let mut out = Vec::new();
+        let mut at = 0u64;
+        let mut begins = show(at, &mut k, &mut r);
+        while let Some(item) = self.items.get(k) {
+            let next = begins.saturating_add((r as u64 + 1).saturating_mul(item.speed_ms.max(1)));
+            let end = ceil10(next).max(at.saturating_add(EXPORT_TYPING_FRAME_MS));
+            out.push((k, r, (end - at).max(EXPORT_TYPING_FRAME_MS)));
+            let before = (k, r);
+            begins = show(end, &mut k, &mut r);
+            if (k, r) == before {
+                // The times stop at u64::MAX (a wait that long): one unit
+                // a frame, so that the frames end.
+                r += 1;
+                begins = show(end, &mut k, &mut r);
+            }
+            at = end;
+        }
+        out
+    }
+
     /// Every intermediate code of the animation with how long it stays, in
-    /// order, ending with the full code at the last item's speed: what a
-    /// recording draws between the step's arrival and its annotations.
+    /// order, ending with the full code at the last item's speed: one for
+    /// each unit, as the screen shows them. An export shows fewer when the
+    /// units come fast ([`TypingPlan::export_frames`]).
     pub fn frames(&self, first_line: u32) -> Vec<(Vec<String>, u64)> {
         let mut out = Vec::new();
         self.each_frame(first_line, |code, ms, _| out.push((code, ms)));
@@ -2713,6 +2772,102 @@ mod tests {
             );
         }
         assert_eq!((d.lines_at(0), d.lines_at(1)), (5, 2));
+    }
+
+    /// A plan of items of (units, speed_ms), with no code.
+    fn timed(items: &[(usize, u64)]) -> TypingPlan {
+        TypingPlan {
+            full: Vec::new(),
+            items: items
+                .iter()
+                .map(|&(units, speed_ms)| TypingItem {
+                    range: 0..0,
+                    lines: Vec::new(),
+                    before: Vec::new(),
+                    mode: Typing::Char,
+                    speed_ms,
+                    units,
+                })
+                .collect(),
+            cues: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn an_export_types_as_long_as_the_screen() {
+        for items in [
+            &[(853, 1)][..],
+            &[(853, 7)],
+            &[(40, 15)],
+            &[(40, 25)],
+            &[(40, 45)],
+            &[(5, 120)],
+            &[(30, 3), (1, 1000), (12, 25)],
+            &[(1, 1), (1, 1), (1, 1)],
+            &[(0, 25), (3, 1), (0, 1), (4, 33)],
+        ] {
+            let plan = timed(items);
+            let frames = plan.export_frames();
+            let screen: u64 = items.iter().map(|&(u, s)| u as u64 * s).sum();
+            let export: u64 = frames.iter().map(|f| f.2).sum();
+            // As long as on the screen, but at least one frame of 20 ms.
+            assert!(
+                export >= screen.max(20) && export <= screen + 20,
+                "{items:?}: {export} ms, {screen} on the screen"
+            );
+            // Each frame as long as a GIF can make it.
+            assert!(
+                frames
+                    .iter()
+                    .all(|f| f.2 >= EXPORT_TYPING_FRAME_MS && f.2.is_multiple_of(10)),
+                "{items:?}: {frames:?}"
+            );
+            // A frame shows what the screen shows at its start.
+            let mut at = 0;
+            for &(k, r, ms) in &frames {
+                let start: u64 = items[..k].iter().map(|&(u, s)| u as u64 * s).sum();
+                let (units, speed) = items[k];
+                assert!(r < units, "{items:?}: {k}/{r}");
+                assert_eq!(
+                    r as u64,
+                    ((at - start) / speed).min(units as u64),
+                    "{items:?}: the frame at {at} ms"
+                );
+                at += ms;
+            }
+        }
+        assert!(timed(&[]).export_frames().is_empty());
+        assert!(timed(&[(0, 25)]).export_frames().is_empty());
+        // Times that stop at u64::MAX still end, one unit a frame.
+        assert_eq!(
+            timed(&[(1, u64::MAX), (2, u64::MAX)]).export_frames().len(),
+            3
+        );
+    }
+
+    #[test]
+    fn a_unit_of_twenty_ms_or_more_has_its_own_frame() {
+        // A multiple of 10: a frame for each unit, for its speed, as each
+        // unit was a frame before.
+        let plan = timed(&[(3, 120), (1, 500), (2, 20)]);
+        assert_eq!(
+            plan.export_frames(),
+            [
+                (0, 0, 120),
+                (0, 1, 120),
+                (0, 2, 120),
+                (1, 0, 500),
+                (2, 0, 20),
+                (2, 1, 20)
+            ]
+        );
+        // 25 ms: a frame for each unit, 30 and 20 ms in turn.
+        let frames = timed(&[(4, 25)]).export_frames();
+        assert_eq!(frames, [(0, 0, 30), (0, 1, 20), (0, 2, 30), (0, 3, 20)]);
+        // 1 ms: 20 units in each frame of 20 ms.
+        let frames = timed(&[(853, 1)]).export_frames();
+        assert_eq!(frames.len(), 43);
+        assert_eq!(&frames[..3], [(0, 0, 20), (0, 20, 20), (0, 40, 20)]);
     }
 
     #[test]

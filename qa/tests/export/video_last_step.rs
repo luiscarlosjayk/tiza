@@ -305,21 +305,28 @@ fn a_single_step_document() {
 fn typed_frames_are_timed_as_the_gif_times_them() {
     let Some(ff) = ffmpeg() else { return };
     let dir = scratch("typed");
-    // A move typed at 25 ms per character: the GIF rounds each typed frame
-    // up to its 10 ms unit (30 ms), and the video uses the same delays, so
-    // both add up to the same length (the typed frames are too short for
-    // the 10 fps step measure, so only the total is compared here).
-    let (delays, _) = total_as_the_gif(
-        &ff,
-        &dir,
-        &fixture("export/video_last_step/typed.tiza"),
-        "mp4",
-        &["--scale", "1"],
-    );
-    let typed: Vec<&f64> = delays.iter().filter(|d| **d < 1.0).collect();
+    // A move typed at 25 ms per character: the GIF gives the typed frames
+    // 30 and 20 ms in turn (its 10 ms unit), so the typing lasts as long as
+    // on the screen, and the video uses the same delays, so both add up to
+    // the same length (the typed frames are too short for the 10 fps step
+    // measure, so only the total is compared here).
+    let doc = fixture("export/video_last_step/typed.tiza");
+    let (delays, _) = total_as_the_gif(&ff, &dir, &doc, "mp4", &["--scale", "1"]);
+    let typed: Vec<f64> = delays.iter().copied().filter(|d| *d < 1.0).collect();
+    let screen = tiza_core::fs::open(doc.to_str().unwrap())
+        .unwrap()
+        .document
+        .typing_ms_at(1) as f64
+        / 1000.0;
+    let sum: f64 = typed.iter().sum();
     assert!(
-        typed.len() >= 10 && typed.iter().all(|d| (**d - 0.03).abs() < 1e-9),
-        "typed frames at 25 ms should be 30 ms in the GIF: {delays:?}"
+        typed.len() >= 10
+            && typed
+                .iter()
+                .all(|d| (d - 0.02).abs() < 1e-9 || (d - 0.03).abs() < 1e-9)
+            && sum > screen - 1e-9
+            && sum < screen + 0.02 + 1e-9,
+        "typed frames at 25 ms: 20 or 30 ms each, {screen} s in all: {delays:?}"
     );
     assert_eq!(delays.first(), Some(&2.0));
     assert_eq!(delays.last(), Some(&4.0));

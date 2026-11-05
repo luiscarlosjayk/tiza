@@ -152,7 +152,7 @@ fn typed_moves_animate_at_their_speed() {
     let steps = doc.max_step() as usize + 1;
     let typed: usize = (0..=doc.max_step())
         .filter_map(|s| tiza_core::moves::typing_plan(&doc, s))
-        .map(|p| p.frames(doc.source.first_line).len() - 1)
+        .map(|p| p.export_frames().len())
         .sum();
     assert!(typed > 0, "the example has typed moves");
     assert_eq!(g.frames.len(), steps + typed, "{:?}", g.frames);

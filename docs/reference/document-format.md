@@ -614,7 +614,7 @@ With `"typing": "line"` or `"char"`, Tiza types the content on the screen.
 - Thus an `n` during the typing finishes the typing. It does not go to the next step. Press `n` again.
 - In presentation mode, with the live pointer off, a key that only moves the view does not finish the typing: `↑`, `↓`, `j`, `k`, `J`, `K`, `g`, `G`, `Home` and `End`. The view moves, and the typing continues.
 
-Each image in this section is a real `tiza render` export of the document above it, from step 0 to step 1. An animated export types as the TUI does.
+Each image in this section is a real `tiza render` export of the document above it, from step 0 to step 1. An animated export types as the TUI does. It takes the same time, or up to 20 ms more. A frame of an export lasts 20 ms or more, so when `speed_ms` is shorter, each frame shows all the characters or lines typed in its time.
 
 `"typing": "line"` types the new lines one at a time. Here `speed_ms` gives each line 600 ms, so the pause between the two lines shows:
 
