@@ -1,0 +1,233 @@
+{
+  "schema": 1,
+  "title": "Ownership in Rust: move, borrow and &mut",
+  "source": {
+    "path": "ownership.rs",
+    "language": "rs",
+    "first_line": 1
+  },
+  "code": {
+    "file": "ownership.rs"
+  },
+  "styles": {
+    "borrow_mut": {
+      "glyph": "✎▶",
+      "legend": "&mut borrow",
+      "color": "yellow"
+    }
+  },
+  "annotations": [
+    {
+      "id": "a1",
+      "step": 1,
+      "color": "orange",
+      "type": "mark",
+      "kind": "move",
+      "span": {
+        "line": 3,
+        "start": 10,
+        "end": 11
+      },
+      "label": "into takes"
+    },
+    {
+      "id": "a2",
+      "step": 1,
+      "color": "orange",
+      "type": "arrow",
+      "from": {
+        "line": 3,
+        "col": 10
+      },
+      "to": {
+        "line": 15,
+        "col": 9
+      },
+      "label": "move"
+    },
+    {
+      "id": "a3",
+      "step": 3,
+      "color": "orange",
+      "type": "note",
+      "line": 4,
+      "text": "s no longer owns it: using it here does not compile"
+    },
+    {
+      "id": "a4",
+      "step": 3,
+      "color": "orange",
+      "type": "box",
+      "from_line": 15,
+      "to_line": 17,
+      "label": "takes owns s and frees it at the end"
+    },
+    {
+      "id": "a5",
+      "step": 3,
+      "type": "mark",
+      "kind": "drop",
+      "span": {
+        "line": 17,
+        "start": 0,
+        "end": 1
+      },
+      "label": "s dies here"
+    },
+    {
+      "id": "a6",
+      "step": 4,
+      "color": "cyan",
+      "type": "mark",
+      "kind": "read",
+      "span": {
+        "line": 7,
+        "start": 16,
+        "end": 18
+      },
+      "label": "borrowed"
+    },
+    {
+      "id": "a7",
+      "step": 4,
+      "color": "cyan",
+      "type": "arrow",
+      "from": {
+        "line": 7,
+        "col": 16
+      },
+      "to": {
+        "line": 19,
+        "col": 7
+      },
+      "label": "borrow &",
+      "stroke": "dashed"
+    },
+    {
+      "id": "a8",
+      "step": 4,
+      "color": "cyan",
+      "type": "note",
+      "line": 8,
+      "text": "t is still valid"
+    },
+    {
+      "id": "a9",
+      "step": 5,
+      "type": "mark",
+      "kind": "borrow_mut",
+      "span": {
+        "line": 11,
+        "start": 9,
+        "end": 15
+      }
+    },
+    {
+      "id": "a10",
+      "step": 5,
+      "color": "yellow",
+      "type": "arrow",
+      "from": {
+        "line": 11,
+        "col": 9
+      },
+      "to": {
+        "line": 23,
+        "col": 8
+      },
+      "label": "&mut",
+      "stroke": "thick"
+    },
+    {
+      "id": "a11",
+      "step": 5,
+      "color": "yellow",
+      "type": "box",
+      "from_line": 23,
+      "to_line": 25,
+      "label": "borrows mutably: the caller sees the change"
+    },
+    {
+      "id": "a12",
+      "step": 6,
+      "color": "yellow",
+      "type": "note",
+      "line": 12,
+      "text": "u is now \"hey!\""
+    },
+    {
+      "id": "a13",
+      "step": 1,
+      "color": "purple",
+      "type": "arrow",
+      "from": {
+        "line": 2,
+        "col": 12
+      },
+      "to": {
+        "line": 2,
+        "col": 8
+      },
+      "label": "s is born"
+    },
+    {
+      "id": "s1",
+      "step": 2,
+      "type": "spotlight",
+      "from_line": 15,
+      "to_line": 17,
+      "ids": [
+        "a1",
+        "a2"
+      ]
+    },
+    {
+      "id": "s2",
+      "step": 4,
+      "type": "spotlight",
+      "ids": [
+        "a6",
+        "a7",
+        "a8"
+      ]
+    },
+    {
+      "id": "a14",
+      "step": 4,
+      "color": "cyan",
+      "type": "box",
+      "from_line": 19,
+      "to_line": 21,
+      "label": "borrows read-only: main keeps using t"
+    },
+    {
+      "id": "a15",
+      "step": 1,
+      "color": "cyan",
+      "type": "note",
+      "line": 1,
+      "text": "three ways to pass a value"
+    },
+    {
+      "id": "a18",
+      "step": 7,
+      "type": "note",
+      "line": 20,
+      "text": "counts the bytes, not the letters"
+    },
+    {
+      "id": "a19",
+      "step": 7,
+      "type": "box",
+      "from_line": 6,
+      "to_line": 8,
+      "label": "t is only borrowed"
+    }
+  ],
+  "step": 7,
+  "theme": "dark",
+  "padding": [
+    1,
+    2
+  ]
+}

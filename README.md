@@ -63,6 +63,8 @@ tiza render hello.rs.tiza --out hello.gif
 
 To open your own code, run `tiza path/to/file`. On macOS, `pbpaste | tiza` opens the code on your clipboard.
 
+For a ten-minute lesson with the example of the repository, see [Getting started](https://github.com/luiscarlosjayk/tiza/blob/main/docs/getting-started.md).
+
 ## What it looks like
 
 This animation and this text block are real Tiza exports of [the ownership example](examples/ownership.rs.tiza).

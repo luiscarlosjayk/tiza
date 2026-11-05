@@ -10,6 +10,7 @@
       "title": "Start here",
       "pages": [
         "docs/guides/install.md",
+        "docs/getting-started.md",
         "docs/release-notes/"
       ]
     },

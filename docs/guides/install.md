@@ -90,6 +90,7 @@ xattr -d com.apple.quarantine PATH
 
 ## See also
 
+- [Getting started](../getting-started.md), a ten-minute lesson
 - [Follow the editor](follow-the-editor.md)
 - [Animate an explanation](animate-an-explanation.md)
 - [Check before you record](check-before-you-record.md)
