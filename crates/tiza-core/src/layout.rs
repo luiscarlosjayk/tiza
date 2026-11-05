@@ -274,6 +274,21 @@ pub fn stable_geometry(doc: &Document, opts: &LayoutOptions) -> StableGeometry {
                 .max()
                 .unwrap_or(0),
         );
+        // While the step types, its code is half typed: the code column is
+        // as wide as at the end of the step too, so a box does not grow with
+        // a line that types.
+        if opts.typing
+            && step == doc.step
+            && !doc.moves.is_empty()
+            && let Ok((full, _)) = doc.code_at(step)
+        {
+            g.code_full_w = g.code_full_w.max(
+                full.iter()
+                    .map(|l| code_width(l, opts.tab_width))
+                    .max()
+                    .unwrap_or(0),
+            );
+        }
         if opts.line_numbers {
             g.num_w = g.num_w.max(d.last_line().to_string().len() + 2);
         }

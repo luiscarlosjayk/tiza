@@ -136,3 +136,33 @@ fn the_cursor_goes_back_to_its_line_when_the_typing_ends() {
         (5, 2, 5)
     );
 }
+
+#[test]
+fn a_box_keeps_its_width_while_a_longer_line_types() {
+    let doc = tiza_core::fs::parse_document(
+        &serde_json::json!({
+            "schema": 1, "source": {"language": "py", "first_line": 1}, "step": 1,
+            "code": ["a = 1", "b = 2", "c = 3"],
+            "annotations": [{"id": "b1", "step": 1, "type": "box", "from_line": 3, "to_line": 3, "label": "here"}],
+            "moves": [
+                {"at_step": 2, "action": "code.patch", "op": "insert", "after": "a = 1",
+                 "content": "# a new line that is longer than the others", "typing": "char", "speed_ms": 50}
+            ]
+        })
+        .to_string(),
+        None,
+    )
+    .unwrap();
+    let (app, frames) = typed_frames(doc, "box-width");
+    let border = |t: &str| -> usize {
+        let row = t.lines().find(|r| r.contains('╰')).expect("a box");
+        row.trim_end().chars().count()
+    };
+    let end = border(&app.layout(100).canvas.to_plain_text());
+    let widths: Vec<usize> = frames.iter().map(|t| border(t)).collect();
+    assert!(widths.len() > 3);
+    assert!(
+        widths.iter().all(|w| *w == end),
+        "{widths:?}, at the end {end}"
+    );
+}
