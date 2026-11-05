@@ -6,6 +6,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 
 ### Added
 - A guide, [Animate an explanation](docs/guides/animate-an-explanation.md), tells how to make an explanation that plays by itself. It covers enter effects, typed code, the view, the pace, presentation mode and the export.
+- A guide, [Present a take](docs/guides/present-a-take.md), tells how to present a document to people: get it ready, set up the terminal, go through the steps, point at the code and finish.
 
 ### Changed
 - The guide [Use the mouse](docs/guides/use-the-mouse.md) has a new file name. On the docs site, the old address `/guides/present/` goes to the new page.

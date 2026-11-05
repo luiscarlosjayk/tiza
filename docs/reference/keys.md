@@ -133,6 +133,8 @@ The status bar shows the selected annotation and its keys. A message hides them.
 | `g` `G` `Home` `End` | Goes to the start or the end of the code. |
 | `Tab` `Shift-Tab` | Goes to the next or the previous line where an annotation in the view starts. Nothing is selected. |
 
+To present a document from start to end, see [Present a take](../guides/present-a-take.md).
+
 <img src="../images/tui/present-step.webp" width="840" alt="The code and the annotations of step 3, with no status bar. The step counter 3/6 is alone on the last row.">
 
 Step 3 of `examples/ownership.rs.tiza` in presentation mode: an image of the TUI in a real terminal of 100 columns and 30 rows, with the Menlo font.

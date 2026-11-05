@@ -154,7 +154,7 @@ Without `--step 0`, Tiza opens the document at the step on which you saved it.
 
 Presentation mode hides the status bar and the cursor. Press `n` or `→` for the next step, and `p` or `←` for the previous step. `P` starts or stops presentation mode.
 
-A step back shows the final drawing, with no effect. For all the keys and an image of presentation mode, see [Present](../reference/keys.md#present).
+A step back shows the final drawing, with no effect. For all the keys and an image of presentation mode, see [Present](../reference/keys.md#present). To present the document to people, see [Present a take](present-a-take.md).
 
 ## 8. Export it
 
