@@ -20,6 +20,7 @@ mod line_range;
 mod live_width;
 mod margin_callouts;
 mod mark_legends;
+mod markdown_fences;
 mod narrow_arrow_labels;
 mod open_notice;
 mod padding;

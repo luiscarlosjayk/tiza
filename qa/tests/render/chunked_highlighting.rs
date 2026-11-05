@@ -203,3 +203,41 @@ fn thread_count_follows_the_file_size() {
     let ts = typescript(MIN_CHUNK_LINES * 3);
     assert!(highlight(&ts, "ts", THEME) == sequential(&ts, "ts"));
 }
+
+/// `n` lines of Markdown with fences indented by 2 spaces. Each fence has a
+/// blank line and then a line at column 0, where a chunk can start (inside
+/// the fence).
+fn markdown(n: usize) -> Vec<String> {
+    (0..n)
+        .map(|i| match i % 10 {
+            0 => format!("## Part {i}"),
+            2 => format!("Some *text* {i}."),
+            4 => "  ```rust".to_string(),
+            5 => format!("fn f{i}() {{"),
+            7 => format!("let a = {i};"),
+            8 => "  ```".to_string(),
+            _ => String::new(),
+        })
+        .collect()
+}
+
+#[test]
+fn indented_markdown_fences_get_the_same_colors_in_chunks() {
+    let md = markdown(2_000);
+    let want = sequential(&md, "md");
+    // 3 and 4 threads (12 and 16 chunks) put a boundary on a `let a` line.
+    for threads in [3, 4] {
+        let (got, chunking) = highlight_chunked(&md, "md", THEME, threads);
+        // A chunk starts inside a fence: the line after its blank line.
+        assert!(
+            chunking.starts.iter().any(|&s| md[s].starts_with("let a")),
+            "x{threads}: no chunk starts inside a fence: {:?}",
+            chunking.starts
+        );
+        assert!(got == want, "md x{threads}: output differs from sequential");
+    }
+    // And each fence has the colors of rust: `fn` as in a fence at column 0.
+    let flat: Vec<String> = md.iter().map(|l| l.trim_start().to_string()).collect();
+    let (a, b) = (&want[1_995], &sequential(&flat, "md")[1_995]);
+    assert!(a == b, "the last fence: {a:?}\nat column 0: {b:?}");
+}

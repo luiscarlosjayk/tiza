@@ -413,10 +413,14 @@ pub fn highlight_chunked(
         .or_else(|| ss.find_syntax_by_token(language))
         .unwrap_or_else(|| ss.find_syntax_plain_text());
     let theme = theme_set().get(theme);
+    // Made once for the whole file, before it is split: each chunk reads
+    // its own part.
+    let feed = (syntax.name == "Markdown").then(|| markdown_feed(code));
+    let feed_of = |a: usize, b: usize| feed.as_deref().map(|f| &f[a..b]);
     let threads = threads.clamp(1, code.len().max(1));
     if threads == 1 || std::ptr::eq(syntax, ss.find_syntax_plain_text()) {
         let mut h = HighlightLines::new(syntax, theme);
-        let out = highlight_lines(&mut h, code, ss);
+        let out = highlight_lines(&mut h, code, feed_of(0, code.len()), ss);
         return (
             out,
             Chunking {
@@ -445,7 +449,7 @@ pub fn highlight_chunked(
         } else {
             top_level()
         };
-        let out = highlight_lines(&mut h, &code[a..b], ss);
+        let out = highlight_lines(&mut h, &code[a..b], feed_of(a, b), ss);
         (out, h.state())
     };
     // Several chunks per thread, taken in order from a shared counter, so a
@@ -503,7 +507,7 @@ pub fn highlight_chunked(
                     Some((hs, ps)) => HighlightLines::from_state(theme, hs, ps),
                     None => HighlightLines::new(syntax, theme),
                 };
-                out.extend(highlight_lines(&mut h, &code[a..b], ss));
+                out.extend(highlight_lines(&mut h, &code[a..b], feed_of(a, b), ss));
                 state = Some(h.state());
             }
         }
@@ -531,27 +535,126 @@ fn chunk_starts(code: &[String], n: usize) -> Vec<usize> {
     starts
 }
 
+/// A fence line of a Markdown file (CommonMark 0.31, 4.5), as [`fences`]
+/// finds it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Fence {
+    /// It opens a fenced code block, after this many spaces (0 to 3).
+    Open(usize),
+    /// It closes the open block, after this many spaces (0 to 3).
+    Close(usize),
+}
+
+/// The run of a line that can be a fence: its indent (0 to 3 spaces), its
+/// character (`` ` `` or `~`), the length of the run (3 or more) and the
+/// text after it.
+fn fence_run(line: &str) -> Option<(usize, u8, usize, &str)> {
+    let indent = line.len() - line.trim_start_matches(' ').len();
+    if indent > 3 {
+        return None;
+    }
+    let rest = &line[indent..];
+    let c = *rest.as_bytes().first()?;
+    if c != b'`' && c != b'~' {
+        return None;
+    }
+    let n = rest.len() - rest.trim_start_matches(char::from(c)).len();
+    (n >= 3).then_some((indent, c, n, &rest[n..]))
+}
+
+/// The fence lines of a Markdown file, and nothing else of CommonMark: a
+/// fence opens with 0 to 3 spaces and 3 or more `` ` `` or `~`, and closes
+/// with 0 to 3 spaces, the same character, a run at least as long and only
+/// white space after it. The lines between are its content. A block that
+/// is not closed ends with the file. The info string of a `` ` `` fence has
+/// no `` ` ``; the one of a `~` fence can have both characters.
+fn fences(code: &[String]) -> Vec<Option<Fence>> {
+    let mut open: Option<(u8, usize)> = None;
+    code.iter()
+        .map(|line| match (open, fence_run(line)) {
+            (None, Some((indent, c, n, info))) if c == b'~' || !info.contains('`') => {
+                open = Some((c, n));
+                Some(Fence::Open(indent))
+            }
+            (Some((oc, on)), Some((indent, c, n, after)))
+                if c == oc && n >= on && after.trim().is_empty() =>
+            {
+                open = None;
+                Some(Fence::Close(indent))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// For each line of a Markdown file, how many bytes of its start syntect
+/// does not get. The grammar (bat's, compiled into two-face) knows a fence
+/// only at column 0: a fence indented by 1 to 3 spaces did not open, and
+/// its `` ``` `` started a code span that took the colors of the rest of
+/// the file. So a fence line goes without its indent; the other lines go
+/// whole.
+fn markdown_feed(code: &[String]) -> Vec<usize> {
+    fences(code)
+        .into_iter()
+        .map(|f| match f {
+            Some(Fence::Open(indent) | Fence::Close(indent)) => indent,
+            None => 0,
+        })
+        .collect()
+}
+
+/// Puts the indent that [`markdown_feed`] cut back in front of `segs`, in
+/// the style of the start of the line.
+fn restore(segs: &mut Vec<Segment>, prefix: &str) {
+    let (fg, bold, italic) = segs
+        .first()
+        .map_or((None, false, false), |s| (s.fg, s.bold, s.italic));
+    segs.insert(
+        0,
+        Segment {
+            text: prefix.to_string(),
+            fg,
+            bold,
+            italic,
+        },
+    );
+}
+
 /// Highlights `lines` in order with `h`, converting syntect's ranges.
-fn highlight_lines(h: &mut HighlightLines, lines: &[String], ss: &SyntaxSet) -> Vec<Vec<Segment>> {
+/// `feed` (Markdown only) gives the bytes of each line that syntect does
+/// not get.
+fn highlight_lines(
+    h: &mut HighlightLines,
+    lines: &[String],
+    feed: Option<&[usize]>,
+    ss: &SyntaxSet,
+) -> Vec<Vec<Segment>> {
     lines
         .iter()
-        .map(|line| {
-            let with_nl = format!("{line}\n");
+        .enumerate()
+        .map(|(i, line)| {
+            let skip = feed.and_then(|f| f.get(i)).copied().unwrap_or(0);
+            let with_nl = format!("{}\n", &line[skip..]);
             match h.highlight_line(&with_nl, ss) {
-                Ok(ranges) => ranges
-                    .into_iter()
-                    .map(|(st, s)| Segment {
-                        text: s.trim_end_matches('\n').to_string(),
-                        fg: Some(syntect_color(st.foreground)),
-                        bold: st
-                            .font_style
-                            .contains(syntect::highlighting::FontStyle::BOLD),
-                        italic: st
-                            .font_style
-                            .contains(syntect::highlighting::FontStyle::ITALIC),
-                    })
-                    .filter(|s| !s.text.is_empty())
-                    .collect(),
+                Ok(ranges) => {
+                    let mut segs: Vec<Segment> = ranges
+                        .into_iter()
+                        .map(|(st, s)| Segment {
+                            text: s.trim_end_matches('\n').to_string(),
+                            fg: Some(syntect_color(st.foreground)),
+                            bold: st
+                                .font_style
+                                .contains(syntect::highlighting::FontStyle::BOLD),
+                            italic: st
+                                .font_style
+                                .contains(syntect::highlighting::FontStyle::ITALIC),
+                        })
+                        .collect();
+                    if skip > 0 {
+                        restore(&mut segs, &line[..skip]);
+                    }
+                    segs.into_iter().filter(|s| !s.text.is_empty()).collect()
+                }
                 Err(_) => vec![Segment {
                     text: line.clone(),
                     fg: None,
@@ -566,6 +669,92 @@ fn highlight_lines(h: &mut HighlightLines, lines: &[String], ss: &SyntaxSet) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn lines(text: &str) -> Vec<String> {
+        text.split('\n').map(str::to_string).collect()
+    }
+
+    /// The fence lines, `o2` for an opening fence after 2 spaces and `c0`
+    /// for a closing one at column 0, `.` for any other line.
+    fn roles(text: &str) -> String {
+        fences(&lines(text))
+            .iter()
+            .map(|f| match f {
+                Some(Fence::Open(i)) => format!("o{i}"),
+                Some(Fence::Close(i)) => format!("c{i}"),
+                None => ".".into(),
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    /// The examples of fenced code blocks in CommonMark 0.31.2 (section
+    /// 4.5, examples 119 to 147) that set what a fence is, with what the
+    /// spec makes of them.
+    #[test]
+    fn fences_are_the_ones_of_commonmark() {
+        for (example, text, want) in [
+            // A fence of 3 or more, of either character.
+            (119, "```\n<\n >\n```", "o0 . . c0"),
+            (120, "~~~\n<\n >\n~~~", "o0 . . c0"),
+            // Fewer than 3 is not a fence.
+            (121, "``\nfoo\n``", ". . ."),
+            // The closing fence has the character of the opening one.
+            (122, "```\naaa\n~~~\n```", "o0 . . c0"),
+            (123, "~~~\naaa\n```\n~~~", "o0 . . c0"),
+            // And at least its length.
+            (124, "````\naaa\n```\n``````", "o0 . . c0"),
+            (125, "~~~~\naaa\n~~~\n~~~~", "o0 . . c0"),
+            // A block that is not closed ends with the file.
+            (126, "```", "o0"),
+            (127, "`````\n\n```\naaa", "o0 . . ."),
+            // Indented by 1 to 3 spaces, the opening and the closing fence.
+            (131, " ```\n aaa\naaa\n```", "o1 . . c0"),
+            (132, "  ```\naaa\n  aaa\naaa\n  ```", "o2 . . . c2"),
+            (133, "   ```\n   aaa\n    aaa\n  aaa\n   ```", "o3 . . . c3"),
+            // 4 spaces is an indented code block, not a fence.
+            (134, "    ```\n    aaa\n    ```", ". . ."),
+            (135, "```\naaa\n  ```", "o0 . c2"),
+            (136, "   ```\naaa\n  ```", "o3 . c2"),
+            (137, "```\naaa\n    ```", "o0 . ."),
+            // The info string of a backtick fence has no backtick.
+            (138, "``` ```\naaa", ". ."),
+            // A closing fence has nothing after it.
+            (139, "~~~~~~\naaa\n~~~ ~~", "o0 . ."),
+            (
+                142,
+                "```ruby\ndef foo(x)\n  return 3\nend\n```",
+                "o0 . . . c0",
+            ),
+            (145, "``` aa ```\nfoo", ". ."),
+            // The info string of a tilde fence can have a backtick and a
+            // tilde.
+            (146, "~~~ aa ``` ~~~\nfoo\n~~~", "o0 . c0"),
+            (147, "```\n``` aaa\n```", "o0 . c0"),
+            // A tab is 4 columns: not a fence.
+            (0, "\t```rust\nlet x = 1;\n\t```", ". . ."),
+        ] {
+            assert_eq!(roles(text), want, "example {example}: {text:?}");
+        }
+    }
+
+    #[test]
+    fn syntect_gets_a_fence_without_its_indent() {
+        let feed = markdown_feed(&lines("  ```rust\nlet x;\n  ```\n\t```rust\n   ~~~\nx"));
+        // The fences lose their 2 spaces. A tab is not a fence (4 columns),
+        // and goes whole. `   ~~~` opens a block of its own.
+        assert_eq!(feed, [2, 0, 2, 0, 3, 0]);
+    }
+
+    #[test]
+    fn a_fed_line_keeps_its_text() {
+        for line in ["   ```rust", " ```", "  ~~~"] {
+            let code = vec![line.to_string(), "x".into()];
+            let out = highlight(&code, "md", EmbeddedThemeName::OneHalfDark);
+            let text: String = out[0].iter().map(|s| s.text.as_str()).collect();
+            assert_eq!(text, line);
+        }
+    }
 
     #[test]
     fn rust_keywords_get_a_color() {

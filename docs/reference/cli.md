@@ -167,6 +167,7 @@ Tiza uses the first of these that gives a language:
 - Case does not matter in a file name or in `LANG`.
 - When the value of `--lang` contains `/` or `\`, Tiza reads it as a path. It finds the language from items 2 to 6. See [The language of the selected text](../zed.md#the-language-of-the-selected-text).
 - A language without a grammar shows as plain text. `--lang` then writes a warning on stderr.
+- In a Markdown file, a fenced code block gets the colors of its language, also when its fence is indented by 1 to 3 spaces or is in a list item. A fenced code block in a `>` quote shows as plain text.
 - `:lang auto` finds the language again from items 2 to 6. The message tells which item gave it.
 - A paste keeps the language of the code. When the code is plain text, a `#!` line or a modeline of the pasted text gives the language.
 
