@@ -65,7 +65,7 @@ jobs:
         run: |
           apt-get update
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            ca-certificates curl git build-essential perl
+            ca-certificates curl git build-essential perl python3
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -112,6 +112,14 @@ jobs:
           fi
           tar -C dist -czf "dist/$name.tar.gz" "$name"
           (cd dist && shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256")
+      # The binary and the archive of each target against qa/budgets.json: a
+      # target over its budget, or with no baseline, publishes nothing.
+      - name: size budget
+        shell: bash
+        run: |
+          name="tiza-${GITHUB_REF_NAME}-${{ matrix.target }}"
+          python3 scripts/size_check.py --target ${{ matrix.target }} \
+            --bin "dist/$name/tiza" --archive "dist/$name.tar.gz"
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.target }}
