@@ -11,7 +11,9 @@
 //!   A line with two or more labels at the step draws them all below it,
 //!   also when the margin is there, and so does a line whose labels do not
 //!   fit whole beside the callout blocks on its margin row (never with
-//!   fewer than 14 cells there).
+//!   fewer than 14 cells there). A margin callout of such a line can
+//!   still start on the row of the line, beside the labels under it, when
+//!   its block cuts none of them.
 
 use std::collections::BTreeMap;
 
@@ -712,6 +714,26 @@ fn layout_run(
         Pass::Planned(more, free) => (more, free),
         Pass::Drawn(_) => unreachable!("a plan draws nothing"),
     };
+    // Whether the layout of `trial` cuts or leaves out only labels that the
+    // layout of `now` also cuts: a block beside a line can take the room of
+    // a label under that line.
+    let cuts_no_more = |trial: &Under, now: &Under| {
+        let cut = |under: &Under| {
+            let paint = Paint {
+                code: false,
+                spare: None,
+                typed: None,
+            };
+            match layout_pass(doc, theme, opts, geometry, under, &shared, Some(paint)) {
+                Pass::Drawn(l) => l.clipped_labels,
+                Pass::Planned(..) => unreachable!("a drawing pass returns its layout"),
+            }
+        };
+        let now = cut(now);
+        cut(trial)
+            .iter()
+            .all(|c| now.iter().any(|n| n.id == c.id && n.text == c.text))
+    };
     let mut under = Under::default();
     let mut free = Under::default();
     while planning {
@@ -732,7 +754,13 @@ fn layout_run(
     // it. (Without stable geometry, on the authoring screen, fewer rows can
     // take an arrow lane away and widen the margin; a hint above can then
     // miss its turn, and the layout is still whole.) At most one plan for
-    // each member, and none when nothing is free.
+    // each member (two for a callout, see below), and none when nothing is
+    // free. A callout whose line
+    // keeps its labels beside the blocks can find no row of its line free
+    // in the margin: its hint is tried once more with the labels of its
+    // line under it, whose row frees that room (one row under the line in
+    // place of the rows of a block). That try stays only when it cuts no
+    // label more: the block can take the room of a label under its line.
     let mut last: Option<FreeKey> = None;
     loop {
         let next = free_order(doc, &free)
@@ -751,6 +779,15 @@ fn layout_run(
         if more.callouts.is_empty() && more.lines.is_empty() {
             under = trial;
             free = trial_free;
+        } else if let (line, true, _, _) = &key
+            && !trial.lines.contains(line)
+        {
+            trial.lines.insert(*line);
+            let (more, trial_free) = plan(&trial);
+            if more.callouts.is_empty() && more.lines.is_empty() && cuts_no_more(&trial, &under) {
+                under = trial;
+                free = trial_free;
+            }
         }
         last = Some(key);
     }

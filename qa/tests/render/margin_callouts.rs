@@ -79,6 +79,15 @@
 //! the callout under its line, as before). A row of a note under the line
 //! is still a row of the line (`later-steps.tiza` at 120).
 //!
+//! A callout whose line keeps its labels beside the blocks can find no
+//! free row of its line in the margin. It gets one more try with those
+//! labels under its line: the row of a label is a row of the line, so the
+//! callout goes back to the margin (`p3.tiza` at 75-83, `later-steps.tiza`
+//! at 121-122). At 123-125 the callout of L3 of `later-steps.tiza` stays
+//! under L3: there the blocks also cover the row of «chatty».
+//! The callout stays under its line when the second try cuts a label that
+//! the first one draws whole (`arrow-label-under.tiza`).
+//!
 //! Beside the blocks, a row keeps its labels only when they fit whole there,
 //! on its row or split by words on the free rows below; otherwise they go
 //! under their line. With 14 cells or more and a longer label, the note of
@@ -295,25 +304,42 @@ fn p1_looks_the_same_from_61_columns_on() {
 }
 
 #[test]
-fn a_fallen_back_callout_next_to_a_note_is_a_block_at_80() {
-    // p3 at 80: the block does not fit in the margin and falls back; it
-    // shares L2 with the note, so both go under L2, the callout as a block.
-    let t = render("p3.tiza", 80);
-    assert_eq!(
-        t,
-        " 1   DB_URL=postgres://demo:demo@localhost/app
- 2   API_TOKEN=demo-token-123
-     ┆ sent as a bearer header
-     ╭────────────────────────────────────╮
-     │ rotate it every month; the old one │
-     │ stops working after an hour        │
-     ╰────────────────────────────────────╯
- 3   LOG_LEVEL=info
- 4   PORT=8080
- 5   WORKERS=4
-",
-        "{t}"
-    );
+fn a_callout_goes_back_to_the_margin_when_the_note_of_its_line_goes_under() {
+    // p3 at 75-83: the block does not fit in the margin beside the note of
+    // L2. With the note under L2, the row of the note is a row of L2, and
+    // the block goes back to the margin from the row of L2. It was a block
+    // under L2, with 4 rows more.
+    for w in 75..=83 {
+        let t = render("p3.tiza", w);
+        let rows: Vec<&str> = t.lines().collect();
+        let r = row_of(&t, 2);
+        assert!(
+            rows[r].contains('╭')
+                && rows[r + 1].contains("┆ sent as a bearer header")
+                && rows[r + 1].contains("│ rotate it every month"),
+            "at {w}: the block is not in the margin from L2\n{t}"
+        );
+        assert_eq!(rows.len(), 6, "at {w}: 5 lines and the note\n{t}");
+        assert!(check_cuts("p3.tiza", w).is_empty(), "at {w}\n{t}");
+    }
+}
+
+#[test]
+fn a_callout_stays_under_its_line_when_the_margin_would_cut_a_label_under_it() {
+    // arrow-label-under: the label of the arrow goes under L7. With the
+    // callout of L7 in the margin, its block takes the end of that row and
+    // cut the label («takes and…»). The callout stays a block under L7.
+    for w in (70..=160).step_by(5) {
+        let t = render("arrow-label-under.tiza", w);
+        assert!(
+            t.contains("move: s moves into takes and is gone"),
+            "at {w}: the label of the arrow is cut\n{t}"
+        );
+        assert!(
+            check_cuts("arrow-label-under.tiza", w).is_empty(),
+            "at {w}\n{t}"
+        );
+    }
 }
 
 /// p1b (p1 without the note) at `width`: the callout's block under L3.
@@ -1139,18 +1165,23 @@ fn a_callout_that_goes_back_never_starts_beside_a_block_under_its_line() {
             "at {w}: «never commit» is not under L2\n{t}"
         );
     }
-    // later-steps at 120: the callout of L3 still starts on the row of the
-    // note under L3, beside «┆ chatty».
-    for step in [4, 5] {
-        let t = render_step("later-steps.tiza", step, 120, "txt");
+    // later-steps at 120-122: the callout of L3 starts on the row of the
+    // note under L3, beside «┆ chatty». At 121 and 122 the note fitted
+    // beside the blocks of L2, so L3 had no free row and the callout was a
+    // block under L3.
+    for (step, w) in [4, 5]
+        .into_iter()
+        .flat_map(|s| [(s, 120), (s, 121), (s, 122)])
+    {
+        let t = render_step("later-steps.tiza", step, w, "txt");
         let rows: Vec<&str> = t.lines().collect();
         let y = rows
             .iter()
             .position(|r| r.contains("┆ chatty"))
-            .unwrap_or_else(|| panic!("step {step}: no «┆ chatty»\n{t}"));
+            .unwrap_or_else(|| panic!("step {step} at {w}: no «┆ chatty»\n{t}"));
         assert!(
             rows[y].contains('╭') && rows[y + 1].contains("debug shows SQL"),
-            "step {step}: the block of L3 does not start beside «┆ chatty»\n{t}"
+            "step {step} at {w}: the block of L3 does not start beside «┆ chatty»\n{t}"
         );
     }
 }

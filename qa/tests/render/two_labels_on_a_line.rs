@@ -516,37 +516,33 @@ fn every_export_draws_the_same_rows() {
 }
 
 #[test]
-fn a_margin_callout_with_no_room_counts_as_a_label_of_its_line() {
-    // QA's callout-short: the callout has no room for its block on L3 and
-    // falls back; with the note it goes under L3 (it sat beside L4 before),
-    // as a whole block since the margin callouts (it was one row cut with `…`).
+fn a_margin_callout_next_to_a_note_starts_on_its_line_with_the_note_under_it() {
+    // QA's callout-short: the callout has no room for its block on L3 next
+    // to the note, so the note goes under L3 (it sat beside L4 before). The
+    // row of the note is a row of L3, and the block starts on L3 in the
+    // margin. Before, it was a block under L3, with 3 rows more.
     let t = render("callout-short.tiza", 100, &["--step", "1"]);
     assert_eq!(
         t,
         " 1   DB_URL=postgres://demo:demo@localhost/app
  2   API_TOKEN=demo-token-123
- 3   LOG_LEVEL=info
-     ┆ how chatty the logs are
-     ╭──────────────────────╮
-     │ set to debug locally │
-     ╰──────────────────────╯
- 4   PORT=8080
+ 3   LOG_LEVEL=info                             ╭──────────────────────╮
+     ┆ how chatty the logs are                  │ set to debug locally │
+ 4   PORT=8080                                  ╰──────────────────────╯
 ",
         "{t}"
     );
     // callout-short2: L4 has a label of its own, and the callout was not
-    // drawn at all; `check` said no width showed every label.
+    // drawn at all; `check` said no width showed every label. The label of
+    // L4 goes on after the block.
     let t = render("callout-short2.tiza", 100, &["--step", "1"]);
     assert_eq!(
         t,
         " 1   DB_URL=postgres://demo:demo@localhost/app
  2   API_TOKEN=demo-token-123
- 3   LOG_LEVEL=info
-     ┆ how chatty the logs are
-     ╭──────────────────────╮
-     │ set to debug locally │
-     ╰──────────────────────╯
- 4   PORT=8080                                  ┆ the port
+ 3   LOG_LEVEL=info                             ╭──────────────────────╮
+     ┆ how chatty the logs are                  │ set to debug locally │
+ 4   PORT=8080                                  ╰──────────────────────╯ ┆ the port
 ",
         "{t}"
     );

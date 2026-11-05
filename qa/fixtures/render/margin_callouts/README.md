@@ -30,3 +30,8 @@ From a later plan that freed the margin (the plans only added to what goes under
 - `stale-callout-long.tiza`: the same with a longer text on L3, whose block under its line is wider than its block in the margin.
 - `stale-label.tiza`: the same with the label of a highlight on L3, which stayed under L3.
 - `three-in-a-box.tiza`: `three-on-one-line.tiza` in a box over L2. From 70 to 110 columns the margin has room for the callout that goes back only beside the block of the other callout under L2 or on the bottom row of the box, beside L3, so it stays under L2.
+
+From a second try of a callout with the labels of its line under it:
+
+- `p3.tiza` at 75-83 and `later-steps.tiza` at 121-122: the callout went back to the margin only with the labels of its line beside the blocks. When they did not fit there, it was a block under its line, while with the labels under the line it fits in the margin.
+- `arrow-label-under.tiza`: the label of an arrow goes under L7, and a margin callout is on L7. With the callout in the margin, its block takes the room of that label and cuts it. Thus the callout stays a block under L7 (75 columns and wider).
