@@ -25,8 +25,8 @@ For example, to put a box around three lines and go to the next step:
 | `$` | Moves the cursor to the last character of the line. |
 | `g` or `Home` | Moves the cursor to the first line. |
 | `G` or `End` | Moves the cursor to the last line. |
-| `J` | Moves the cursor down by half the height of the terminal. |
-| `K` | Moves the cursor up by half the height of the terminal. |
+| `J` | Moves the cursor down by half the rows of code on the screen. |
+| `K` | Moves the cursor up by half the rows of code on the screen. |
 
 - `w`, `b` and `e` stay on the line. They do not go to the next line or the previous line.
 - In presentation mode, `→` and `←` change the step. See [Present](#present).

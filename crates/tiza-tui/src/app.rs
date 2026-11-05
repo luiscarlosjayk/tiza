@@ -2219,6 +2219,13 @@ impl App {
         usize::from(rows.saturating_sub(status_h).saturating_sub(pad_v * 2))
     }
 
+    /// How far `J` and `K` go: half the rows of the code on screen
+    /// ([`App::screen_height`]), and one row at least. The cursor and the
+    /// view of presentation mode move by the same count.
+    pub fn half_screen(&self) -> i64 {
+        (self.screen_height() as i64 / 2).max(1)
+    }
+
     /// The rows at the bottom of the terminal that are not code: the status
     /// bar in normal mode; in presentation mode, the row of the step
     /// counter or of the review chip while one of them shows, so that they

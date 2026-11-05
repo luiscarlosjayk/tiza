@@ -1033,8 +1033,8 @@ fn editor_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
         KeyCode::Char('?') => open(app, Overlay::Help),
         KeyCode::Char('j') | KeyCode::Down => app.move_cursor(1),
         KeyCode::Char('k') | KeyCode::Up => app.move_cursor(-1),
-        KeyCode::Char('J') => app.move_cursor(app.size.1 as i64 / 2),
-        KeyCode::Char('K') => app.move_cursor(-(app.size.1 as i64) / 2),
+        KeyCode::Char('J') => app.move_cursor(app.half_screen()),
+        KeyCode::Char('K') => app.move_cursor(-app.half_screen()),
         KeyCode::Char('g') | KeyCode::Home => app.cursor_line = app.doc.source.first_line,
         KeyCode::Char('G') | KeyCode::End => app.cursor_line = app.doc.last_line(),
         KeyCode::Char('n') | KeyCode::PageDown => {
@@ -1096,7 +1096,7 @@ fn presenter_view_key(app: &App, code: KeyCode, mods: KeyModifiers) -> bool {
 /// Moves the view for a [`presenter_view_key`]: one row, half the rows of
 /// the code on screen (J, K), or an end of the code.
 fn view_key(app: &mut App, code: KeyCode) {
-    let half = (app.screen_height() as i64 / 2).max(1);
+    let half = app.half_screen();
     match code {
         KeyCode::Char('j') | KeyCode::Down => app.view_by(1),
         KeyCode::Char('k') | KeyCode::Up => app.view_by(-1),
