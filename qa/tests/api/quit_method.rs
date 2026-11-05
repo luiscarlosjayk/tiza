@@ -181,9 +181,15 @@ fn app_quit_does_not_wait_for_review_in_supervised_mode() {
     assert!(quit(&live));
     // The change still waits for the presenter: closing did not accept it.
     assert_eq!(live.with(|a| a.doc.annotations.len()), 0);
-    live.with(|a| a.proposals.clear());
-    let r = parked.join().unwrap();
-    assert!(r.error.is_some(), "{r:?}");
+    // As the TUI exits, the agent learns why the change got no result.
+    live.with(|a| a.close_waiting_changes());
+    let e = parked.join().unwrap().error.expect("a refusal");
+    assert_eq!(e.code, "unavailable");
+    assert_eq!(
+        e.message,
+        "Tiza closed before the review: the change was not applied"
+    );
+    assert_eq!(live.with(|a| a.doc.annotations.len()), 0);
 }
 
 // ---------------------------------------------------------------- AC4

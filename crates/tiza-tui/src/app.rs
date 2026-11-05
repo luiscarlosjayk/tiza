@@ -2661,6 +2661,20 @@ impl App {
         }
     }
 
+    /// Tiza closes: each agent change that waits for review (supervised
+    /// mode) gets `unavailable` and why, in place of no answer. Its
+    /// connection writes it while the process exits; when the process is
+    /// gone first, the client gets the end of the connection.
+    pub fn close_waiting_changes(&mut self) {
+        for p in self.proposals.drain(..) {
+            let _ = p.reply.send(Response::err(
+                p.req.id,
+                "unavailable",
+                "Tiza closed before the review: the change was not applied",
+            ));
+        }
+    }
+
     /// Whether closing now loses work: changes that could not be written
     /// or that were made with autosave off, or the marks of stale moves
     /// (they are not saved). `:q` and `app.quit` refuse then, unless they

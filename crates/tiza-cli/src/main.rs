@@ -2050,23 +2050,33 @@ fn shell_word(name: &str) -> String {
 /// The error of a second instance on a socket where one listens: the way
 /// out follows where the path came from.
 fn busy_message(path: &Path, origin: &socket::Origin) -> String {
+    let close = close_command(path, origin);
     let path = path.display();
     match origin {
-        socket::Origin::Session(name) => {
-            let name = shell_word(name);
-            format!(
-                "the session {name} has a Tiza instance already ({path}): tiza close --session {name} closes it, or open this one with --session OTHER (or --no-socket)"
-            )
-        }
-        socket::Origin::Default => format!(
-            "the session default has a Tiza instance already ({path}): tiza close closes it, or open this one with --session NAME (or --no-socket)"
+        socket::Origin::Session(name) => format!(
+            "the session {} has a Tiza instance already ({path}): {close} closes it, or open this one with --session OTHER (or --no-socket)",
+            shell_word(name)
         ),
-        socket::Origin::Flag | socket::Origin::EnvSocket => {
-            let word = shell_word(&path.to_string());
-            format!(
-                "{path} has a Tiza instance already: tiza close --socket {word} closes it, or open this one with --socket OTHER (or --no-socket)"
-            )
-        }
+        socket::Origin::Default => format!(
+            "the session default has a Tiza instance already ({path}): {close} closes it, or open this one with --session NAME (or --no-socket)"
+        ),
+        socket::Origin::Flag | socket::Origin::EnvSocket => format!(
+            "{path} has a Tiza instance already: {close} closes it, or open this one with --socket OTHER (or --no-socket)"
+        ),
+    }
+}
+
+/// The `tiza close` that closes the instance on `path`, with the flag of
+/// where the path came from: a message that gives it can be copied as it
+/// is.
+fn close_command(path: &Path, origin: &socket::Origin) -> String {
+    match origin {
+        socket::Origin::Session(name) => format!("tiza close --session {}", shell_word(name)),
+        socket::Origin::Default => "tiza close".to_string(),
+        socket::Origin::Flag | socket::Origin::EnvSocket => format!(
+            "tiza close --socket {}",
+            shell_word(&path.display().to_string())
+        ),
     }
 }
 
@@ -2098,7 +2108,12 @@ fn close(path: &Path, origin: &socket::Origin, force: bool) -> anyhow::Result<()
             Ok(())
         }
         Closed::Refused(resp) => match resp.error {
-            Some(e) if e.code == "unsaved_changes" => bail!("{}", e.message),
+            // The instance does not know how this command found it: the
+            // way out with the same session or socket.
+            Some(e) if e.code == "unsaved_changes" => bail!(
+                "the instance has unsaved changes: {} --force closes it and loses them",
+                close_command(path, origin)
+            ),
             Some(e) => bail!("{} ({})", e.message, e.code),
             None => bail!("the Tiza instance on {} did not close", path.display()),
         },

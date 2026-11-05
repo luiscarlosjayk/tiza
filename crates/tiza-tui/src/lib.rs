@@ -297,6 +297,7 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<Exit> {
             &mut quit_written,
         )
     };
+    app.close_waiting_changes();
     // The terminal went away, or a signal ended Tiza: Ctrl-C's rules for
     // what is saved.
     if matches!(result, Ok(End::HangUp | End::Signal(_))) {

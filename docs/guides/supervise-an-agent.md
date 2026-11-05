@@ -39,7 +39,7 @@ One agent change waits while you present step 3 of `examples/ownership.rs.tiza`:
 - `tiza next`, `tiza prev` and `tiza goto` change the step, so they wait too.
 - An agent or a script can ask to turn supervised mode off through the socket. That request waits for your decision too. The review shows it as `turn supervised mode off`.
 - Your own `:supervise off` does not wait.
-- `tiza close` (the method `app.quit`) does not wait. It closes the instance, as `:q` does, also while changes wait. The changes that wait are not applied.
+- `tiza close` (the method `app.quit`) does not wait. It closes the instance, as `:q` does, also while changes wait. The changes that wait are not applied, and each agent gets `Tiza closed before the review: the change was not applied`.
 
 ## Keys of the review
 

@@ -274,7 +274,7 @@ Tiza writes these messages on stderr:
 | `tiza: the session NAME has a Tiza instance already (PATH): tiza close --session NAME closes it, or open this one with --session OTHER (or --no-socket)` | A second `tiza FILE` starts in a session that has a live instance. For the session `default`, the message says `tiza close` and `--session NAME`. |
 | `tiza: PATH has a Tiza instance already: tiza close --socket PATH closes it, or open this one with --socket OTHER (or --no-socket)` | A second `tiza FILE` starts on a socket from `--socket` or `TIZA_SOCKET` that has a live instance. |
 | `closed the Tiza instance of the session NAME` | `tiza close` closed the instance, and its process exited. With `--socket` or `TIZA_SOCKET`, the message says `on PATH`. This message is on stdout. |
-| `tiza: the instance has unsaved changes: tiza close --force closes it and loses them` | `tiza close` found unsaved changes. The instance stays open. |
+| `tiza: the instance has unsaved changes: tiza close --session NAME --force closes it and loses them` | `tiza close` found unsaved changes. The instance stays open. The command in the message has the same `--session NAME` or `--socket PATH` as yours, or no flag for the session `default`. |
 | `tiza: the Tiza instance on PATH did not close in 10 s: look at its terminal, or end it with kill` | `tiza close` got no reply in 10 s, or the instance did not exit 10 s after its reply. |
 | `tiza: the Tiza instance on PATH gave no answer that Tiza can read: ERROR` | `tiza close` reached the socket, but the connection failed, or the answer is not a Tiza answer. |
 

@@ -9,7 +9,11 @@
 //!   is gone and a new instance starts on it), in normal and presentation
 //!   mode and with `--follow`. It says which instance it closed.
 //! - AC3 With unsaved changes (a `scene.put` with `--no-save`) it refuses
-//!   with code 1 and the instance stays; `--force` closes it.
+//!   with code 1, and its advice names the same session, so that it can be
+//!   copied; the instance stays. `--force` closes it.
+//!
+//! Supervised mode, and the agent change that waits when it closes:
+//! `api/quit_method.rs`.
 //! - AC4 An instance that answers and does not exit: after 10 s, code 1 and
 //!   what to do.
 //!
@@ -186,7 +190,7 @@ fn tiza_close_refuses_unsaved_changes_and_force_closes() {
     assert_eq!(
         closes,
         [
-            r#"1 "" "tiza: the instance has unsaved changes: tiza close --force closes it and loses them""#,
+            r#"1 "" "tiza: the instance has unsaved changes: tiza close --session talk --force closes it and loses them""#,
             r#"0 "closed the Tiza instance of the session talk" """#,
         ],
         "{out}"

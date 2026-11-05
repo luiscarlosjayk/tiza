@@ -376,7 +376,7 @@ A character (a grapheme) can be more than one code point, for example `d` with a
 - The result is `{"closing": true}`. The instance sends it, and then exits. The requests after it are not applied: they get `unavailable`.
 - Without `force`, the instance refuses to close when that loses work, with `unsaved_changes`. Work is lost when there are changes with autosave off or `--no-save`, changes that Tiza could not save, or stale moves (their marks are not saved).
 - When nothing is lost, it closes in each mode: read-only, `--no-save` and autosave off.
-- It does not wait for review in supervised mode. Closing does not change the document, and `tiza close` is for a terminal that nobody can see.
+- It does not wait for review in supervised mode. Closing does not change the document, and `tiza close` is for a terminal that nobody can see. Each change that waits for review is not applied: its request gets `unavailable`. If the process exits before the connection writes that reply, the client sees only the end of the connection.
 - No MCP tool sends it. An agent does not close the instance of a presenter.
 - No parameters, or `null`, is the same as `{}`. A key that is not `force` gets `invalid_argument`.
 - An `app.quit` that waited more than 10 s in the instance (it was busy) gets `unavailable`, and the instance stays open. `tiza close` stops waiting then, and tells you that the instance did not close.
@@ -411,6 +411,7 @@ These messages come from the socket itself. The other messages come from each me
 | `invalid request:` | `invalid_json` | The line is not a JSON request. |
 | `the application is shutting down` | `unavailable` | The instance stops. |
 | `no response from the application` | `unavailable` | The instance did not answer the request. |
+| `Tiza closed before the review: the change was not applied` | `unavailable` | In supervised mode, the instance closed while the change waited for review. |
 | `app.quit waited more than 10 s, and tiza close stops waiting then: the instance stays open. Send it again` | `unavailable` | The instance was busy, and an `app.quit` waited too long. |
 | `` unknown method (`api.methods` lists them) `` | `invalid_argument` | The method does not exist. |
 | `invalid parameters:` | `invalid_argument` | The parameters do not have the form of the method. |
