@@ -296,6 +296,11 @@ pub const PROPOSAL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs
 /// presentation mode, where there is no status bar to keep it.
 pub const PRESENT_MESSAGE_TTL: std::time::Duration = std::time::Duration::from_secs(2);
 
+/// What the last row says in presentation mode when `q` does not quit:
+/// short, and the same for every reason (the bar of normal mode gives the
+/// full message).
+pub const QUIT_REFUSED_HINT: &str = "not closed: unsaved changes · :q! quits without saving";
+
 /// How many `:` commands the command history keeps: one more drops the
 /// oldest.
 pub const HISTORY_COMMANDS: usize = 100;
@@ -4509,6 +4514,18 @@ impl App {
             self.info(short);
         }
         self.present_message = self.message.clone();
+        self.present_message_until = Some(now + PRESENT_MESSAGE_TTL);
+    }
+
+    /// Presentation mode hides the bar: a `q` that did not quit says why on
+    /// the last row, in short ([`QUIT_REFUSED_HINT`]), for
+    /// [`PRESENT_MESSAGE_TTL`] from `now`, as the result of a `:` command
+    /// does. Otherwise the presenter on stage does not know why Tiza stays.
+    pub fn quit_refused(&mut self, now: std::time::Instant) {
+        if !self.present || self.quit {
+            return;
+        }
+        self.present_message = Some((QUIT_REFUSED_HINT.to_string(), true));
         self.present_message_until = Some(now + PRESENT_MESSAGE_TTL);
     }
 

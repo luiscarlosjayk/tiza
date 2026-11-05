@@ -152,6 +152,7 @@ Step 3 of `examples/ownership.rs.tiza` in presentation mode: an image of the TUI
 - Press `:` to type a command. The command line shows on the last row. The result of the command stays there for 2 seconds.
 - Only the result of a `:` command shows. When Tiza opens in presentation mode and the document has entries that this version does not know, the message at start, with their count, also shows there for 2 seconds. The messages of the keys, for example after `f`, do not show in presentation mode, also in the 2 seconds after the result of a command. The next key hides that result. With mouse capture, a notch of the wheel also hides it.
 - In presentation mode, `u`, `U` and `Ctrl-R` do nothing, because you present and do not edit. In the list (`L`), `x`, `u`, `U` and `Ctrl-R` do nothing too. To undo or redo while you present, type `:undo` or `:redo`: the last row shows the result.
+- When `q` does not quit, because you would lose changes that are not saved, the last row shows `not closed: unsaved changes · :q! quits without saving` for 2 seconds. The status bar of normal mode gives the full reason.
 - `Ctrl-C` quits in presentation mode when no item of the [Ctrl-C](#ctrl-c) list is open.
 - In presentation mode, a click or a drag does nothing. See [Presentation mode](../guides/use-the-mouse.md#presentation-mode).
 - While an enter effect plays, the keys that only move the view do not end it. See [Enter effects](document-format.md#enter-effects-experimental).

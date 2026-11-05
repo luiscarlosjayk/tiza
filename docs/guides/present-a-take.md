@@ -96,7 +96,7 @@ When you go to the next step, its new annotations come into the view. A `scroll`
 
 ## 8. Finish
 
-Press `q`. When you changed the document in no-save mode, `q` refuses, and presentation mode shows no message. Then type `:q!`, which quits without saving. A `:` command that changes the document, such as `:theme light`, is a change. `t` and a change of step are not.
+Press `q`. When you changed the document in no-save mode, `q` refuses. The last row shows `not closed: unsaved changes · :q! quits without saving` for 2 seconds. Then type `:q!`, which quits without saving. A `:` command that changes the document, such as `:theme light`, is a change. `t` and a change of step are not.
 
 Without `--no-save`, `q` saves no more than the current mode saves. See [Quitting](../concepts/saving.md#quitting).
 

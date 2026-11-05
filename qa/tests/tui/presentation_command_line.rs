@@ -23,7 +23,7 @@ use crossterm::event::KeyCode;
 use ratatui::{Terminal, backend::TestBackend};
 use serde_json::json;
 use tiza_qa::Live;
-use tiza_tui::app::{Mode, MouseKind, Overlay, PRESENT_MESSAGE_TTL};
+use tiza_tui::app::{Mode, MouseKind, Overlay, PRESENT_MESSAGE_TTL, QUIT_REFUSED_HINT};
 
 const CODE: &str = "fn main() {\n    let s = String::from(\"hello\");\n    takes(s);\n}\n\nfn takes(s: String) {\n    println!(\"{s}\");\n}\n";
 
@@ -199,6 +199,48 @@ fn the_next_key_hides_it_and_p_does_not_bring_it_back() {
     live.keys(&[KeyCode::Enter, KeyCode::Char('P')]);
     assert!(!live.with(|a| a.present));
     assert_eq!(live.with(|a| a.present_message_until), None);
+}
+
+#[test]
+fn a_q_that_does_not_quit_says_why_on_the_last_row() {
+    // Unsaved changes: `q` stays, and the presenter on stage sees why.
+    let live = presenting("quit-refused");
+    live.with(|a| a.autosave = false);
+    live.command("note 2 not saved");
+    live.with(|a| a.message = None);
+    live.keys(&[KeyCode::Char('q')]);
+    assert!(!live.with(|a| a.quit));
+    let row = last_row(&live, 70, 14);
+    assert_eq!(row.trim(), QUIT_REFUSED_HINT, "{row:?}");
+    // For 2 s, as the result of a command; the next key hides it.
+    let until = live
+        .with(|a| a.present_message_until)
+        .expect("deadline set");
+    assert!(live.with(move |a| a.present_message_tick(until)));
+    assert!(!last_row(&live, 70, 14).contains("not closed"));
+    // The way out that it gives works.
+    live.type_text(":q!");
+    live.keys(&[KeyCode::Enter]);
+    assert!(live.with(|a| a.quit));
+    // With nothing to lose, `q` quits and says nothing.
+    let live = presenting("quit-clean");
+    live.keys(&[KeyCode::Char('q')]);
+    assert!(live.with(|a| a.quit));
+    assert_eq!(live.with(|a| a.present_message.clone()), None);
+    // In normal mode the bar gives the full message, as before.
+    let live = Live::from_code(CODE, "rs", "quit-refused-normal");
+    live.with(|a| a.autosave = false);
+    live.command("note 2 not saved");
+    live.keys(&[KeyCode::Char('q')]);
+    assert!(!live.with(|a| a.quit));
+    assert_eq!(live.with(|a| a.present_message_until), None);
+    let message = live.with(|a| a.message.clone()).map(|(m, _)| m);
+    assert!(
+        message
+            .as_deref()
+            .is_some_and(|m| m.starts_with("unsaved changes (autosave off)")),
+        "{message:?}"
+    );
 }
 
 #[test]

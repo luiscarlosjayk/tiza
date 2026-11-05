@@ -1134,7 +1134,10 @@ fn editor_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
         KeyCode::Char('0') => app.line_start(),
         KeyCode::Char('$') => app.line_end(),
         KeyCode::Char('L') => open(app, Overlay::List),
-        KeyCode::Char('q') => app.request_quit(false),
+        KeyCode::Char('q') => {
+            app.request_quit(false);
+            app.quit_refused(std::time::Instant::now());
+        }
         KeyCode::Char(':') => app.mode = Mode::Command(String::new()),
         KeyCode::Char('?') => open(app, Overlay::Help),
         KeyCode::Char('j') | KeyCode::Down => app.move_cursor(1),
