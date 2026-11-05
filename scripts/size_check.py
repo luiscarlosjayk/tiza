@@ -10,13 +10,20 @@ a folder, `tar -czf`), prints both sizes and fails when:
 - either grew more than `limits.growth_pct` (10 %) over the baseline of this
   target in `qa/budgets.json`.
 
+`--target T` checks against the baseline of target `T` instead of the host's,
+and then a target with no baseline fails: the release workflow names each target
+of its matrix, and a target that nobody measured must not pass in silence.
+`--archive PATH` measures that archive instead of packing one: the release
+workflow gives the `.tar.gz` that it publishes.
+
 Moving the baseline is a decision: `--update --reason "one line"` rewrites this
 target's entry, and the check refuses a `qa/budgets.json` whose numbers differ
 from the committed ones (`git show HEAD:qa/budgets.json`) while the reason is
 still the committed one or is empty / longer than one line. Commit the file in
 the same commit as the change that moved the size.
 
-Usage: scripts/size-check.sh [--no-build] [--bin PATH] [--update --reason TEXT]
+Usage: scripts/size-check.sh [--no-build] [--bin PATH] [--target T] [--archive PATH]
+                             [--update --reason TEXT]
 """
 import argparse, datetime, json, os, shutil, subprocess, sys, tarfile, tempfile, time
 
@@ -35,10 +42,13 @@ def commit():
     return r.stdout.strip() or "unknown"
 
 
-def build():
+def build(target):
     env = dict(os.environ, CARGO_INCREMENTAL=os.environ.get("CARGO_INCREMENTAL", "0"))
     t = time.monotonic()
-    subprocess.run(["cargo", "build", "--release", "--locked", "-p", "tiza"], cwd=ROOT, env=env, check=True)
+    cmd = ["cargo", "build", "--release", "--locked", "-p", "tiza"]
+    if target:
+        cmd += ["--target", target]
+    subprocess.run(cmd, cwd=ROOT, env=env, check=True)
     return time.monotonic() - t
 
 
@@ -74,6 +84,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--no-build", action="store_true", help="measure target/release/tiza as it is")
     ap.add_argument("--bin", help="measure this binary instead of target/release/tiza (implies --no-build)")
+    ap.add_argument("--target", help="the target of the baseline (default: the host); one with no baseline fails")
+    ap.add_argument("--archive", help="measure this .tar.gz instead of packing the binary")
     ap.add_argument("--update", action="store_true", help="write the measured sizes as this target's baseline")
     ap.add_argument("--reason", default="", help="one line: why the baseline moves (required with --update)")
     ap.add_argument("--budgets", default=BUDGETS, help=argparse.SUPPRESS)  # tests: another budgets file
@@ -82,19 +94,22 @@ def main():
 
     budgets = json.load(open(a.budgets))
     limits = budgets["limits"]
-    target = host_target()
-    binary = a.bin or os.path.join(ROOT, "target", "release", "tiza")
+    target = a.target or host_target()
+    out = os.path.join(ROOT, "target", *([a.target] if a.target else []), "release", "tiza")
+    binary = a.bin or out
     build_s = None
     if not a.bin and not a.no_build:
-        build_s = build()
+        build_s = build(a.target)
     if not os.path.isfile(binary):
         sys.exit(f"size-check: no binary at {binary} (build it or drop --no-build)")
+    if a.archive and not os.path.isfile(a.archive):
+        sys.exit(f"size-check: no archive at {a.archive}")
     size = os.path.getsize(binary)
-    arch = archive_size(binary, target)
+    arch = os.path.getsize(a.archive) if a.archive else archive_size(binary, target)
 
     print(f"target   {target} @ {commit()}")
     print(f"binary   {fmt(size)}")
-    print(f"archive  {fmt(arch)}  (tar.gz as the release workflow packs it)")
+    print(f"archive  {fmt(arch)}  ({a.archive if a.archive else 'tar.gz as the release workflow packs it'})")
     if build_s is not None:
         print(f"build    {build_s:.1f} s (cargo build --release, incremental cache as it is)")
 
@@ -124,7 +139,10 @@ def main():
 
     base = budgets["targets"].get(target)
     growth = limits["growth_pct"] / 100
-    if base is None:
+    if base is None and a.target:
+        fails.append(f"qa/budgets.json has no baseline for {target}: record one with "
+                     f"--update --reason \"first baseline on {target}\"")
+    elif base is None:
         print(f"note: qa/budgets.json has no baseline for {target}; "
               f"record one with --update --reason \"first baseline on {target}\"")
     else:

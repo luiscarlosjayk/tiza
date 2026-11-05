@@ -150,6 +150,8 @@ for target in "${targets[@]}"; do
   # No macOS extended attributes: the archive release.yml would make.
   COPYFILE_DISABLE=1 tar --no-xattrs -C "$out" -czf "$out/$name.tar.gz" "$name"
   (cd "$out" && sha256 "$name.tar.gz" > "$name.tar.gz.sha256")
+  # The size budget of this target, as release.yml checks it.
+  python3 scripts/size_check.py --target "$target" --bin "$stage/tiza" --archive "$out/$name.tar.gz"
   rm -rf "$stage"
   # Smoke: the binary for this machine must start from the archive.
   if [ "$target" = "$host" ]; then
