@@ -138,6 +138,12 @@ impl History {
         self.redo.clear();
     }
 
+    /// A number that changes each time an entry goes on the undo stack (a
+    /// new edit, or a redo), and that an undo leaves as it is.
+    pub fn seq(&self) -> u64 {
+        self.seq
+    }
+
     /// Renames the last recorded edit (when its name is only known after
     /// the mutation, like the id an `add` assigns).
     pub fn label_last(&mut self, label: impl Into<String>) {

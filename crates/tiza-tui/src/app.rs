@@ -862,6 +862,9 @@ pub struct App {
     pub(crate) view_end: Option<(u16, u16)>,
     /// A key that moves the view in presentation mode, for the next frame.
     pub(crate) view_request: Option<ViewRequest>,
+    /// The message of the last undo or redo, and [`History::seq`] then: a
+    /// later edit (an agent's, a reload) makes it old, and it goes.
+    history_said: Option<(String, u64)>,
     /// The last message about an agent change the view does not show,
     /// while it may still group the next one.
     agent_notice: Option<AgentNotice>,
@@ -976,6 +979,7 @@ impl App {
             view_cursor_line: cursor_line,
             view_end: None,
             view_request: None,
+            history_said: None,
             agent_notice: None,
             agent_deferred: Vec::new(),
         };
@@ -4417,6 +4421,26 @@ impl App {
         {
             self.error(format!("follow off: {e}"));
         }
+        self.history_said = self
+            .message
+            .as_ref()
+            .map(|(m, _)| (m.clone(), self.history.seq()));
+    }
+
+    /// The message of an undo or a redo goes once an edit came after it:
+    /// `undone: note a7` must not stay on the bar when an agent adds the
+    /// note again. Each frame asks.
+    pub(crate) fn forget_old_history_message(&mut self) {
+        let Some((said, seq)) = &self.history_said else {
+            return;
+        };
+        if self.history.seq() == *seq {
+            return;
+        }
+        if self.message.as_ref().is_some_and(|(m, _)| m == said) {
+            self.message = None;
+        }
+        self.history_said = None;
     }
 
     /// The step-0 code, its first line and whether it is embedded: what

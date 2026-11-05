@@ -114,6 +114,7 @@ pub fn clamp_padding(pad: (u16, u16), size: (u16, u16), status_h: u16) -> (u16, 
 pub fn draw(frame: &mut Frame, app: &mut App) {
     // This frame puts the held view of a step change on screen.
     app.held_unresolved = false;
+    app.forget_old_history_message();
     let area = frame.area();
     app.size = (area.width, area.height);
     app.close_panel_too_small();
