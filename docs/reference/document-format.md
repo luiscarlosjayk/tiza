@@ -606,6 +606,9 @@ With `"typing": "line"` or `"char"`, Tiza types the content on the screen.
 - A typed move waits for the typed moves and the `wait` moves before it in the step. Until its turn:
   - a `replace` with as many new lines as old lines shows its old lines;
   - another typed move shows blank lines. Thus the lines below it do not move while Tiza types.
+- When its turn comes, a `replace` makes all its old lines blank. Then Tiza types the new lines.
+- When two typed moves change the same line, Tiza types them one after the other.
+- When a `replace` of the step hides a highlight, a mark or an arrow end (see [Annotations after a `code.patch` move](#annotations-after-a-codepatch-move)), the annotation goes away when the step starts, not at the turn of the `replace`.
 - While Tiza types, each line has the colors of the code at the end of the step. A line that shows only in part has the colors of its full line. Thus, if the content opens a comment or a string, the lines below it change color when the typing starts, not when it ends.
 - Any key except Ctrl-C finishes the typing. Tiza uses that key only to finish the typing.
 - Thus an `n` during the typing finishes the typing. It does not go to the next step. Press `n` again.

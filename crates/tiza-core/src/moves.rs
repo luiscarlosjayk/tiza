@@ -1965,17 +1965,10 @@ impl TypingPlan {
     /// the line count never changes, so every shifted annotation stays put).
     pub fn code_at(&self, first_line: u32, index: usize, revealed: usize) -> Vec<String> {
         let mut code = self.full.clone();
-        for (k, item) in self.items.iter().enumerate() {
-            let shown = if k < index {
-                continue;
-            } else if k == index {
-                partial_content(&item.lines, item.mode, revealed)
-            } else {
-                item.waiting()
-            };
+        for (start, shown) in self.pending(index, revealed) {
             for (i, l) in shown.into_iter().enumerate() {
                 // A typed line outside the shown window is simply not drawn.
-                let Some(at) = (item.range.start + i as u32).checked_sub(first_line) else {
+                let Some(at) = (start + i as u32).checked_sub(first_line) else {
                     continue;
                 };
                 if let Some(slot) = code.get_mut(at as usize) {
@@ -1984,6 +1977,32 @@ impl TypingPlan {
             }
         }
         code
+    }
+
+    /// The lines of the items that are not done while item `index` has
+    /// `revealed` units shown, with the first line of each in the full code:
+    /// the typed item cut to what shows of it, the later items as they wait.
+    /// The last item comes first: when two items type the same line, the
+    /// earlier one paints last, so its typing shows and not the old line of
+    /// the later one.
+    fn pending(
+        &self,
+        index: usize,
+        revealed: usize,
+    ) -> impl Iterator<Item = (u32, Vec<String>)> + '_ {
+        self.items
+            .iter()
+            .enumerate()
+            .skip(index)
+            .rev()
+            .map(move |(k, item)| {
+                let shown = if k == index {
+                    partial_content(&item.lines, item.mode, revealed)
+                } else {
+                    item.waiting()
+                };
+                (item.range.start, shown)
+            })
     }
 
     /// Every intermediate code of the animation with how long it stays, in
@@ -2035,14 +2054,9 @@ impl TypingPlan {
         let base = highlight_cached(&self.full, language, theme);
         let mut lines = BTreeMap::new();
         // The same lines as `code_at`, in the same order.
-        for (k, item) in self.items.iter().enumerate().skip(index) {
-            let shown = if k == index {
-                partial_content(&item.lines, item.mode, revealed)
-            } else {
-                item.waiting()
-            };
+        for (start, shown) in self.pending(index, revealed) {
             for (i, l) in shown.into_iter().enumerate() {
-                let Some(at) = (item.range.start + i as u32).checked_sub(first_line) else {
+                let Some(at) = (start + i as u32).checked_sub(first_line) else {
                     continue;
                 };
                 let at = at as usize;
@@ -2964,5 +2978,40 @@ mod tests {
             }
             check_typed_colors(&d);
         }
+    }
+
+    #[test]
+    fn two_typed_replaces_of_one_line_type_one_after_the_other() {
+        // `x = 10` becomes `x = 100`, then, after a wait, `x = 7`. While the
+        // first one types, its typing shows, not the old line of the second.
+        let d = typed_doc(
+            "x = 10\ny = 2\n",
+            &[
+                serde_json::json!({
+                    "at_step": 1, "action": "code.patch", "op": "replace", "find": "x = 10",
+                    "content": "x = 100", "typing": "char", "speed_ms": 20
+                }),
+                serde_json::json!({"at_step": 1, "action": "wait", "ms": 100}),
+                serde_json::json!({
+                    "at_step": 1, "action": "code.patch", "op": "replace", "find": "x = 100",
+                    "content": "x = 7", "typing": "char", "speed_ms": 20
+                }),
+            ],
+        );
+        let plan = typing_plan(&d, 1).unwrap();
+        let first = d.source.first_line;
+        assert_eq!(plan.items.len(), 3);
+        let line1 = |k: usize, r: usize| plan.code_at(first, k, r)[0].clone();
+        for (k, r, shown) in [
+            (0, 0, ""),
+            (0, 3, "x ="),
+            (0, 6, "x = 10"),
+            (1, 0, "x = 100"),
+            (2, 0, ""),
+            (2, 4, "x = "),
+        ] {
+            assert_eq!(line1(k, r), shown, "item {k}, {r} units");
+        }
+        check_typed_colors(&d);
     }
 }
