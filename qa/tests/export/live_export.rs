@@ -1463,7 +1463,8 @@ fn the_test_hooks_are_never_in_a_release_build() {
     // The readers of today: `test_hook` of the TUI (one reader for the
     // request and check panics, the follow hooks, the slow clock and the
     // late frames of an enter effect, a panic in the layout of a frame and
-    // one inside it, slow frames, the hold of the live checks on a pty: a
+    // one inside it, slow frames, the hold of the live checks on a pty, a
+    // slow reply of the socket, the holds at start and before the exit: a
     // call to it outside the feature does not build), `:panic`, and the
     // two of the MCP server.
     assert_eq!(seen.len(), 4, "{seen:#?}");

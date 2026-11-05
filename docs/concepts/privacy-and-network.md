@@ -182,7 +182,6 @@ The runtime folder holds the socket and `panics.log`.
 | `local API disabled: Tiza does not use DIR: it is not a folder. Set XDG_RUNTIME_DIR or TMPDIR to a folder of yours, or give a socket path with --socket` | The `tiza/` folder is a symbolic link or a file. |
 | `local API disabled: cannot make DIR private (0700)` | Tiza cannot set the `tiza/` folder to `0700`. |
 | `local API disabled: PATH is there and is not a socket: Tiza does not remove it. Give another socket path with --socket or TIZA_SOCKET` | A regular file, a folder or a link is at the path of the socket. |
-| `local API disabled: an instance is already listening on PATH (use --session for another one)` | Another Tiza listens on the path of the socket. |
 | `local API disabled: cannot make the socket PATH private (0600)` | Tiza cannot set the socket to `0600`. |
 | `local API disabled: cannot check the socket PATH` | A socket is at the path, but Tiza cannot connect to it, for example the socket of another user. |
 | `PATH: ~ needs HOME, and HOME is empty or not set. Give the full path` | You type a path that starts with `~` in `:w`, `:saveas`, `:wq` or `:export`, and `HOME` is empty or not set. |
@@ -190,11 +189,16 @@ The runtime folder holds the socket and `panics.log`.
 - The messages show in the status bar.
 - `DIR` is the runtime folder. `PATH` is the path of the socket, or the path that you typed.
 - The `cannot make` and `cannot check` messages end with the error of the system.
+- When another Tiza listens on the path of the socket, Tiza does not start. It exits with code 1 and its message tells how to close the other one. See [Messages](../reference/cli.md#messages).
 
 ### Removal of the socket
 
-- Tiza removes the socket when it quits, when its terminal closes and after an internal error.
-- When a signal kills Tiza, for example `SIGKILL`, the socket stays. The next start on that path removes it.
+- Tiza removes the socket when it quits, when its terminal closes, after `SIGTERM` or `SIGINT`, and after an internal error.
+- After `SIGTERM` or `SIGINT`, Tiza quits in order. When it cannot (it is blocked in a write to a terminal that nobody reads), a watchdog removes the socket and ends Tiza after 5 s.
+- A second `SIGTERM` or `SIGINT` ends Tiza at once. Then the socket stays.
+- `SIGKILL` cannot be caught: the socket stays. The next start on that path removes it.
+- Tiza removes only its own socket, never a file that took its path.
+- When two Tiza instances start at the same time on a socket that stays from a killed instance, the second one can remove the socket of the first one. Then the first one has no socket. Start the instances one after the other.
 
 ### `panics.log`
 

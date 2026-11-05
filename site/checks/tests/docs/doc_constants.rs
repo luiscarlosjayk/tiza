@@ -12,7 +12,8 @@ use tiza_qa::markdown::cited;
 use tiza_qa::{repo_file, repository_files};
 use tiza_tui::app::PRESENT_MESSAGE_TTL;
 use tiza_tui::appearance::{COLOR_QUERY_LATE_FACTOR, COLOR_QUERY_WAIT};
-use tiza_tui::ipc::ANSWER_TIMEOUT;
+use tiza_tui::ipc::{ANSWER_TIMEOUT, CLOSE_ANSWER_WAIT, CLOSE_EXIT_WAIT};
+use tiza_tui::signals::SIGNAL_EXIT_WAIT;
 
 /// The words before and after a number, and how many times the docs have
 /// them today.
@@ -109,6 +110,54 @@ fn the_docs_give_the_wait_of_the_socket_client() {
                 },
             ],
         }],
+    );
+}
+
+#[test]
+fn the_docs_give_the_waits_of_tiza_close_and_of_a_signal() {
+    check(
+        "s",
+        &[
+            Value {
+                name: "CLOSE_ANSWER_WAIT",
+                number: whole_seconds("CLOSE_ANSWER_WAIT", CLOSE_ANSWER_WAIT),
+                cites: &[
+                    Cite {
+                        before: "gives the instance ",
+                        after: " s to answer",
+                        min: 1,
+                    },
+                    Cite {
+                        before: "did not close in ",
+                        after: " s",
+                        min: 1,
+                    },
+                    Cite {
+                        before: "does not close in ",
+                        after: " s",
+                        min: 1,
+                    },
+                ],
+            },
+            Value {
+                name: "CLOSE_EXIT_WAIT",
+                number: whole_seconds("CLOSE_EXIT_WAIT", CLOSE_EXIT_WAIT),
+                cites: &[Cite {
+                    before: "and then ",
+                    after: " s more to exit",
+                    min: 1,
+                }],
+            },
+            Value {
+                name: "SIGNAL_EXIT_WAIT",
+                number: whole_seconds("SIGNAL_EXIT_WAIT", SIGNAL_EXIT_WAIT),
+                cites: &[Cite {
+                    before: "ends Tiza after ",
+                    after: " s",
+                    min: 1,
+                }],
+            },
+        ],
     );
 }
 

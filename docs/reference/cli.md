@@ -50,6 +50,7 @@ tiza examples/ownership.rs.tiza --present   # open a document in presentation mo
 | `tiza next` | Makes the live instance go to the next step. |
 | `tiza prev` | Makes the live instance go to the previous step. |
 | `tiza goto ID` | Makes the live instance go to a named step or to a step number. |
+| `tiza close` | Closes the live instance, as `:q` does, and waits until it exits. |
 | `tiza api METHOD [PARAMS]` | Calls one socket method and prints the JSON reply. |
 | `tiza schema [KIND]` | Prints a JSON Schema: `document` for the `.tiza` format, or `api` for the socket methods. `document` is the default. |
 | `tiza help [COMMAND]` | Prints the help of `tiza` or of a command. |
@@ -61,6 +62,7 @@ tiza examples/ownership.rs.tiza --present   # open a document in presentation mo
 - `tiza mcp` is in [Set up an agent](../agents/setup.md). The tools are in [MCP tools](mcp-tools.md).
 - `tiza scene` and `tiza api` are in [Socket API](socket-api.md).
 - `tiza next`, `tiza prev` and `tiza goto` are in [Go to a named step](document-format.md#go-to-a-named-step).
+- `tiza close` is in [Close an instance](#close-an-instance).
 
 ### Options of the commands
 
@@ -72,6 +74,7 @@ tiza examples/ownership.rs.tiza --present   # open a document in presentation mo
 | `--width N` | `tiza scene text` | Prints the take at `N` columns, in place of the width of the screen. |
 | `--as-code` | `tiza scene put` | Shows a file that is not a document as code, and does not refuse it. |
 | `--out PATH` | `tiza schema` | Writes the schema to `PATH`, in place of standard output. |
+| `--force` | `tiza close` | Closes the live instance also when it has unsaved changes. The changes are lost. |
 
 - `N` in `--width N` is from 20 to 400.
 - `JSON` in `tiza scene patch` is the text of the JSON, `-` for standard input or `@PATH` for a file.
@@ -141,7 +144,8 @@ Tiza picks the socket from the first of these that is set:
 4. The variable `TIZA_SESSION`.
 5. The session `default`.
 
-- Use a session to run two or more instances. Each instance has its own socket.
+- A session has one instance. To run two or more instances, give each one its own session. Each instance has its own socket.
+- When an instance listens on the socket already, a second `tiza FILE` does not start. It exits with code 1 and tells you how to close the first one or to use another session. See [Close an instance](#close-an-instance).
 - In a session name, Tiza changes each character to `_`, except ASCII letters, digits, `-` and `_`.
 - An empty `TIZA_SOCKET` or `TIZA_SESSION` counts as not set. An empty `--session` gives the socket `.sock`.
 - `tiza render` uses the socket only without `FILE`. `tiza check` and `tiza schema` do not use it.
@@ -222,6 +226,20 @@ The `code` of a finding is one of these:
 | `clipped_code` | Warning | A code line is cut with `…` at the width of the check. There is one warning for each file with a cut line, and one more when a move changes which lines are cut. The warning gives the first five lines, the steps, and the width from which every code line of the take fits, or that no width up to 400 shows them whole. When a move gives the cut lines other numbers, the warning gives their numbers at its first step. |
 | `effect` | Warning | Experimental. An annotation has the enter effect `draw` but no stroke, or an effect that this version of Tiza does not know. It comes in with no effect. See [Enter effects](document-format.md#enter-effects-experimental). |
 
+## Close an instance
+
+`tiza close` closes the live instance of the session, as `:q` does. Use it when you lost the terminal of an instance, or to start a new one in the same session.
+
+```sh
+tiza close --session talk
+```
+
+- Tiza sends `app.quit` to the instance and waits until its process exits. Then it writes `closed the Tiza instance of the session NAME` (or `on PATH` for `--socket`) and exits with code 0. The next `tiza --session NAME` starts at once.
+- When the instance has unsaved changes, it does not close, and `tiza close` exits with code 1. `tiza close --force` closes it, and the changes are lost. Unsaved changes are changes with autosave off or `--no-save`, changes that Tiza could not save, and the marks of stale moves.
+- When the instance does not close in 10 s, `tiza close` exits with code 1. Look at the terminal of the instance, or end it with `kill`.
+- `tiza close` does not remove a socket file. When no instance listens on the socket (its process was killed with `kill -KILL`), the next `tiza` in the session replaces it.
+- `kill` (SIGTERM) and `kill -INT` (SIGINT) also close an instance in order, with the save rules of Ctrl-C. The instance exits with code 143 or 130. A second signal ends it at once.
+
 ## Messages
 
 Tiza writes these messages on stderr:
@@ -253,6 +271,11 @@ Tiza writes these messages on stderr:
 | `tiza: the Tiza instance on PATH did not answer within 75 s: it is busy or stopped; look at its terminal` | A command reached the live instance, but it did not reply in time. |
 | `tiza: the Tiza instance on PATH closed the connection before it answered: it possibly quit; look at its terminal` | The live instance closed the connection before it replied. |
 | `tiza: MESSAGE (CODE)` | The live instance answers a command with an error. |
+| `tiza: the session NAME has a Tiza instance already (PATH): tiza close --session NAME closes it, or open this one with --session OTHER (or --no-socket)` | A second `tiza FILE` starts in a session that has a live instance. For the session `default`, the message says `tiza close` and `--session NAME`. |
+| `tiza: PATH has a Tiza instance already: tiza close --socket PATH closes it, or open this one with --socket OTHER (or --no-socket)` | A second `tiza FILE` starts on a socket from `--socket` or `TIZA_SOCKET` that has a live instance. |
+| `closed the Tiza instance of the session NAME` | `tiza close` closed the instance, and its process exited. With `--socket` or `TIZA_SOCKET`, the message says `on PATH`. This message is on stdout. |
+| `tiza: the instance has unsaved changes: tiza close --force closes it and loses them` | `tiza close` found unsaved changes. The instance stays open. |
+| `tiza: the Tiza instance on PATH did not close in 10 s: look at its terminal, or end it with kill` | `tiza close` got no reply in 10 s, or the instance did not exit 10 s after its reply. |
 
 - The messages `no grammar for …` and `config ignored: …` are warnings. Tiza goes on.
 - When the text after the last `:` does not start with a digit and has other characters than digits, `-` and `.`, Tiza reads the whole text as a file name, for example `a:b.rs`. Then the message is `could not open FILE`.
@@ -263,6 +286,7 @@ Tiza writes these messages on stderr:
 - `could not open FILE`, `could not read PATH` and `no Tiza instance is listening on …` can end with the error of the system. `--padding expects V or V,H` can end with the reason of the error.
 - The errors of `tiza goto` are in [Messages](document-format.md#messages).
 - On an error, `tiza` exits with code 1. A wrong flag or argument exits with code 2 and prints the usage.
+- After SIGTERM, the TUI exits with code 143. After SIGINT from outside the TUI, it exits with code 130. After SIGHUP, it exits with code 0.
 - `tiza render` to MP4 or WebM without `ffmpeg` also exits with code 2. See [Exports](exports.md).
 
 Tiza shows these messages in the status bar:
@@ -271,7 +295,6 @@ Tiza shows these messages in the status bar:
 |---|---|
 | `the file has N lines: range A-B clamped to C-D` | The range goes past the end of the file. |
 | `opened the existing PATH` | The range has a `FILE.A-B.tiza` document from an earlier session, and Tiza opened it. |
-| `local API disabled: an instance is already listening on PATH (use --session for another one)` | A second instance starts in a session that already has an instance. |
 | `NAME:LINE: KEY: … (N warnings: tiza config)` | The config file has warnings. At start, the status bar shows the first one. See [Warnings](config.md#warnings). |
 | `N annotations outside the code and not drawn: IDS` | When the document opens, annotations point at lines that the code does not have. |
 | `tiza check gives the problem of N annotations: IDS` | When the document opens, annotations are on lines of the code, but they fail another check. `tiza check` gives the problem. |
@@ -279,5 +302,4 @@ Tiza shows these messages in the status bar:
 
 - For a file with one line, the first message says `line`, not `lines`.
 - With one annotation, the messages of the open document say `annotation`. When the document has more than one of these problems at start, one message gives them, with `;` between them.
-- After `local API disabled`, agents and the step commands talk to the first instance.
-- The other causes of `local API disabled` are in [The runtime folder](../concepts/privacy-and-network.md#the-runtime-folder).
+- The causes of `local API disabled` are in [The runtime folder](../concepts/privacy-and-network.md#the-runtime-folder).

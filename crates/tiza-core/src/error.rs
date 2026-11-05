@@ -65,6 +65,10 @@ pub enum Error {
         ".tiza document with schema {found}: this version of Tiza reads schema {supported} at most"
     )]
     UnsupportedSchema { found: u64, supported: u32 },
+    /// `app.quit` without `force`, when closing loses work: changes that
+    /// are not saved, or the marks of stale moves.
+    #[error("the instance has unsaved changes: tiza close --force closes it and loses them")]
+    UnsavedChanges,
     /// Another error, said of one thing (`annotation a2, step 1: range
     /// 9..9 does not fit…`); the API code is that of the error inside.
     #[error("{what}: {inner}")]
@@ -97,6 +101,7 @@ impl Error {
             }
             Error::Invalid(_) | Error::InsideCharacter { .. } => "invalid_argument",
             Error::UnsupportedSchema { .. } => "unsupported_schema",
+            Error::UnsavedChanges => "unsaved_changes",
             Error::Io(_) => "io",
             Error::Json(_) => "invalid_json",
             Error::Within { inner, .. } | Error::Because { inner, .. } => inner.code(),

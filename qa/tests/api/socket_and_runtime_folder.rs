@@ -20,6 +20,12 @@
 //! - AC5 An empty `HOME` counts as not set: Tiza reads no config file from
 //!   the current folder. A `~` in `:w`, `:saveas`, `:wq` or `:export`
 //!   without `HOME` is an error, and nothing is written.
+//! - AC6 A second instance on a socket where an instance listens
+//!   (`--session`, `TIZA_SESSION`, the session `default`, `--socket`,
+//!   `TIZA_SOCKET`) exits with code 1 and a message that names the way out
+//!   for where the path came from. It writes nothing to the terminal (no
+//!   alternate screen, no colour query, no probe) and no file, and the
+//!   first instance goes on. `tiza close` with no instance removes nothing.
 //!
 //! Corner cases: another user's runtime folder needs a second user (root,
 //! `chown`), which the tests do not have; a link stands in for it, on the
@@ -173,7 +179,7 @@ fn a_client_command_leaves_the_file_that_socket_names() {
     let notes = dir.join("notes.txt");
     std::fs::write(&notes, "my notes\n").unwrap();
     chmod(&notes, 0o644);
-    for args in [&["api", "status"][..], &["next"][..]] {
+    for args in [&["api", "status"][..], &["next"][..], &["close"][..]] {
         let out = tiza_qa::command()
             .arg("--socket")
             .arg(&notes)
@@ -188,6 +194,149 @@ fn a_client_command_leaves_the_file_that_socket_names() {
         );
         assert_eq!(mode(&notes), 0o644, "{args:?}");
     }
+}
+
+// ---------------------------------------------------------------- AC6
+
+/// Runs `tiza ARGS main.rs` with `--theme auto` on a pty that is its
+/// controlling terminal, without `TIZA_NO_OSC` (so a colour query and the
+/// probe would go out), in `dir` with the runtime folder `dir/run`, and
+/// returns the exit code and what it wrote to the terminal.
+fn second(dir: &Path, name: &str, args: &[&str], env: &[(&str, &str)]) -> (i32, String) {
+    let env: std::collections::HashMap<_, _> = env.iter().copied().collect();
+    let body = r##"
+import json
+binary, cwd, args, extra = sys.argv[1], sys.argv[2], json.loads(sys.argv[3]), json.loads(sys.argv[4])
+os.chdir(cwd)
+env = dict(os.environ, TERM="xterm-256color", XDG_RUNTIME_DIR=os.path.join(cwd, "run"))
+for k in ("TIZA_SOCKET", "TIZA_SESSION", "TIZA_TEST_HOOK", "TIZA_NO_OSC"):
+    env.pop(k, None)
+env.update(extra)
+s = Pty([binary, "--theme", "auto", *args, "main.rs"], 30, 300, env=env, ctty=True)
+print("EXIT", s.finish(10))
+print("OUT", json.dumps(s.out.decode(errors="replace")))
+"##;
+    let out = tiza_qa::pty_script(
+        dir,
+        name,
+        body,
+        &[
+            bin().to_str().unwrap(),
+            dir.to_str().unwrap(),
+            &serde_json::to_string(args).unwrap(),
+            &serde_json::to_string(&env).unwrap(),
+        ],
+    );
+    let code = out
+        .lines()
+        .find_map(|l| l.strip_prefix("EXIT "))
+        .unwrap_or_else(|| panic!("{out}"))
+        .parse()
+        .unwrap();
+    let raw = out.lines().find_map(|l| l.strip_prefix("OUT ")).unwrap();
+    (code, serde_json::from_str(raw).unwrap())
+}
+
+/// A first instance (in this process) that listens on `socket`, on
+/// `main.rs` and its document `main.rs.tiza`, which the second instance
+/// opens too. Returns the bytes of the document.
+fn first(dir: &Path, socket: std::path::PathBuf) -> (tiza_qa::Live, Vec<u8>) {
+    let src = dir.join("main.rs");
+    std::fs::write(&src, CODE).unwrap();
+    let mut doc = tiza_core::Document::from_code(CODE, "rs", Some(src.display().to_string()));
+    doc.reference_file("main.rs", None);
+    let tiza = dir.join("main.rs.tiza");
+    tiza_core::fs::save_document(&doc, &tiza).unwrap();
+    let doc = tiza_core::fs::load_document(&tiza).unwrap();
+    let live = tiza_qa::Live::open(doc, tiza.clone(), socket);
+    (live, std::fs::read(&tiza).unwrap())
+}
+
+/// A case of a second instance: its name, its flags, its environment, the
+/// socket it takes and the message it gives.
+type Origin = (
+    &'static str,
+    &'static [&'static str],
+    &'static [(&'static str, &'static str)],
+    &'static str,
+    &'static str,
+);
+
+#[test]
+fn a_second_instance_on_a_live_socket_exits_and_says_the_way_out() {
+    let session = "the session talk has a Tiza instance already ({path}): tiza close --session talk closes it, or open this one with --session OTHER (or --no-socket)";
+    let default = "the session default has a Tiza instance already ({path}): tiza close closes it, or open this one with --session NAME (or --no-socket)";
+    let flag = "s.sock has a Tiza instance already: tiza close --socket s.sock closes it, or open this one with --socket OTHER (or --no-socket)";
+    let cases: [Origin; 5] = [
+        (
+            "session",
+            &["--session", "talk"],
+            &[],
+            "run/tiza/talk.sock",
+            session,
+        ),
+        (
+            "env-session",
+            &[],
+            &[("TIZA_SESSION", "talk")],
+            "run/tiza/talk.sock",
+            session,
+        ),
+        ("default", &[], &[], "run/tiza/default.sock", default),
+        ("flag", &["--socket", "s.sock"], &[], "s.sock", flag),
+        (
+            "env-socket",
+            &[],
+            &[("TIZA_SOCKET", "s.sock")],
+            "s.sock",
+            flag,
+        ),
+    ];
+    for (name, args, env, socket, want) in cases {
+        let dir = scratch(&format!("busy-{name}"));
+        let path = dir.join(socket);
+        let (live, before) = first(&dir, path.clone());
+        let (code, out) = second(&dir, &format!("{name}.py"), args, env);
+        let want = want.replace("{path}", &path.display().to_string());
+        assert_eq!(code, 1, "{name}: {out:?}");
+        assert!(out.contains(&format!("tiza: {want}")), "{name}: {out:?}");
+        for (seq, what) in [
+            ("\x1b[?1049h", "the alternate screen"),
+            ("\x1b]11;?", "the colour query"),
+            ("\x1b[6n", "the probe"),
+        ] {
+            assert!(!out.contains(seq), "{name}: {what} went out: {out:?}");
+        }
+        assert_eq!(
+            std::fs::read(dir.join("main.rs.tiza")).unwrap(),
+            before,
+            "{name}: the second instance wrote the document"
+        );
+        // The first instance goes on.
+        assert_eq!(live.api_ok("ping", serde_json::json!({})), "pong", "{name}");
+    }
+}
+
+#[test]
+fn a_second_instance_with_a_theme_file_writes_no_document() {
+    // `--theme-file` changes the document as it opens, and autosave would
+    // save it: the second instance exits before.
+    let dir = scratch("busy-theme");
+    std::fs::write(dir.join("t.toml"), "bg = \"#1e1e2e\"\n").unwrap();
+    let (live, before) = first(&dir, dir.join("s.sock"));
+    let (code, out) = second(
+        &dir,
+        "theme.py",
+        &["--socket", "s.sock", "--theme-file", "t.toml"],
+        &[],
+    );
+    assert_eq!(code, 1, "{out:?}");
+    assert!(
+        out.contains("s.sock has a Tiza instance already"),
+        "{out:?}"
+    );
+    assert_eq!(std::fs::read(dir.join("main.rs.tiza")).unwrap(), before);
+    assert_eq!(live.api_ok("ping", serde_json::json!({})), "pong");
 }
 
 // ---------------------------------------------------------------- AC3

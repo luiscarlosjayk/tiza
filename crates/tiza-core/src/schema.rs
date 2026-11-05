@@ -50,6 +50,23 @@ pub struct StyleSetParams {
     pub style: MarkStyle,
 }
 
+/// Parameters of `app.quit`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct QuitParams {
+    /// `true`: close also when that loses work (changes that are not saved,
+    /// the marks of stale moves).
+    #[serde(default)]
+    pub force: bool,
+}
+
+/// Result of `app.quit`.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct QuitReply {
+    /// Always `true`: the instance closes after this reply.
+    pub closing: bool,
+}
+
 /// Parameters of `scene.clear`.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -242,6 +259,7 @@ pub fn api_schema() -> ApiSchema {
                 "follow.status" => (schema::<NoParams>(), schema::<FollowStatus>()),
                 "supervise.set" => (schema::<SuperviseParams>(), schema::<SuperviseStatus>()),
                 "supervise.status" => (schema::<NoParams>(), schema::<SuperviseStatus>()),
+                "app.quit" => (schema::<QuitParams>(), schema::<QuitReply>()),
                 _ => (Value::Object(Default::default()), Value::Object(Default::default())),
             };
             MethodSchema {

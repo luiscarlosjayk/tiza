@@ -18,19 +18,45 @@ pub fn runtime_dir() -> PathBuf {
 }
 
 pub fn resolve(explicit: Option<&Path>, session: Option<&str>) -> PathBuf {
+    resolve_with_origin(explicit, session).0
+}
+
+/// Where the socket path of [`resolve_with_origin`] came from: a message
+/// that names the way out (`--session NAME` or `--socket PATH`) follows it,
+/// because `--socket` and `$TIZA_SOCKET` win over a session.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Origin {
+    /// `--socket PATH`.
+    Flag,
+    /// `$TIZA_SOCKET`.
+    EnvSocket,
+    /// `--session NAME` or `$TIZA_SESSION`, as given.
+    Session(String),
+    /// No socket and no session: the session `default`.
+    Default,
+}
+
+/// [`resolve`], and where the path came from.
+pub fn resolve_with_origin(explicit: Option<&Path>, session: Option<&str>) -> (PathBuf, Origin) {
     if let Some(p) = explicit {
-        return p.to_path_buf();
+        return (p.to_path_buf(), Origin::Flag);
     }
     if let Some(p) = std::env::var_os(ENV_SOCKET)
         && !p.is_empty()
     {
-        return PathBuf::from(p);
+        return (PathBuf::from(p), Origin::EnvSocket);
     }
-    let session = session
+    let (session, origin) = match session
         .map(|s| s.to_string())
         .or_else(|| std::env::var(ENV_SESSION).ok().filter(|s| !s.is_empty()))
-        .unwrap_or_else(|| "default".into());
-    runtime_dir().join(format!("{}.sock", sanitize(&session)))
+    {
+        Some(s) => (s.clone(), Origin::Session(s)),
+        None => ("default".to_string(), Origin::Default),
+    };
+    (
+        runtime_dir().join(format!("{}.sock", sanitize(&session))),
+        origin,
+    )
 }
 
 fn sanitize(s: &str) -> String {

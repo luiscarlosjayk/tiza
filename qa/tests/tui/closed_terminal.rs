@@ -22,6 +22,14 @@
 //!   animation; the process is gone within the deadline and the CPU it used
 //!   is small; CHANGELOG (Fixed).
 //!
+//! - AC5 SIGTERM and SIGINT from outside end Tiza as Ctrl-C does (the
+//!   terminal comes back, the socket goes, Ctrl-C's save rules, what is
+//!   not saved on stderr), with exit code 143 and 130; also when one comes
+//!   before Tiza takes the screen (it never takes it). A second signal ends
+//!   the process at once. When the main thread is blocked in a write to a
+//!   terminal that nobody reads, a watchdog removes the socket and ends the
+//!   process 5 s after the signal. SIGHUP exits with 0.
+//!
 //! Corner cases: an MCP server (`tiza mcp`) connected to the instance gets
 //! a clean disconnect, not a hang.
 
@@ -93,6 +101,10 @@ enum Close {
     Piped,
     /// The terminal stays: `kill -HUP` to Tiza.
     KillHup,
+    /// The terminal stays: `kill -TERM` to Tiza.
+    KillTerm,
+    /// The terminal stays: `kill -INT` to Tiza.
+    KillInt,
 }
 
 struct Outcome {
@@ -105,13 +117,19 @@ impl Outcome {
     }
 
     /// What the terminal shows after Tiza left the alternate screen (only
-    /// with [`Close::KillHup`], where the terminal stays).
+    /// with [`Close::KillHup`] and the other kills, where the terminal
+    /// stays).
     fn tail(&self) -> &str {
         self.field("TAIL ").unwrap_or("")
     }
 
     /// The process exited on its own, soon, cleanly, without burning CPU.
     fn gone_cleanly(&self) {
+        self.gone_with(0);
+    }
+
+    /// The same, with the exit code `want`.
+    fn gone_with(&self, want: i32) {
         let gone = self
             .field("GONE ")
             .unwrap_or_else(|| panic!("tiza did not exit after the close:\n{}", self.out));
@@ -122,8 +140,8 @@ impl Outcome {
             v[2].parse().unwrap(),
         );
         assert_eq!(
-            code, 0,
-            "exit status (-6 is the abort, -1 SIGHUP):\n{}",
+            code, want,
+            "exit status (-6 is the abort, -1 SIGHUP, -15 SIGTERM):\n{}",
             self.out
         );
         assert!(
@@ -197,10 +215,11 @@ for step in steps if ok else []:
     elif op == "wait_file":
         until(lambda: os.path.exists(step[1]), step[1])
 
-if close == "kill":
-    # The terminal stays: SIGHUP to tiza alone.
+kills = {"kill": signal.SIGHUP, "term": signal.SIGTERM, "int": signal.SIGINT}
+if close in kills:
+    # The terminal stays: the signal to tiza alone.
     t0 = time.monotonic()
-    os.kill(s.p.pid, signal.SIGHUP)
+    os.kill(s.p.pid, kills[close])
 else:
     # The terminal goes away: the master side closes, nobody reads it any more.
     s._stop_reader()
@@ -235,6 +254,8 @@ else:
         Close::NoSighup => "tty",
         Close::Piped => "piped",
         Close::KillHup => "kill",
+        Close::KillTerm => "term",
+        Close::KillInt => "int",
     };
     let out = tiza_qa::pty_script(
         dir,
@@ -430,6 +451,187 @@ fn kill_hup_on_a_live_terminal_still_prints_there() {
     );
     assert!(!read(&dir.join("run/tiza/panics.log")).contains("went away"));
     assert!(!dir.join("s.sock").exists());
+}
+
+#[test]
+fn sigterm_and_sigint_end_tiza_as_ctrl_c_does() {
+    for (close, code, sig) in [(Close::KillTerm, 143, "term"), (Close::KillInt, 130, "int")] {
+        for present in [false, true] {
+            // `--no-save`: nothing written, and stderr says what is lost.
+            let name = format!("{sig}-{}", if present { "present" } else { "normal" });
+            let (dir, tiza) = project(&name);
+            let before = std::fs::read(&tiza).unwrap();
+            let mut args = vec!["--no-save", "main.rs"];
+            if present {
+                args.insert(0, "--present");
+            }
+            let r = run(
+                &dir,
+                &format!("{name}.py"),
+                &args,
+                close,
+                json!([note("hello"), ["status", "annotations", 1]]),
+            );
+            r.gone_with(code);
+            assert_ne!(
+                r.tail(),
+                "NOT_LEFT",
+                "{name}: the screen came back:\n{}",
+                r.out
+            );
+            assert!(
+                r.tail().contains(
+                    "tiza: quit without saving main.rs.tiza: 1 change not saved (note a1)"
+                ),
+                "{name}:\n{}",
+                r.out
+            );
+            assert_eq!(std::fs::read(&tiza).unwrap(), before, "{name}");
+            assert!(!dir.join("s.sock").exists(), "{name}: the socket stays");
+        }
+        // Autosave on: the change is on disk.
+        let (dir, tiza) = project(&format!("{sig}-autosave"));
+        let r = run(
+            &dir,
+            &format!("{sig}-autosave.py"),
+            &["main.rs"],
+            close,
+            json!([note("hello"), ["status", "annotations", 1]]),
+        );
+        r.gone_with(code);
+        assert!(read(&tiza).contains("hello"), "{}", read(&tiza));
+        assert!(!dir.join("s.sock").exists());
+    }
+}
+
+/// Runs `tiza --theme auto --socket s.sock main.rs` on a pty with
+/// `TIZA_TEST_HOOK=start:hold`: Tiza asks the terminal for its colours
+/// (nobody answers), then holds before it takes the screen. The test sends
+/// SIGTERM there and lets it go on.
+#[test]
+fn a_signal_before_the_screen_exits_without_taking_it() {
+    let (dir, _) = project("term-start");
+    let body = r##"
+binary, cwd = sys.argv[1], sys.argv[2]
+os.chdir(cwd)
+run = os.path.join(cwd, "run")
+os.makedirs(os.path.join(run, "tiza"), mode=0o700)
+os.chmod(run, 0o700)
+os.chmod(os.path.join(run, "tiza"), 0o700)
+hold = os.path.join(run, "tiza", "start-hold")
+open(hold, "w").close()
+env = dict(os.environ, XDG_RUNTIME_DIR=run, TERM="xterm-256color", TIZA_TEST_HOOK="start:hold")
+for k in ("TIZA_SOCKET", "TIZA_SESSION", "TIZA_NO_OSC"):
+    env.pop(k, None)
+s = Pty([binary, "--theme", "auto", "--socket", "s.sock", "--no-save", "main.rs"], 30, 100, env=env, ctty=True)
+if s.wait_for(lambda out: b"\x1b]11;?" in out and os.path.exists("s.sock"), 10, "the colour query"):
+    os.kill(s.p.pid, signal.SIGTERM)
+os.remove(hold)
+print("EXIT", s.finish(10))
+print("SCREEN", b"\x1b[?1049h" in s.out)
+print("SOCKET", os.path.exists("s.sock"))
+"##;
+    let out = tiza_qa::pty_script(
+        &dir,
+        "term-start.py",
+        body,
+        &[tiza_qa::bin().to_str().unwrap(), dir.to_str().unwrap()],
+    );
+    assert!(out.contains("EXIT 143"), "{out}");
+    assert!(out.contains("SCREEN False"), "it took the screen:\n{out}");
+    assert!(out.contains("SOCKET False"), "{out}");
+}
+
+/// Runs `tiza --socket s.sock main.rs` on a 500×200 pty whose master side
+/// nobody reads after `?1049h`: the first frame is larger than the buffer
+/// of the pty, so its write blocks. The test sends `signals` (one after the
+/// other) and waits 10 s at most for the exit. Prints `GONE elapsed code`
+/// and `SOCKET exists`.
+fn blocked(dir: &Path, name: &str, signals: &[&str]) -> String {
+    let body = r##"
+import json
+binary, cwd, sigs = sys.argv[1], sys.argv[2], json.loads(sys.argv[3])
+os.chdir(cwd)
+env = dict(os.environ, XDG_RUNTIME_DIR=os.path.join(cwd, "run"), TERM="xterm-256color", TIZA_NO_OSC="1")
+for k in ("TIZA_SOCKET", "TIZA_SESSION", "TIZA_TEST_HOOK"):
+    env.pop(k, None)
+master, slave = pty.openpty()
+fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 200, 500, 0, 0))
+p = subprocess.Popen([binary, "--socket", "s.sock", "--no-save", "main.rs"], stdin=slave, stdout=slave, stderr=slave, env=env, start_new_session=True)
+os.close(slave)
+seen = b""
+end = time.monotonic() + 10
+# Read only until the alternate screen: the frame after it stays unread.
+while b"\x1b[?1049h" not in seen and time.monotonic() < end:
+    r, _, _ = select.select([master], [], [], 0.05)
+    if r:
+        try:
+            seen += os.read(master, 1)
+        except OSError:
+            break
+if b"\x1b[?1049h" not in seen or not os.path.exists("s.sock"):
+    print("NOT_STARTED", repr(seen[-200:]), flush=True)
+t0 = time.monotonic()
+for name in sigs:
+    os.kill(p.pid, {"term": signal.SIGTERM, "int": signal.SIGINT}[name])
+try:
+    code = p.wait(timeout=10)
+    print("GONE %.3f %d" % (time.monotonic() - t0, code), flush=True)
+except subprocess.TimeoutExpired:
+    print("STILL_ALIVE", flush=True)
+    os.killpg(p.pid, signal.SIGKILL)
+    p.wait(5)
+print("SOCKET", os.path.exists("s.sock"), flush=True)
+os.close(master)
+"##;
+    tiza_qa::pty_script(
+        dir,
+        name,
+        body,
+        &[
+            tiza_qa::bin().to_str().unwrap(),
+            dir.to_str().unwrap(),
+            &json!(signals).to_string(),
+        ],
+    )
+}
+
+fn gone(out: &str) -> (f64, i32) {
+    let g = out
+        .lines()
+        .find_map(|l| l.strip_prefix("GONE "))
+        .unwrap_or_else(|| panic!("tiza did not exit:\n{out}"));
+    let (t, c) = g.split_once(' ').unwrap();
+    (t.parse().unwrap(), c.parse().unwrap())
+}
+
+#[test]
+fn a_watchdog_ends_tiza_when_a_write_blocks_after_sigterm() {
+    let (dir, _) = project("term-blocked");
+    let out = blocked(&dir, "blocked.py", &["term"]);
+    assert!(!out.contains("NOT_STARTED"), "{out}");
+    let (elapsed, code) = gone(&out);
+    assert_eq!(code, 143, "{out}");
+    assert!(out.contains("SOCKET False"), "the socket stays:\n{out}");
+    // The watchdog waits `SIGNAL_EXIT_WAIT` first.
+    assert!(
+        elapsed >= tiza_tui::signals::SIGNAL_EXIT_WAIT.as_secs_f64() - 0.1,
+        "gone after {elapsed:.2} s: the write did not block\n{out}"
+    );
+}
+
+#[test]
+fn a_second_signal_ends_tiza_at_once() {
+    let (dir, _) = project("term-twice");
+    let out = blocked(&dir, "twice.py", &["term", "int"]);
+    assert!(!out.contains("NOT_STARTED"), "{out}");
+    let (elapsed, code) = gone(&out);
+    // The two can come in either order: 143 or 130, never the watchdog.
+    assert!(code == 143 || code == 130, "{out}");
+    assert!(
+        elapsed < tiza_tui::signals::SIGNAL_EXIT_WAIT.as_secs_f64() - 1.0,
+        "gone after {elapsed:.2} s: the watchdog ended it, not the second signal\n{out}"
+    );
 }
 
 #[test]

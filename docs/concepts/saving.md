@@ -71,8 +71,12 @@ A quit command does not save more than the current mode saves. With autosave on 
 | `:wq` | Saves, then quits. | Saves, then quits. | Tries the save again, and quits only when it works. |
 | `:q!` | Quits. | Quits without saving and prints what it did not save. | Quits without saving and prints what it did not save. |
 | `Ctrl-C` | Quits. | Quits without saving and prints what it did not save. | With autosave on, tries the save one more time, then quits. |
+| `tiza close` | Quits. | Refuses while changes are not saved. | Refuses while changes are not saved. |
+| `tiza close --force` | Quits. | Quits without saving and prints what it did not save. | Quits without saving and prints what it did not save. |
+| `kill` (SIGTERM), `kill -INT` (SIGINT) | Quits. | Quits without saving and prints what it did not save. | With autosave on, tries the save one more time, then quits. |
 
-- A move is stale when it does not match the code after a reload or a paste. While a move is stale, `:q` and `:wq` refuse in every mode.
+- A move is stale when it does not match the code after a reload or a paste. While a move is stale, `:q`, `:wq` and `tiza close` refuse in every mode.
+- `tiza close` closes the instance from another terminal. See [Close an instance](../reference/cli.md#close-an-instance).
 - When a panel, the command line or a selection is open, `Ctrl-C` closes it and does not quit. `Ctrl-C` also cancels an arrow that you draw.
 - `:wq`, `Ctrl-C` and a closed terminal try a failed save again. `Ctrl-C` and a closed terminal do this only with autosave on. `:q!` never tries.
 - When the save fails again, Tiza prints `tiza: could not save FILE: ERROR` before the line of what it did not save.

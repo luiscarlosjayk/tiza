@@ -8,6 +8,7 @@ mod bar_hint_at_80;
 mod bar_keeps_messages;
 mod bar_paths;
 mod bar_warnings;
+mod close_instance;
 mod closed_terminal;
 mod color_query_after_resize;
 mod command_typos;

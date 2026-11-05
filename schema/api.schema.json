@@ -7292,6 +7292,39 @@
         "title": "SuperviseStatus",
         "type": "object"
       }
+    },
+    {
+      "description": "Closes the instance, as `:q` does (`tiza close`). It refuses with `unsaved_changes` when closing loses work (changes that are not saved, or the marks of stale moves), unless `force` is true. It never waits for review in supervised mode",
+      "method": "app.quit",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Parameters of `app.quit`.",
+        "properties": {
+          "force": {
+            "default": false,
+            "description": "`true`: close also when that loses work (changes that are not saved,\nthe marks of stale moves).",
+            "type": "boolean"
+          }
+        },
+        "title": "QuitParams",
+        "type": "object"
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of `app.quit`.",
+        "properties": {
+          "closing": {
+            "description": "Always `true`: the instance closes after this reply.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "closing"
+        ],
+        "title": "QuitReply",
+        "type": "object"
+      }
     }
   ],
   "protocol": 1,

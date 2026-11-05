@@ -16,15 +16,11 @@ Tiza selects the socket in this order:
 - An empty variable is the same as a variable that is not set.
 - An empty `--session` is not the same as no session. It gives the socket `.sock`.
 - In a session name, each character that is not an ASCII letter, a digit, `-` or `_` becomes `_`.
-- Every command that uses the socket takes `--socket` and `--session`: the TUI, `tiza mcp`, `tiza api`, `tiza scene`, `tiza render`, `tiza next`, `tiza prev` and `tiza goto`.
-- To run several instances, give each one its own session.
+- Every command that uses the socket takes `--socket` and `--session`: the TUI, `tiza mcp`, `tiza api`, `tiza scene`, `tiza render`, `tiza next`, `tiza prev`, `tiza goto` and `tiza close`.
+- A session has one instance. To run several instances, give each one its own session.
+- When an instance listens on the socket already, a second instance does not start. It exits with code 1, and its message tells how to close the first one (`tiza close`) or to use another session. See [Messages](cli.md#messages).
 
-When the socket cannot start, the instance starts without a socket. The status bar shows one of these messages:
-
-| Message | When |
-|---|---|
-| `local API disabled: an instance is already listening on PATH (use --session for another one)` | The socket of the session has an instance already. |
-| `local API disabled:` | The socket cannot start for another reason. |
+When the socket cannot start for another reason, the instance starts without a socket. The status bar shows `local API disabled: ` and the reason.
 
 - After `local API disabled: ` comes a message of Tiza or an error of the system.
 - The messages of Tiza are in [Messages](../concepts/privacy-and-network.md#messages).
@@ -68,6 +64,7 @@ printf '%s\n' '{"id":1,"method":"annotation.add","params":{"type":"note","line":
 - A result can get new fields in a new version. Ignore a field that you do not know.
 - `status` and `api.schema` give `protocol`, the version of the protocol. It is `1`.
 - Each command that sends a request waits 75 s for a response. This includes `tiza mcp`, `tiza next`, `tiza prev`, `tiza goto` and `tiza render` without a file.
+- `tiza close` gives the instance 10 s to answer, and then 10 s more to exit.
 - A request in supervised mode waits at most 60 s.
 
 ## Methods
@@ -82,6 +79,7 @@ printf '%s\n' '{"id":1,"method":"annotation.add","params":{"type":"note","line":
 | `status` | None | Gives the state of the instance. | `status`, `list_annotations`, `export_image` |
 | `api.methods` | None | Gives the list of the methods with a description of each one. | None |
 | `api.schema` | None | Gives the JSON Schema of each method and of the request and response lines. | None |
+| `app.quit` | `force` (optional) | Closes the instance, as `:q` does. See [`app.quit`](#appquit). | None |
 
 ### Read
 
@@ -367,6 +365,21 @@ A character (a grapheme) can be more than one code point, for example `d` with a
 - In follow mode, a reload or a relink changes the document. Thus it changes `revision`.
 - Compare `revision` to find a change. Do not count on steps of 1.
 
+### `app.quit`
+
+`app.quit` closes the instance, as `:q` does. `tiza close` sends it.
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `force` | boolean | `false` | `true` closes the instance also when that loses work. |
+
+- The result is `{"closing": true}`. The instance sends it, and then exits. The requests after it are not applied: they get `unavailable`.
+- Without `force`, the instance refuses to close when that loses work, with `unsaved_changes`. Work is lost when there are changes with autosave off or `--no-save`, changes that Tiza could not save, or stale moves (their marks are not saved).
+- When nothing is lost, it closes in each mode: read-only, `--no-save` and autosave off.
+- It does not wait for review in supervised mode. Closing does not change the document, and `tiza close` is for a terminal that nobody can see.
+- No MCP tool sends it. An agent does not close the instance of a presenter.
+- No parameters, or `null`, is the same as `{}`. A key that is not `force` gets `invalid_argument`.
+
 ## Error codes
 
 | Code | When |
@@ -381,6 +394,7 @@ A character (a grapheme) can be more than one code point, for example `d` with a
 | `busy` | A newer `check` at another width replaced this `check` before it ran. |
 | `rejected` | In supervised mode, the presenter did not accept the change. |
 | `unavailable` | The instance stops, does not answer, or cannot start a `check`. |
+| `unsaved_changes` | An `app.quit` without `force` would lose work. |
 | `internal` | A bug in Tiza stopped the request. |
 
 - After `busy`, send the `check` again.
@@ -425,6 +439,7 @@ These commands use the socket of the live instance.
 | `tiza scene patch JSON` | Sends a `scene.patch` and prints the result. |
 | `tiza next`, `tiza prev` | Shows the next or the previous step, and prints the label of the step. |
 | `tiza goto ID` | Goes to a named step or a step number, and prints the label of the step. |
+| `tiza close [--force]` | Sends `app.quit` and waits until the instance exits. See [Close an instance](cli.md#close-an-instance). |
 | `tiza render --out PATH` | Without a file, exports what the live instance shows. |
 | `tiza mcp` | Starts the MCP server. |
 
@@ -518,7 +533,7 @@ These methods wait:
 - Theme and follow mode: `theme.set`, `follow.set`.
 - Supervised mode: `supervise.set` with `"enabled": false`. Its summary in the review is `turn supervised mode off`.
 
-- The other methods never wait. They are the methods that read, `supervise.set` with `"enabled": true` and `supervise.status`.
+- The other methods never wait. They are the methods that read, `supervise.set` with `"enabled": true`, `supervise.status` and `app.quit`.
 - An accepted request gives its usual result. A rejected request fails with `rejected`.
 - When supervised mode goes off, Tiza rejects each change that waits. A waiting `supervise.set` with `"enabled": false` gets its usual result, not `rejected`.
 - Some requests get their error at once and do not wait:

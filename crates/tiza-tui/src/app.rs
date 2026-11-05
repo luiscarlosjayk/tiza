@@ -2627,7 +2627,11 @@ impl App {
     /// written, or ones made with autosave off (`force` ignores both), or
     /// stale moves (their marks are not saved).
     pub fn request_quit(&mut self, force: bool) {
-        if !force && self.dirty {
+        if force || !self.would_lose_work() {
+            self.quit = true;
+            return;
+        }
+        if self.dirty {
             if self.save_error.is_some() {
                 self.error(format!(
                     "unsaved (read-only): :q! quits without saving, :saveas PATH saves elsewhere ({})",
@@ -2650,13 +2654,20 @@ impl App {
             }
         }
         // The marks of stale moves live only here: closing loses them.
-        if !force && let Some(msg) = tiza_core::stale::on_close(&self.doc) {
+        if let Some(msg) = tiza_core::stale::on_close(&self.doc) {
             // As the notice of stale moves: the bar gives it the room.
             self.error(msg.clone());
             self.stale_message = Some(msg);
-            return;
         }
-        self.quit = true;
+    }
+
+    /// Whether closing now loses work: changes that could not be written
+    /// or that were made with autosave off, or the marks of stale moves
+    /// (they are not saved). `:q` and `app.quit` refuse then, unless they
+    /// are forced.
+    pub fn would_lose_work(&self) -> bool {
+        (self.dirty && (self.save_error.is_some() || !self.autosave))
+            || tiza_core::stale::on_close(&self.doc).is_some()
     }
 
     pub fn add_annotation(
@@ -8312,8 +8323,8 @@ impl App {
     /// Entry point of the event loop: answers now, or (supervised mode and a
     /// mutating method) parks the request as a proposal until the presenter
     /// decides. Read-only methods, `supervise.status`, a `supervise.set` that
-    /// turns supervised mode on and a method that is not in `METHODS` are
-    /// never parked.
+    /// turns supervised mode on, `app.quit` and a method that is not in
+    /// `METHODS` are never parked.
     pub fn handle_ipc(&mut self, req: Request, reply: std::sync::mpsc::Sender<Response>) {
         self.handle_ipc_at(req, reply, std::time::Instant::now());
     }
@@ -8335,8 +8346,11 @@ impl App {
         // review.
         // `supervise.set` that turns supervised mode off waits too: an
         // agent must not end the review on its own.
+        // `app.quit` closes the instance, it does not change the document:
+        // `tiza close` is for a lost terminal, where nobody can accept it.
         let parked = self.supervised
             && !READ_ONLY_METHODS.contains(&req.method.as_str())
+            && req.method != "app.quit"
             && (!req.method.starts_with("supervise.") || turns_supervision_off(&req))
             && METHODS.iter().any(|m| m.0 == req.method);
         // A `scene.clear` or a `supervise.set` with parameters that it
@@ -8951,6 +8965,15 @@ impl App {
                 st
             }
             "supervise.status" => self.supervise_status(),
+            "app.quit" => {
+                let p = quit_params(&params)?;
+                if !p.force && self.would_lose_work() {
+                    return Err(Error::UnsavedChanges);
+                }
+                // The event loop ends in this turn, once the reply is out.
+                self.quit = true;
+                json!({"closing": true})
+            }
             "scene.put" => {
                 // The schema as when a file opens, before the document
                 // changes: a newer one would be saved as it is, in a file
@@ -10029,6 +10052,18 @@ fn turns_supervision_off(req: &Request) -> bool {
 
 /// The parameters of `supervise.set`: a JSON object with `enabled`. serde
 /// would read an array (`[false]`) as the struct, past the review.
+/// The parameters of `app.quit`: no parameters (`null`) is `{}`.
+fn quit_params(params: &Value) -> Result<tiza_core::schema::QuitParams, Error> {
+    match params {
+        Value::Null => Ok(Default::default()),
+        Value::Object(_) => parse(params.clone()),
+        _ => Err(Error::Invalid(format!(
+            "{}send a JSON object, such as {{\"force\": true}}",
+            tiza_core::error::INVALID_PARAMETERS
+        ))),
+    }
+}
+
 fn supervise_params(params: &Value) -> Result<tiza_core::schema::SuperviseParams, Error> {
     if !params.is_object() {
         return Err(Error::Invalid(format!(

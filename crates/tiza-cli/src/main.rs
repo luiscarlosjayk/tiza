@@ -57,7 +57,7 @@ struct Cli {
     /// Path of the local API socket (defaults to $TIZA_SOCKET or the session)
     #[arg(long, global = true)]
     socket: Option<PathBuf>,
-    /// Session name: allows several instances (defaults to "default"). --socket and $TIZA_SOCKET win over it
+    /// Session name: one instance for each session (defaults to "default"). --socket and $TIZA_SOCKET win over it
     #[arg(long, global = true)]
     session: Option<String>,
     /// Do not expose the local API
@@ -317,6 +317,12 @@ enum Cmd {
         /// The `id` of a named step, or a step number
         id: String,
     },
+    /// Close the live instance of the session, as `:q` does, and wait until it exits
+    Close {
+        /// Close it also when that loses work (changes that are not saved)
+        #[arg(long)]
+        force: bool,
+    },
     /// Call a raw local API method: `tiza api status`, `tiza api annotation.add '{...}'`
     Api {
         method: String,
@@ -394,10 +400,12 @@ fn main() {
 
 fn real_main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    let socket_path = socket::resolve(cli.socket.as_deref(), cli.session.as_deref());
+    let (socket_path, origin) =
+        socket::resolve_with_origin(cli.socket.as_deref(), cli.session.as_deref());
 
     match cli.cmd {
-        None => run_tui(cli, socket_path),
+        None => run_tui(cli, socket_path, &origin),
+        Some(Cmd::Close { force }) => close(&socket_path, &origin, force),
         Some(Cmd::Render {
             file,
             out,
@@ -2025,7 +2033,84 @@ fn override_language(doc: &mut tiza_core::Document, lang: Option<&str>) {
     }
 }
 
-fn run_tui(cli: Cli, socket_path: PathBuf) -> anyhow::Result<()> {
+/// A word for a command line: `name` as it is, or in single quotes when
+/// the shell would read it in another way.
+fn shell_word(name: &str) -> String {
+    let plain = !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '/' | ':' | '@'));
+    if plain {
+        name.to_string()
+    } else {
+        format!("'{}'", name.replace('\'', "'\\''"))
+    }
+}
+
+/// The error of a second instance on a socket where one listens: the way
+/// out follows where the path came from.
+fn busy_message(path: &Path, origin: &socket::Origin) -> String {
+    let path = path.display();
+    match origin {
+        socket::Origin::Session(name) => {
+            let name = shell_word(name);
+            format!(
+                "the session {name} has a Tiza instance already ({path}): tiza close --session {name} closes it, or open this one with --session OTHER (or --no-socket)"
+            )
+        }
+        socket::Origin::Default => format!(
+            "the session default has a Tiza instance already ({path}): tiza close closes it, or open this one with --session NAME (or --no-socket)"
+        ),
+        socket::Origin::Flag | socket::Origin::EnvSocket => {
+            let word = shell_word(&path.to_string());
+            format!(
+                "{path} has a Tiza instance already: tiza close --socket {word} closes it, or open this one with --socket OTHER (or --no-socket)"
+            )
+        }
+    }
+}
+
+/// `tiza close`: sends `app.quit` and waits until the instance exits.
+fn close(path: &Path, origin: &socket::Origin, force: bool) -> anyhow::Result<()> {
+    use tiza_tui::ipc::{CLOSE_ANSWER_WAIT, Closed};
+    let outcome = tiza_tui::ipc::close(path, force).map_err(|e| {
+        anyhow::Error::new(e).context(format!(
+            "no Tiza instance is listening on {} (open `tiza <file>` or pass --socket/--session)",
+            path.display()
+        ))
+    })?;
+    match outcome {
+        Closed::Exited => {
+            match origin {
+                socket::Origin::Session(name) => {
+                    println!(
+                        "closed the Tiza instance of the session {}",
+                        shell_word(name)
+                    )
+                }
+                socket::Origin::Default => {
+                    println!("closed the Tiza instance of the session default")
+                }
+                socket::Origin::Flag | socket::Origin::EnvSocket => {
+                    println!("closed the Tiza instance on {}", path.display())
+                }
+            }
+            Ok(())
+        }
+        Closed::Refused(resp) => match resp.error {
+            Some(e) if e.code == "unsaved_changes" => bail!("{}", e.message),
+            Some(e) => bail!("{} ({})", e.message, e.code),
+            None => bail!("the Tiza instance on {} did not close", path.display()),
+        },
+        Closed::Late => bail!(
+            "the Tiza instance on {} did not close in {} s: look at its terminal, or end it with kill",
+            path.display(),
+            CLOSE_ANSWER_WAIT.as_secs()
+        ),
+    }
+}
+
+fn run_tui(cli: Cli, socket_path: PathBuf, origin: &socket::Origin) -> anyhow::Result<()> {
     let opened = match cli.file.as_deref() {
         Some(f) if f != "-" => fs::open(f).with_context(|| format!("could not open {f}"))?,
         explicit => {
@@ -2080,13 +2165,26 @@ fn run_tui(cli: Cli, socket_path: PathBuf) -> anyhow::Result<()> {
     if !std::io::stdout().is_terminal() {
         bail!("the TUI needs a terminal on stdout; use `tiza render` for text output");
     }
+    // The signals first, so that one never leaves the socket behind. Then
+    // the socket, before the TUI writes anything to the terminal or to a
+    // file: a second instance on a live socket exits here.
+    tiza_tui::signals::install();
+    let (ipc, ipc_error) = if cli.no_socket {
+        (None, None)
+    } else {
+        match tiza_tui::ipc::start(&socket_path) {
+            Ok(server) => (Some(server), None),
+            Err(e) if tiza_tui::ipc::is_busy(&e) => bail!("{}", busy_message(&socket_path, origin)),
+            Err(e) => (None, Some(e.to_string())),
+        }
+    };
     // The effects and the moves this version does not know, by name, where
     // they stay after the TUI ends (the bar says it in short; presentation
     // mode has no bar).
     if let Some(line) = fs::not_known_notice(&opened.document) {
         eprintln!("tiza: {}", tiza_core::printable::printable_line(&line));
     }
-    tiza_tui::run(
+    let exit = tiza_tui::run(
         opened,
         tiza_tui::RunOptions {
             step: cli.step,
@@ -2098,11 +2196,8 @@ fn run_tui(cli: Cli, socket_path: PathBuf) -> anyhow::Result<()> {
             personal_styles: config.styles,
             config_warnings: bar_warnings,
             present: cli.present,
-            socket: if cli.no_socket {
-                None
-            } else {
-                Some(socket_path)
-            },
+            ipc,
+            ipc_error,
             focus,
             padding,
             image_exporter: Some(Box::new(image_exporter)),
@@ -2112,5 +2207,10 @@ fn run_tui(cli: Cli, socket_path: PathBuf) -> anyhow::Result<()> {
             no_save: cli.no_save,
         },
     )?;
+    // The terminal is back, the exit save is done and the socket is gone:
+    // as a process that the signal ends.
+    if let tiza_tui::Exit::Signal(n) = exit {
+        std::process::exit(128 + n);
+    }
     Ok(())
 }

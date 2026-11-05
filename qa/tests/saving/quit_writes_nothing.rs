@@ -72,7 +72,14 @@ args = json.loads(sys.argv[3])
 keys = json.loads(sys.argv[4])
 ready = sys.argv[5]
 os.chdir(cwd)
-s = Pty([binary, *args, "main.rs"], 30, 120)
+# A socket of its own: the session `default` of the machine may have an
+# instance, and a second one there does not start.
+env = dict(os.environ)
+for k in ("TIZA_SOCKET", "TIZA_SESSION"):
+    env.pop(k, None)
+if "--socket" not in args:
+    args = ["--socket", "s.sock", *args]
+s = Pty([binary, *args, "main.rs"], 30, 120, env=env)
 if s.wait_for(lambda out: b"\x1b[?1049h" in out, 10, "first frame"):
     # The settles here are pauses between keys, as a person types, not
     # checks: what the test checks waits for a condition, or for the child

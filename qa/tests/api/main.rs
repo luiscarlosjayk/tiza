@@ -14,6 +14,7 @@ mod personal_defaults;
 mod personal_styles;
 mod ping;
 mod position_keys;
+mod quit_method;
 mod range_markers;
 mod render_text_take;
 mod render_text_width;

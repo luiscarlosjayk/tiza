@@ -85,7 +85,7 @@ When a step command succeeds, it prints the step that it reached, for example `s
 |---|---|
 | `the file has N lines: range A-B clamped to C-D` | The range of the 40-line task goes past the end of the file. |
 | `opened the existing PATH` | The lines of the 40-line task have a `FILE.A-B.tiza` document from an earlier session, and Tiza opened it. |
-| `local API disabled: an instance is already listening on PATH (use --session for another one)` | A second Tiza starts in a session that already has an instance. |
+| `tiza: the session NAME has a Tiza instance already (PATH): tiza close --session NAME closes it, or open this one with --session OTHER (or --no-socket)` | A second Tiza starts in a session that already has an instance. It does not start. |
 | `tiza: empty stdin` | The standard input of Tiza is empty or has only blank characters. |
 | `tiza: give a file (tiza src/main.rs:12-48) or pipe code through stdin (pbpaste \| tiza --lang rs)` | Tiza gets no file, and its standard input is a terminal. |
 | `` tiza: no Tiza instance is listening on PATH (open `tiza <file>` or pass --socket/--session) `` | A step command finds no instance in the session. |
@@ -115,7 +115,7 @@ After you edit `tasks.json`, select the task from the list. Do not select it fro
 
 ### Two runs of the same task
 
-In Zed 1.25.3, `"allow_concurrent_runs": false` did not stop a second run of the same task. You get two Tiza tabs. The second Tiza shows `local API disabled: an instance is already listening on PATH (use --session for another one)`. Agents and the MCP server talk to the first Tiza. Both instances autosave the same `FILE.tiza` at each change, so each one writes over the other. Close the second one, or start it with `--session NAME`.
+In Zed 1.25.3, `"allow_concurrent_runs": false` did not stop a second run of the same task. The second run does not start Tiza: its tab shows `tiza: the session NAME has a Tiza instance already (PATH): …` and the task ends with code 1. The first Tiza goes on. To open the file again, close the first Tiza with `:q` or `tiza close --session NAME`, then run the task again.
 
 ### Where Tiza saves
 

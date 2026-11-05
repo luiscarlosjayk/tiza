@@ -15,12 +15,11 @@ pub mod list;
 pub mod panel;
 pub mod reanchor;
 pub mod runtime;
+pub mod signals;
 pub mod ui;
 
 use std::io;
 use std::path::PathBuf;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use crossterm::event::{
@@ -52,8 +51,11 @@ pub struct RunOptions {
     /// one goes to the bar.
     pub config_warnings: Vec<String>,
     pub present: bool,
-    /// `None` = no local API server.
-    pub socket: Option<PathBuf>,
+    /// The local API server, which the binary started before it opened the
+    /// document (`None`: no local API).
+    pub ipc: Option<ipc::IpcServer>,
+    /// Why the binary could not start the local API server: on the bar.
+    pub ipc_error: Option<String>,
     pub focus: Option<(u32, u32)>,
     /// `--padding`: shown this session, never saved into the document.
     pub padding: Option<(u16, u16)>,
@@ -71,8 +73,17 @@ pub struct RunOptions {
     pub no_save: bool,
 }
 
+/// How the TUI ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Exit {
+    /// A quit, or the terminal went away.
+    Normal,
+    /// SIGTERM or SIGINT: the binary exits with 128 + this number.
+    Signal(i32),
+}
+
 /// Starts the TUI with an opened document. Returns when it closes.
-pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
+pub fn run(opened: Opened, opts: RunOptions) -> io::Result<Exit> {
     let mut app = App::new(opened.document, opened.save_path);
     app.config_defaults = opts.config_defaults;
     app.personal_styles = opts.personal_styles;
@@ -192,23 +203,38 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
         }
     }
 
-    // Before the socket exists, so a SIGHUP never leaves it behind.
-    let hangup = HangUp::install();
-    let ipc = match &opts.socket {
-        Some(path) => match ipc::start(path) {
-            Ok(s) => {
-                app.socket_path = Some(s.path.clone());
-                Some(s)
-            }
-            Err(e) => {
-                app.error(format!("local API disabled: {e}"));
-                None
-            }
-        },
-        None => None,
-    };
+    // The binary installed them before it started the socket, so that a
+    // signal never leaves the socket behind: this call only reads them.
+    let signals = signals::install();
+    let ipc = opts.ipc;
+    if let Some(s) = &ipc {
+        app.socket_path = Some(s.path.clone());
+    }
+    if let Some(e) = opts.ipc_error {
+        app.error(format!("local API disabled: {e}"));
+    }
 
     install_crash_hook(&app.save_path);
+    // Test hook, only with the `test-hooks` feature: Tiza waits here, after
+    // the colour query and before it takes the screen, while the file
+    // `start-hold` of the runtime folder is there (10 s at most), so that a
+    // test sends a signal at this point.
+    #[cfg(feature = "test-hooks")]
+    hold_while(
+        &tiza_core::socket::runtime_dir().join("start-hold"),
+        "start:hold",
+        Duration::from_secs(10),
+    );
+    // A SIGTERM or SIGINT while the document loaded or the colour query
+    // waited: Tiza exits before it takes the screen.
+    if let Some(n) = signals.ended() {
+        let _ = crossterm::terminal::disable_raw_mode();
+        if let Some(s) = app.unsaved_summary() {
+            eprintln!("tiza: {}", tiza_core::printable::printable_text(&s));
+        }
+        drop(ipc);
+        return Ok(Exit::Signal(n));
+    }
     // No terminal at all (a service, `setsid` with no tty): a plain error,
     // not a crash; nothing was drawn, so only the raw mode may need undoing.
     let mut terminal = match ratatui::try_init() {
@@ -244,6 +270,9 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     if app.mouse {
         let _ = execute!(io::stdout(), EnableMouseCapture);
     }
+    // The reply of an `app.quit` that ended the loop: Tiza exits only when
+    // its client has it.
+    let mut quit_written = None;
     let result = if opts.smoke {
         // One frame, then one poll of the input source: with stdin piped the
         // events come from /dev/tty (Tiza's own open of it on fd 0, read by
@@ -255,10 +284,17 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     } else if app.quit {
         Ok(End::Quit)
     } else {
-        event_loop(&mut terminal, &mut app, ipc.as_ref(), &hangup)
+        event_loop(
+            &mut terminal,
+            &mut app,
+            ipc.as_ref(),
+            signals,
+            &mut quit_written,
+        )
     };
-    // The terminal went away: Ctrl-C's rules for what is saved.
-    if matches!(result, Ok(End::HangUp)) {
+    // The terminal went away, or a signal ended Tiza: Ctrl-C's rules for
+    // what is saved.
+    if matches!(result, Ok(End::HangUp | End::Signal(_))) {
         app.retry_save_on_exit = true;
     }
     let gone = silence_dead_stderr();
@@ -294,16 +330,38 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     if let Some(s) = app.unsaved_summary() {
         say_on_exit(gone, &s);
     }
+    if let Some(written) = quit_written {
+        let _ = written.recv_timeout(QUIT_REPLY_WAIT);
+    }
+    // Test hook, only with the `test-hooks` feature: the instance waits,
+    // with its socket, while the file `exit-hold` of the runtime folder is
+    // there (20 s at most: longer than `tiza close` waits), so that a test
+    // sees that `tiza close` waits for the exit.
+    #[cfg(feature = "test-hooks")]
+    hold_while(
+        &tiza_core::socket::runtime_dir().join("exit-hold"),
+        "exit:hold",
+        Duration::from_secs(20),
+    );
     drop(ipc);
-    result.map(|_| ())
+    result.map(|end| match end {
+        End::Signal(n) => Exit::Signal(n),
+        End::Quit | End::HangUp => Exit::Normal,
+    })
 }
+
+/// How long Tiza waits, after an `app.quit` that ended the loop, for the
+/// connection to write the reply.
+const QUIT_REPLY_WAIT: Duration = Duration::from_secs(1);
 
 /// How the event loop ended.
 enum End {
-    /// `:q`, `:q!`, Ctrl-C…
+    /// `:q`, `:q!`, Ctrl-C, `app.quit`…
     Quit,
     /// The terminal went away.
     HangUp,
+    /// SIGTERM or SIGINT.
+    Signal(i32),
 }
 
 /// One line for the author once the terminal is restored: on stderr, or in
@@ -373,39 +431,21 @@ fn silence_dead_stderr() -> bool {
     true
 }
 
-/// The terminal going away: a pane or a tab closed, an SSH session
-/// dropped. SIGHUP is caught as a flag, so the loop ends in order (the
-/// socket removed, Ctrl-C's save rules) instead of the process dying where
-/// it stands — also when it came in ignored (`nohup`): without its terminal
-/// Tiza has nothing left to do. Where no SIGHUP comes (a pty that is not the
-/// controlling terminal) the tty itself says so.
-struct HangUp(Arc<AtomicBool>);
-
-impl HangUp {
-    fn install() -> Self {
-        let flag = Arc::new(AtomicBool::new(false));
-        let _ = signal_hook::flag::register(signal_hook::consts::SIGHUP, Arc::clone(&flag));
-        Self(flag)
-    }
-
-    fn happened(&self) -> bool {
-        self.0.load(Ordering::Relaxed) || hung_up(io::stdout())
-    }
-}
-
 /// Whether `fd` is a hung-up terminal (stdout: the one Tiza draws on): a
 /// zero-byte write fails with EIO on a hung-up tty (Linux and macOS, also
 /// one that is not the controlling terminal) and does nothing on a live one
 /// or on a file. It never reads, so no key is taken from crossterm.
-fn hung_up(fd: impl std::os::fd::AsFd) -> bool {
+pub(crate) fn hung_up(fd: impl std::os::fd::AsFd) -> bool {
     rustix::io::write(fd, &[]) == Err(rustix::io::Errno::IO)
 }
 
-/// The event loop's answer to an I/O error: the end of the session when the
-/// terminal went away (a draw or a read on a hung-up tty fails), the error
-/// otherwise.
-fn hung_up_or(hangup: &HangUp, e: io::Error) -> io::Result<End> {
-    if hangup.happened() {
+/// The event loop's answer to an I/O error: the end of the session when a
+/// signal came or the terminal went away (a draw or a read on a hung-up
+/// tty fails), the error otherwise.
+fn hung_up_or(signals: &signals::Signals, e: io::Error) -> io::Result<End> {
+    if let Some(n) = signals.ended() {
+        Ok(End::Signal(n))
+    } else if signals.hung_up() {
         Ok(End::HangUp)
     } else {
         Err(e)
@@ -497,7 +537,20 @@ fn spare_answered_requests() {
 
 /// The `draw:slow-first-frame` test hook slows only the first frame.
 #[cfg(feature = "test-hooks")]
-static SLOW_FIRST_FRAME_DONE: AtomicBool = AtomicBool::new(false);
+static SLOW_FIRST_FRAME_DONE: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Test hook, only with the `test-hooks` feature: when the hook `place` is
+/// on, waits while `file` is there, `limit` at most.
+#[cfg(feature = "test-hooks")]
+fn hold_while(file: &std::path::Path, place: &str, limit: Duration) {
+    if test_hook(place) {
+        let start = Instant::now();
+        while file.exists() && start.elapsed() < limit {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+}
 
 /// Whether the test hook `place` is on: only with the `test-hooks`
 /// feature, when `TIZA_TEST_HOOK` names it. Several hooks are separated by
@@ -521,7 +574,7 @@ fn draw_frame(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> io::Res
         // 100 ms more.
         #[cfg(feature = "test-hooks")]
         if test_hook("draw:slow-first-frame")
-            && !SLOW_FIRST_FRAME_DONE.swap(true, Ordering::Relaxed)
+            && !SLOW_FIRST_FRAME_DONE.swap(true, std::sync::atomic::Ordering::Relaxed)
         {
             std::thread::sleep(Duration::from_millis(1500));
         } else if test_hook("draw:slow-frames") {
@@ -555,7 +608,8 @@ fn event_loop(
     terminal: &mut ratatui::DefaultTerminal,
     app: &mut App,
     ipc: Option<&ipc::IpcServer>,
-    hangup: &HangUp,
+    signals: &signals::Signals,
+    quit_written: &mut Option<std::sync::mpsc::Receiver<()>>,
 ) -> io::Result<End> {
     // crossterm creates its input source, and starts catching SIGWINCH, on
     // the first poll. Done here, before the first frame: a resize
@@ -564,7 +618,7 @@ fn event_loop(
     // first draw lost a resize that came while it was laid out, and nothing
     // redrew until a key.
     if let Err(e) = event::poll(Duration::ZERO) {
-        return hung_up_or(hangup, e);
+        return hung_up_or(signals, e);
     }
     // The test build tells a pty test that the loop listens: from here on a
     // key or a resize is read. A terminal ignores this private OSC. It must
@@ -592,9 +646,12 @@ fn event_loop(
     let started = |app: &App| app.effect.as_ref().map(|e| e.started);
     let mut first_read = true;
     loop {
+        if let Some(n) = signals.ended() {
+            return Ok(End::Signal(n));
+        }
         if needs_draw {
             if let Err(e) = draw_frame(terminal, app) {
-                return hung_up_or(hangup, e);
+                return hung_up_or(signals, e);
             }
             needs_draw = false;
             // The end of the frame: after a slow frame, the loop rests.
@@ -619,6 +676,13 @@ fn event_loop(
                 let method = r.req.method.clone();
                 let before = (app.revision, app.message.clone());
                 app.handle_ipc(r.req, r.reply);
+                // `app.quit` ends the loop at once: the requests after it
+                // are not applied (their clients get `unavailable` when the
+                // server goes), and Tiza waits for its reply to go out.
+                if method == "app.quit" && app.quit {
+                    *quit_written = Some(r.written);
+                    return Ok(End::Quit);
+                }
                 let changed = (app.revision, app.message.clone()) != before;
                 if request_redraws(&method, changed) {
                     needs_draw = true;
@@ -667,18 +731,18 @@ fn event_loop(
         }
         let ready = match event::poll(wait) {
             Ok(ready) => ready,
-            Err(e) => return hung_up_or(hangup, e),
+            Err(e) => return hung_up_or(signals, e),
         };
         // Nothing came: was it the terminal going away? crossterm takes a
         // hung-up tty for one that is always readable and empty, and would
         // poll it again at once, at 100 % of a CPU.
-        if !ready && hangup.happened() {
+        if !ready && signals.hung_up() {
             return Ok(End::HangUp);
         }
         if ready {
             let ev = match event::read() {
                 Ok(ev) => ev,
-                Err(e) => return hung_up_or(hangup, e),
+                Err(e) => return hung_up_or(signals, e),
             };
             match ev {
                 Event::Key(k) if k.kind != KeyEventKind::Release => {

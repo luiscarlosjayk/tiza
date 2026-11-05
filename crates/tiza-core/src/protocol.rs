@@ -1300,6 +1300,10 @@ pub const METHODS: &[(&str, &str)] = &[
         "supervise.status",
         "Supervised mode state: enabled, waiting agent changes, accepted/rejected counts",
     ),
+    (
+        "app.quit",
+        "Closes the instance, as `:q` does (`tiza close`). It refuses with `unsaved_changes` when closing loses work (changes that are not saved, or the marks of stale moves), unless `force` is true. It never waits for review in supervised mode",
+    ),
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
