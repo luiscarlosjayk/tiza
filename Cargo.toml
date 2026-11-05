@@ -64,7 +64,7 @@ insta = "1.49.0"
 jsonschema = { version = "0.59.0", default-features = false }
 # SVG → PNG: resvg (usvg + tiny-skia + fontdb). Fonts are embedded, so no system fonts are needed;
 # `system-fonts` only adds the optional fallback for emoji/CJK.
-resvg = { version = "0.48.1", default-features = false, features = ["text", "system-fonts", "memmap-fonts"] }
+resvg = { version = "0.49.0", default-features = false, features = ["text", "system-fonts", "memmap-fonts"] }
 # Character coverage of the embedded faces: the SVG embeds only the faces it draws. Already in the tree through usvg:
 # version tied to usvg's (resvg); never bumped alone — it moves in the commit that bumps resvg, `cargo tree -d` showing one skrifa.
 skrifa = { version = "0.44.0", default-features = false, features = ["std"] }
