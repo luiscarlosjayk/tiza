@@ -5,10 +5,9 @@
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
-use tiza_qa::{bin, scratch};
+use tiza_qa::bin;
+use tiza_qa::follow::{OLD, files, lines, saved_code};
 
-/// QA 1's repro: a move at step 1, no `step`.
-const OLD: &str = "fn main() {\n    let x = 1;\n}\n";
 /// The editor's save: the move's `find` still matches.
 const NEW: &str = "fn main() {\n    let x = 1;\n    println!(\"{x}\");\n}\n";
 const WAITING: &str = "paused; loads at step 0";
@@ -20,39 +19,6 @@ const WAITING: &str = "paused; loads at step 0";
 /// starts a watcher in the test process.
 static WATCHERS: std::sync::RwLock<()> = std::sync::RwLock::new(());
 
-fn repro(note: bool) -> Value {
-    let mut doc = json!({
-        "schema": 1,
-        "source": {"language": "rs", "first_line": 1},
-        "code": {"file": "main.rs"},
-        "annotations": [],
-        "moves": [{
-            "at_step": 1, "action": "code.patch", "op": "replace",
-            "find": "x = 1", "content": "    let x = 2;"
-        }]
-    });
-    if note {
-        // Something drawn on the patched code, for the fresh-load checks.
-        doc["annotations"] =
-            json!([{"id": "a1", "step": 1, "type": "note", "line": 2, "text": "now 2"}]);
-    }
-    doc
-}
-
-/// `main.rs` (OLD) and `doc.tiza` (the repro) in a scratch folder.
-fn files(name: &str, note: bool) -> (PathBuf, PathBuf, PathBuf) {
-    let dir = scratch(name);
-    let src = dir.join("main.rs");
-    std::fs::write(&src, OLD).unwrap();
-    let tiza = dir.join("doc.tiza");
-    std::fs::write(&tiza, repro(note).to_string()).unwrap();
-    (dir, src, tiza)
-}
-
-fn lines(text: &str) -> Vec<String> {
-    text.lines().map(str::to_string).collect()
-}
-
 fn check_file(path: &Path) -> (i32, Value) {
     let out = tiza_qa::command()
         .args(["check", "--json"])
@@ -62,11 +28,6 @@ fn check_file(path: &Path) -> (i32, Value) {
     let v = serde_json::from_slice(&out.stdout)
         .unwrap_or_else(|e| panic!("{e}: {}", String::from_utf8_lossy(&out.stdout)));
     (out.status.code().unwrap_or(-1), v)
-}
-
-fn saved_code(tiza: &Path) -> Value {
-    let v: Value = serde_json::from_str(&std::fs::read_to_string(tiza).unwrap()).unwrap();
-    v["code"].clone()
 }
 
 // ---------- AC4: the real binary on a pty ----------

@@ -35,6 +35,8 @@ use std::time::{Duration, Instant};
 
 use crossterm::event::KeyCode;
 use serde_json::{Value, json};
+use tiza_qa::follow::reloads;
+use tiza_qa::scene::list;
 use tiza_qa::{Live, McpClient, scratch, tiza};
 
 const INI: &str = "[server]\nhost = localhost\nport = 8080\n[db]\nuser = admin\n";
@@ -81,12 +83,6 @@ fn save_like_zed(path: &Path, content: &str) {
     std::fs::rename(&tmp, path).unwrap();
 }
 
-fn reloads(live: &Live) -> u64 {
-    live.api_ok("follow.status", json!({}))["reloads"]
-        .as_u64()
-        .unwrap_or(0)
-}
-
 /// Saves `content` over config.ini and waits for reload number `n`.
 fn reload(live: &Live, dir: &Path, content: &str, n: u64) {
     save_like_zed(&dir.join("config.ini"), content);
@@ -105,15 +101,6 @@ fn follow(live: &Live) {
 fn paste(live: &Live, text: &str) {
     let text = text.to_string();
     live.with(move |app| app.replace_code(&text)).unwrap();
-}
-
-fn list(live: &Live) -> Vec<String> {
-    live.api_ok("scene.list", json!({}))
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_str().unwrap().to_string())
-        .collect()
 }
 
 fn stale_list(live: &Live) -> Vec<String> {

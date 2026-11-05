@@ -4,6 +4,7 @@
 use std::path::PathBuf;
 
 use serde_json::{Value, json};
+use tiza_qa::follow::lines;
 use tiza_qa::{bin, scratch};
 
 const CODE: &str = "fn main() {\n    let x = 1;\n    println!(\"{x}\");\n}\n";
@@ -14,10 +15,6 @@ const PASTED: &str = "fn other() {\n    println!(\"hi\");\n}\n";
 /// wait while they do. These pty tests run one at a time, and no test of
 /// this crate starts a watcher in the test process.
 static WATCHERS: std::sync::RwLock<()> = std::sync::RwLock::new(());
-
-fn lines(text: &str) -> Vec<String> {
-    text.lines().map(str::to_string).collect()
-}
 
 /// `tiza --socket s.sock --follow main.rs.tiza` on a pty, over a sidecar
 /// saved after a paste (`follows`) or as an old file wrote it (none).

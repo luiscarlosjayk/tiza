@@ -38,20 +38,12 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use tiza_qa::markdown::link_targets;
+use tiza_qa::repo::{packaged, text};
+use tiza_qa::repo_file as read;
+use tiza_qa::repo_root;
 use tiza_qa::scratch;
 
 const REPO: &str = "https://github.com/luiscarlosjayk/tiza";
-
-fn root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
-
-fn read(rel: &str) -> String {
-    std::fs::read_to_string(root().join(rel)).unwrap_or_else(|e| panic!("{rel}: {e}"))
-}
 
 /// The jobs of a workflow: name and the lines of its body, in order.
 fn jobs(yml: &str) -> Vec<(String, Vec<String>)> {
@@ -197,7 +189,7 @@ fn toolchain_workflows_parse_as_yaml() {
                 "-c",
                 "import sys, yaml; d = yaml.safe_load(open(sys.argv[1])); print(' '.join(d['jobs']))",
             ])
-            .arg(root().join(wf))
+            .arg(repo_root().join(wf))
             .output()
             .unwrap();
         assert!(
@@ -265,16 +257,16 @@ fn workspace_copy(name: &str) -> PathBuf {
         "rust-toolchain.toml",
     ] {
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::copy(root().join(f), dir.join(f)).unwrap();
+        std::fs::copy(repo_root().join(f), dir.join(f)).unwrap();
     }
     for d in ["crates", "qa/src", "site/checks/src", "scripts"] {
-        copy_dir(&root().join(d), &dir.join(d));
+        copy_dir(&repo_root().join(d), &dir.join(d));
     }
     // The members without a crates/ folder: their manifests, and no tests.
     for m in ["qa", "site/checks"] {
         std::fs::create_dir_all(dir.join(m).join("tests")).unwrap();
         let manifest = format!("{m}/Cargo.toml");
-        std::fs::copy(root().join(&manifest), dir.join(&manifest)).unwrap();
+        std::fs::copy(repo_root().join(&manifest), dir.join(&manifest)).unwrap();
     }
     dir
 }
@@ -378,14 +370,6 @@ fn publish_bump_version_moves_versions_lock_and_changelog() {
     assert_eq!(snapshot(&dir), done, "a refused run writes nothing");
 }
 
-fn text(o: &Output) -> String {
-    format!(
-        "{}{}",
-        String::from_utf8_lossy(&o.stdout),
-        String::from_utf8_lossy(&o.stderr)
-    )
-}
-
 // --- crates.io pages -----------------------------------------------------
 
 fn metadata() -> serde_json::Value {
@@ -397,7 +381,7 @@ fn metadata() -> serde_json::Value {
             "1",
             "--offline",
         ])
-        .current_dir(root())
+        .current_dir(repo_root())
         .output()
         .unwrap();
     assert!(out.status.success(), "{}", text(&out));
@@ -419,27 +403,6 @@ fn package<'a>(meta: &'a serde_json::Value, name: &str) -> &'a serde_json::Value
         .iter()
         .find(|p| p["name"] == name)
         .unwrap_or_else(|| panic!("no package {name}"))
-}
-
-/// The files `cargo package` would put in the crate.
-fn packaged(name: &str) -> Vec<String> {
-    let out = Command::new(env!("CARGO"))
-        .args([
-            "package",
-            "--list",
-            "--offline",
-            "--allow-dirty",
-            "-p",
-            name,
-        ])
-        .current_dir(root())
-        .output()
-        .unwrap();
-    assert!(out.status.success(), "{}", text(&out));
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .map(str::to_string)
-        .collect()
 }
 
 /// Slugs that exist on crates.io (checked against its API on 2026-10-22).
@@ -696,7 +659,7 @@ fn stamp_ignored_directory_inside_a_checkout_is_unknown() {
 fn stamp_this_checkout_keeps_its_commit() {
     let Ok(out) = Command::new("git")
         .args(["rev-parse", "--short=10", "HEAD"])
-        .current_dir(root())
+        .current_dir(repo_root())
         .output()
     else {
         eprintln!("publishing: no git, case not run");
@@ -728,7 +691,7 @@ const BRAND: [&str; 5] = [
 #[test]
 fn brand_the_files_stay_out_of_the_packages() {
     for f in BRAND {
-        assert!(root().join("docs/brand").join(f).is_file(), "{f}");
+        assert!(repo_root().join("docs/brand").join(f).is_file(), "{f}");
     }
     // Outlines, not text: the logo does not depend on the font, and has
     // nothing that runs or loads.

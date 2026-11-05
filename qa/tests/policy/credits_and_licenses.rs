@@ -23,21 +23,12 @@
 //!   license and patent grant of libwebp, which it links.
 
 use std::path::{Path, PathBuf};
+use tiza_qa::repo_file as read;
+use tiza_qa::repo_root;
 
 const FULL_NAME: &str = "Luis Carlos Osorio Jayk";
 
 const CONTRIBUTION_CLAUSE: &str = "Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in Tiza by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.";
-
-fn root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
-
-fn read(rel: &str) -> String {
-    std::fs::read_to_string(root().join(rel)).unwrap_or_else(|e| panic!("{rel}: {e}"))
-}
 
 /// The README's «License» section, up to the next `## ` or the end.
 fn license_section() -> String {
@@ -69,8 +60,8 @@ fn license_section_keeps_the_dual_license_and_adds_the_clause() {
         section.contains(CONTRIBUTION_CLAUSE),
         "the contribution clause is there, verbatim"
     );
-    assert!(root().join("LICENSE-MIT").is_file());
-    assert!(root().join("LICENSE-APACHE").is_file());
+    assert!(repo_root().join("LICENSE-MIT").is_file());
+    assert!(repo_root().join("LICENSE-APACHE").is_file());
 }
 
 #[test]
@@ -89,7 +80,7 @@ fn the_name_only_appears_in_its_full_form() {
         }
     }
     let mut files = Vec::new();
-    walk(&root(), &mut files);
+    walk(&repo_root(), &mut files);
     // Built from the full name, so this file never spells the short form.
     let short = FULL_NAME.strip_suffix(" Jayk").unwrap();
     let mut bad = Vec::new();
@@ -149,7 +140,7 @@ fn every_font_has_its_license_next_to_it() {
             assert!(text.contains(p), "{dir}/{license}: «{p}»");
         }
         for f in covered {
-            assert!(root().join(dir).join(f).is_file(), "{dir}/{f}");
+            assert!(repo_root().join(dir).join(f).is_file(), "{dir}/{f}");
         }
     }
 }
@@ -163,7 +154,7 @@ fn every_font_has_its_license_next_to_it() {
 fn the_release_archives_carry_the_licenses_of_what_the_binary_embeds() {
     let mut licenses = Vec::new();
     for dir in ["crates/tiza-export/assets/fonts", "crates/tiza-export"] {
-        for e in std::fs::read_dir(root().join(dir)).unwrap() {
+        for e in std::fs::read_dir(repo_root().join(dir)).unwrap() {
             let n = e.unwrap().file_name().to_string_lossy().into_owned();
             if n.starts_with("LICENSE-") && n != "LICENSE-MIT" && n != "LICENSE-APACHE" {
                 licenses.push(format!("{dir}/{n}"));

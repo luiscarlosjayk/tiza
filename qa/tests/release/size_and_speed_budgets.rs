@@ -37,19 +37,13 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde_json::{Value, json};
+use tiza_qa::repo_root;
 use tiza_qa::{PyRun, bin, python, scratch};
 
 const MB: u64 = 1_000_000;
 
-fn root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
-
 fn read_json(rel: &str) -> Value {
-    let p = root().join(rel);
+    let p = repo_root().join(rel);
     serde_json::from_str(&std::fs::read_to_string(&p).unwrap())
         .unwrap_or_else(|e| panic!("{}: {e}", p.display()))
 }
@@ -67,7 +61,7 @@ fn host_target() -> String {
 }
 
 fn script(name: &str) -> PathBuf {
-    root().join("scripts").join(name)
+    repo_root().join("scripts").join(name)
 }
 
 fn run(name: &str, args: &[&str]) -> PyRun {
@@ -109,7 +103,7 @@ fn budgets(targets: Value) -> Value {
 
 #[test]
 fn release_profile_is_fat_lto_without_abort() {
-    let toml = std::fs::read_to_string(root().join("Cargo.toml")).unwrap();
+    let toml = std::fs::read_to_string(repo_root().join("Cargo.toml")).unwrap();
     let section: Vec<&str> = toml
         .split("[profile.release]")
         .nth(1)

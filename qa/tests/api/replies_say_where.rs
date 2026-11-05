@@ -22,12 +22,12 @@
 //! a linked file not shown at the current step, or outside the window
 //! of a `code.link`; a spotlight past its `until`.
 
-use std::sync::mpsc;
-use std::thread;
 use std::time::{Duration, Instant};
 
 use crossterm::event::KeyCode;
 use serde_json::{Value, json};
+use tiza_qa::ipc::{ipc_at, send_async, wait_pending};
+use tiza_qa::tui::info;
 use tiza_qa::{Live, McpClient, example, scratch};
 
 const CODE: &str = "fn main() {\n    let s = String::from(\"hello\");\n    takes(s);\n}\n\nfn takes(s: String) {\n    println!(\"{s}\");\n}\n";
@@ -201,27 +201,6 @@ fn linked_file_not_shown_and_outside_the_window() {
     assert_eq!(r["visible"], json!(true), "{r}");
 }
 
-fn send_async(
-    socket: &std::path::Path,
-    method: &str,
-    params: Value,
-) -> thread::JoinHandle<tiza_core::protocol::Response> {
-    let socket = socket.to_path_buf();
-    let method = method.to_string();
-    thread::spawn(move || tiza_tui::ipc::call(&socket, &method, params).expect("socket"))
-}
-
-fn wait_pending(live: &Live, n: usize) {
-    let start = std::time::Instant::now();
-    while live.with(|a| a.proposals.len()) < n {
-        assert!(
-            start.elapsed() < Duration::from_secs(10),
-            "waiting for {n} proposals"
-        );
-        thread::sleep(Duration::from_millis(10));
-    }
-}
-
 #[test]
 fn supervised_reply_describes_the_moment_of_acceptance() {
     let live = at_step_0("supervised");
@@ -284,30 +263,6 @@ fn mcp_tools_say_it_in_words() {
 fn bar(live: &Live) -> String {
     let screen = live.screen(100, 30);
     screen.lines().last().unwrap_or_default().to_string()
-}
-
-fn info(live: &Live) -> String {
-    match live.message() {
-        Some((m, false)) => m,
-        other => panic!("expected an info message, got {other:?}"),
-    }
-}
-
-/// `method` over the socket path of the app at the injected clock `at`, so
-/// the 1 s grouping is tested without sleeping.
-fn ipc_at(live: &Live, method: &str, params: Value, at: Instant) -> Value {
-    let method = method.to_string();
-    live.with(move |a| {
-        let (tx, rx) = mpsc::channel();
-        let req = tiza_core::protocol::Request {
-            id: json!(1),
-            method,
-            params,
-        };
-        a.handle_ipc_at(req, tx, at);
-        let resp = rx.recv().unwrap();
-        resp.result.unwrap_or_else(|| panic!("{:?}", resp.error))
-    })
 }
 
 #[test]

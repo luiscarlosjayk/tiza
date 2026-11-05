@@ -47,6 +47,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
+use tiza_qa::repo_root;
 use tiza_qa::{bin, example, scratch};
 
 /// Case and the terminal size Tiza must see (`full` is the 200×60 tab less
@@ -62,14 +63,7 @@ const CASES: [(&str, (u32, u32)); 7] = [
 ];
 
 fn script() -> PathBuf {
-    root().join("scripts/herdr-matrix.sh")
-}
-
-fn root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
+    repo_root().join("scripts/herdr-matrix.sh")
 }
 
 /// Every `herdr` call the script made against the model, in order.
@@ -206,7 +200,7 @@ fn assert_tab_opened_and_closed(fake: &Path) {
     let calls = calls(fake);
     let create = format!(
         "tab create --workspace w1 --cwd {} --label tiza-matrix",
-        root().display()
+        repo_root().display()
     );
     assert_eq!(
         calls.iter().filter(|c| **c == create).count(),

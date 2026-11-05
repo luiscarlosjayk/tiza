@@ -48,7 +48,8 @@ use std::time::{Duration, Instant};
 use crossterm::event::KeyCode;
 use serde_json::{Value, json};
 use tiza_core::protocol::{Request, Response};
-use tiza_qa::{Live, McpClient, scratch, tiza_with_config};
+use tiza_qa::layout::big_file;
+use tiza_qa::{Live, McpClient, tiza_with_config};
 use tiza_tui::checks::Hold;
 
 /// How long a request answered while a check runs is waited for: a
@@ -57,58 +58,6 @@ use tiza_tui::checks::Hold;
 const QUICK: Duration = Duration::from_secs(10);
 /// How long a check may take at all.
 const CHECK: Duration = Duration::from_secs(120);
-
-/// `lines` lines of Rust with 16 labelled annotations, four per step
-/// (boxes, notes, highlights and arrows on function headers).
-fn big_doc(lines: usize) -> Value {
-    let code: Vec<String> = (0..lines)
-        .map(|i| match i % 6 {
-            0 => format!("fn step_{i}(queue: &mut Vec<u64>, limit: usize) -> Option<u64> {{"),
-            1 => format!(
-                "    let value = queue.iter().copied().filter(|v| v % {} == 0).sum::<u64>();",
-                i + 3
-            ),
-            2 => "    if queue.len() > limit { queue.truncate(limit); }".into(),
-            3 => format!("    queue.push(value + {i});"),
-            4 => "    queue.last().copied()".into(),
-            _ => "}".into(),
-        })
-        .collect();
-    let annotations: Vec<Value> = (0..16)
-        .map(|j| {
-            let step = j / 4 + 1;
-            let line = 1 + 6 * ((j * (lines - 10)) / 16 / 6);
-            match j % 4 {
-                0 => json!({"id": format!("b{j}"), "step": step, "type": "box",
-                    "from_line": line, "to_line": line + 4,
-                    "label": format!("function number {j}: filters, truncates and pushes")}),
-                1 => json!({"id": format!("n{j}"), "step": step, "type": "note", "line": line,
-                    "text": format!("note {j}: the sum only keeps multiples of the line number")}),
-                2 => json!({"id": format!("h{j}"), "step": step, "type": "highlight",
-                    "span": {"line": line, "start": 4, "end": 20},
-                    "label": format!("highlight {j} on the signature")}),
-                _ => json!({"id": format!("a{j}"), "step": step, "type": "arrow",
-                    "from": {"line": line, "col": 4}, "to": {"line": line + 3, "col": 4},
-                    "label": format!("arrow {j}: value flows into the push")}),
-            }
-        })
-        .collect();
-    json!({
-        "schema": 1,
-        "title": format!("Big tutorial ({lines} lines)"),
-        "source": {"language": "rust", "first_line": 1},
-        "code": code,
-        "annotations": annotations,
-    })
-}
-
-/// The big document written as `big.tiza` in a scratch directory.
-fn big_file(name: &str) -> PathBuf {
-    let dir = scratch(name);
-    let file = dir.join("big.tiza");
-    std::fs::write(&file, serde_json::to_string_pretty(&big_doc(300)).unwrap()).unwrap();
-    file
-}
 
 /// A live instance holding the big document (saved next to it).
 fn big_live(name: &str) -> (PathBuf, Live) {

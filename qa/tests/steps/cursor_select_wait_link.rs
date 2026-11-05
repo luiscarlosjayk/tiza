@@ -29,6 +29,7 @@
 
 use crossterm::event::{KeyCode, KeyModifiers};
 use serde_json::{Value, json};
+use tiza_qa::scene::list;
 use tiza_qa::{Live, McpClient, example, scratch, tiza, tiza_ok};
 
 /// A scratch copy of the two-file example (`examples/` is never written).
@@ -60,15 +61,6 @@ fn render(path: &std::path::Path, step: &str) -> String {
         "--width",
         "90",
     ])
-}
-
-fn list(live: &Live) -> Vec<String> {
-    live.api_ok("scene.list", json!({}))
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_str().unwrap().to_string())
-        .collect()
 }
 
 // ---------------------------------------------------------------- AC1

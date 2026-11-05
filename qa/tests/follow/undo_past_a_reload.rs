@@ -40,6 +40,8 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 use tiza_core::Document;
+use tiza_qa::follow::{code, lines, saved_code};
+use tiza_qa::scene::all_steps;
 use tiza_qa::{Live, scratch};
 
 const CODE: &str = "fn main() {\n    let x = 1;\n    println!(\"{x}\");\n}\n";
@@ -78,14 +80,6 @@ fn open_followed(name: &str, code: &str, by_hand: bool) -> (Live, PathBuf, PathB
 
 fn status(live: &Live) -> Value {
     live.api_ok("follow.status", json!({}))
-}
-
-fn code(live: &Live) -> Vec<String> {
-    live.with(|app| app.doc.code.clone())
-}
-
-fn lines(text: &str) -> Vec<String> {
-    text.lines().map(str::to_string).collect()
 }
 
 fn message(live: &Live) -> String {
@@ -139,33 +133,6 @@ fn check_file(path: &Path) -> (i32, Value) {
     (out.status.code().unwrap_or(-1), tiza_qa::as_live_report(v))
 }
 
-/// `tiza render SOURCE --all-steps --format txt` (SOURCE: a file, or the
-/// live instance with `--socket`): one text per step.
-fn all_steps(args: &[&str], out: &Path) -> Vec<String> {
-    let _ = std::fs::remove_dir_all(out);
-    let r = tiza_qa::command()
-        .arg("render")
-        .args(args)
-        .args(["--all-steps", "--format", "txt", "--width", "100", "--out"])
-        .arg(format!("{}/", out.display()))
-        .output()
-        .unwrap();
-    assert!(
-        r.status.success(),
-        "render {args:?}: {}",
-        String::from_utf8_lossy(&r.stderr)
-    );
-    let mut files: Vec<PathBuf> = std::fs::read_dir(out)
-        .unwrap()
-        .map(|e| e.unwrap().path())
-        .collect();
-    files.sort();
-    files
-        .iter()
-        .map(|f| std::fs::read_to_string(f).unwrap())
-        .collect()
-}
-
 /// The live instance is what a fresh load of its autosaved `.tiza` gives:
 /// the same `check` report (and `tiza check` exits 0) and the same
 /// `render --all-steps`.
@@ -189,12 +156,6 @@ fn same_as_fresh(live: &Live, tiza: &Path, what: &str) {
     let live_steps = all_steps(&["--socket", &sock], &dir.join("render-live"));
     let disk_steps = all_steps(&[tiza.to_str().unwrap()], &dir.join("render-disk"));
     assert_eq!(live_steps, disk_steps, "{what}: render --all-steps");
-}
-
-/// What the autosave holds as `code`.
-fn saved_code(tiza: &Path) -> Value {
-    let v: Value = serde_json::from_str(&std::fs::read_to_string(tiza).unwrap()).unwrap();
-    v["code"].clone()
 }
 
 /// Follow on, a highlight on the `1` of `x = 1`, and a save of main.rs

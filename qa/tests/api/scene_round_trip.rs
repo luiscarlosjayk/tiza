@@ -57,6 +57,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
 use serde_json::{Value, json};
+use tiza_qa::ipc::sock;
 use tiza_qa::{Live, example, fixture, scratch};
 
 // ---------------------------------------------------------------- helpers
@@ -114,10 +115,6 @@ fn open(target: &Path) -> Live {
     let o = tiza_core::fs::open(target.to_str().unwrap()).unwrap();
     let sock = target.parent().unwrap().join("s.sock");
     Live::open(o.document, o.save_path, sock)
-}
-
-fn sock(live: &Live) -> &str {
-    live.socket.to_str().unwrap()
 }
 
 fn get(live: &Live) -> Value {

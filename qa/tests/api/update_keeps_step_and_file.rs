@@ -49,17 +49,11 @@ use std::time::{Duration, Instant};
 
 use crossterm::event::KeyCode;
 use serde_json::{Value, json};
+use tiza_qa::scene::{Place, place, row_of};
 use tiza_qa::{Live, McpClient, fixture, scratch};
 
 const WAIT: Duration = Duration::from_secs(10);
 const QUEUE: &str = "src/queue.rs";
-
-/// (id, step, file, line) of an annotation.
-type Place = (String, u64, Option<String>, u64);
-
-fn place(id: &str, step: u64, file: Option<&str>, line: u64) -> Place {
-    (id.into(), step, file.map(str::to_string), line)
-}
 
 fn places(annotations: &Value) -> Vec<Place> {
     let mut v: Vec<Place> = annotations
@@ -167,14 +161,6 @@ fn goto(live: &Live, step: u64) {
 fn screen_at(live: &Live, step: u64) -> String {
     goto(live, step);
     live.screen(120, 30)
-}
-
-/// The screen row that draws the note `label`.
-fn row_of(screen: &str, label: &str) -> Option<String> {
-    screen
-        .lines()
-        .find(|l| l.contains(&format!("┆ {label}")))
-        .map(str::to_string)
 }
 
 /// On screen, `m5` with `label`: not drawn over src/queue.rs at step 5,

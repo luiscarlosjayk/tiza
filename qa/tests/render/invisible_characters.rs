@@ -37,25 +37,11 @@
 use serde_json::{Value, json};
 use tiza_core::Document;
 use tiza_core::canvas::code_width;
-use tiza_core::layout::{Layout, LayoutOptions, Row, col_to_x, layout};
+use tiza_core::layout::{Layout, Row, col_to_x};
+use tiza_qa::layout::{doc_of, lay};
 use tiza_qa::{Live, fixture, scratch, tiza_ok};
 
 const MARK: &str = "\u{2B1A}";
-
-fn lay(doc: &Document, width: usize, step: u32) -> Layout {
-    let opts = LayoutOptions {
-        width,
-        step,
-        line_numbers: doc.numbers_or(true),
-        margin_cap: doc.margin.map(usize::from),
-        ..Default::default()
-    };
-    layout(doc, &tiza_core::Theme::dark(), &opts)
-}
-
-fn doc_of(v: &Value) -> Document {
-    tiza_core::fs::parse_document(&v.to_string(), None).unwrap()
-}
 
 fn code_doc(code: &[&str], annotations: Value) -> Value {
     json!({

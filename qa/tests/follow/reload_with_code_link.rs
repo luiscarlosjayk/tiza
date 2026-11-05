@@ -36,17 +36,12 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
+use tiza_qa::follow::reloads;
+use tiza_qa::scene::{Place, place, row_of};
 use tiza_qa::{Live, fixture, scratch};
 
 const WAIT: Duration = Duration::from_secs(10);
 const QUEUE: &str = "src/queue.rs";
-
-/// (id, step, file, line) of each annotation, in document order.
-type Place = (String, u64, Option<String>, u64);
-
-fn place(id: &str, step: u64, file: Option<&str>, line: u64) -> Place {
-    (id.into(), step, file.map(str::to_string), line)
-}
 
 /// The fixture as the author saved it.
 fn authored() -> Vec<Place> {
@@ -129,12 +124,6 @@ fn wait_for(what: &str, mut ok: impl FnMut() -> bool) {
     }
 }
 
-fn reloads(live: &Live) -> u64 {
-    live.api_ok("follow.status", json!({}))["reloads"]
-        .as_u64()
-        .unwrap_or(0)
-}
-
 /// The editor's save: a temp file renamed over main.rs, with one line more
 /// at the top.
 fn edit(src: &Path) {
@@ -159,14 +148,6 @@ fn goto(live: &Live, step: u64) {
 
 fn screen(live: &Live) -> String {
     live.screen(120, 30)
-}
-
-/// The screen row that draws `label`.
-fn row_of(screen: &str, label: &str) -> Option<String> {
-    screen
-        .lines()
-        .find(|l| l.contains(&format!("┆ {label}")))
-        .map(str::to_string)
 }
 
 /// On screen, after the reload: `n0` at step 0 on `println!` (L10), `m5`

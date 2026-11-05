@@ -2,46 +2,8 @@
 //! export that they allow is written in time.
 
 use serde_json::json;
-use tiza_qa::{Live, fixture, scratch, tiza};
-
-const CODE: &str = "fn main() {\n    let s = String::from(\"hi\");\n    takes(s);\n    // println!(\"{s}\");\n}\n\nfn takes(s: String) {\n    println!(\"{s}\");\n}\n";
-
-fn fresh(name: &str) -> Live {
-    let live = Live::from_code(CODE, "rs", name);
-    live.command("note 1 first");
-    live.command("spot 7-9");
-    live.command("step 2");
-    live.command("note 8 later");
-    live.command("step 1");
-    live
-}
-
-fn count(live: &Live) -> usize {
-    live.with(|a| a.doc.annotations.len())
-}
-
-/// Runs `cmd`; the message must be an error containing `expect`, and the
-/// annotation count and the step must not change.
-fn rejected(live: &Live, cmd: &str, expect: &str) {
-    let before = (
-        count(live),
-        live.with(|a| a.doc.step),
-        live.with(|a| a.doc.max_step()),
-    );
-    live.command(cmd);
-    let (msg, err) = live.message().unwrap_or_default();
-    assert!(err, "`:{cmd}` was not rejected: {msg}");
-    assert!(
-        msg.contains(expect),
-        "`:{cmd}`: expected «{expect}», got: {msg}"
-    );
-    let after = (
-        count(live),
-        live.with(|a| a.doc.step),
-        live.with(|a| a.doc.max_step()),
-    );
-    assert_eq!(before, after, "`:{cmd}` changed the document: {msg}");
-}
+use tiza_qa::tui::{fresh, rejected};
+use tiza_qa::{fixture, scratch, tiza};
 
 #[test]
 fn export_sizes_are_bounded_in_the_tui_and_the_cli() {

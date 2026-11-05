@@ -24,6 +24,7 @@
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
+use tiza_qa::follow::lines;
 use tiza_qa::{Live, scratch};
 
 const OLD: &str = "fn f(t: &str) -> usize {\n    let n = t.len();\n    n + 1\n}\n";
@@ -78,10 +79,6 @@ fn save_and_read(live: &Live, src: &Path, content: &[u8]) {
 
 fn base(live: &Live) -> Vec<String> {
     live.with(|app| app.doc.base().to_vec())
-}
-
-fn lines(text: &str) -> Vec<String> {
-    text.lines().map(str::to_string).collect()
 }
 
 /// `paused`, `pending` and `resume_step` of `follow.status`, and `reloads`.

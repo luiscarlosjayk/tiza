@@ -1,19 +1,10 @@
 //! No ticket id (`t-` and three digits) in the repository, `qa/` too.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
+use tiza_qa::repo_file as read;
+use tiza_qa::repo_root;
 use tiza_qa::repository_files;
-
-fn root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
-
-fn read(rel: &str) -> String {
-    std::fs::read_to_string(root().join(rel)).unwrap_or_else(|e| panic!("{rel}: {e}"))
-}
 
 // ---------- No ticket ids ----------
 
@@ -76,7 +67,7 @@ fn ids_none_in_the_repository() {
         if ext.is_some_and(|e| BINARY_EXT.contains(&e.as_str())) {
             continue;
         }
-        let Ok(bytes) = std::fs::read(root().join(f)) else {
+        let Ok(bytes) = std::fs::read(repo_root().join(f)) else {
             continue;
         };
         let Ok(text) = String::from_utf8(bytes) else {

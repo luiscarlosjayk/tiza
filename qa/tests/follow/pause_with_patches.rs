@@ -41,6 +41,7 @@ use std::time::{Duration, Instant};
 
 use crossterm::event::KeyCode;
 use serde_json::{Value, json};
+use tiza_qa::follow::{lines, saved_code};
 use tiza_qa::{Live, scratch};
 
 /// `a1` highlights `t.len()` from step 1. Step 1 moves the cursor, step 2
@@ -129,10 +130,6 @@ fn base(live: &Live) -> Vec<String> {
     live.with(|app| app.doc.base().to_vec())
 }
 
-fn lines(text: &str) -> Vec<String> {
-    text.lines().map(str::to_string).collect()
-}
-
 fn message(live: &Live) -> String {
     live.message().unwrap_or_default().0
 }
@@ -213,12 +210,6 @@ fn paused(pending: bool) -> (Value, Value, Value) {
 
 fn live_again() -> (Value, Value, Value) {
     (json!(false), json!(false), Value::Null)
-}
-
-/// What the autosave holds as `code`.
-fn saved_code(tiza: &Path) -> Value {
-    let v: Value = serde_json::from_str(&std::fs::read_to_string(tiza).unwrap()).unwrap();
-    v["code"].clone()
 }
 
 /// The notice of a pause: an info, not an error, that names the step

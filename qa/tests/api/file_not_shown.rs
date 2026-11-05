@@ -41,6 +41,7 @@
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
+use tiza_qa::scene::{all_steps, findings};
 use tiza_qa::{Live, example, scratch};
 
 // ---------------------------------------------------------------- helpers
@@ -100,13 +101,6 @@ fn refusal(live: &Live, method: &str, params: Value) -> String {
     e
 }
 
-fn findings(live: &Live) -> Vec<Value> {
-    live.api_ok("check", json!({}))["findings"]
-        .as_array()
-        .unwrap()
-        .clone()
-}
-
 fn of_code<'a>(f: &'a [Value], code: &str) -> Vec<&'a Value> {
     f.iter().filter(|f| f["code"] == code).collect()
 }
@@ -143,33 +137,6 @@ fn check_file(path: &Path) -> Value {
 fn check_text(path: &Path) -> String {
     let out = tiza_qa::command().arg("check").arg(path).output().unwrap();
     String::from_utf8_lossy(&out.stdout).into_owned()
-}
-
-/// `tiza render SOURCE --all-steps --format txt` (SOURCE: a file, or the
-/// live instance with `--socket`): one text per step.
-fn all_steps(args: &[&str], out: &Path) -> Vec<String> {
-    let _ = std::fs::remove_dir_all(out);
-    let r = tiza_qa::command()
-        .arg("render")
-        .args(args)
-        .args(["--all-steps", "--format", "txt", "--width", "100", "--out"])
-        .arg(format!("{}/", out.display()))
-        .output()
-        .unwrap();
-    assert!(
-        r.status.success(),
-        "render {args:?}: {}",
-        String::from_utf8_lossy(&r.stderr)
-    );
-    let mut files: Vec<PathBuf> = std::fs::read_dir(out)
-        .unwrap()
-        .map(|e| e.unwrap().path())
-        .collect();
-    files.sort();
-    files
-        .iter()
-        .map(|f| std::fs::read_to_string(f).unwrap())
-        .collect()
 }
 
 /// The live instance is what a fresh load of its autosaved `.tiza` gives:

@@ -29,6 +29,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 use tiza_core::Document;
+use tiza_qa::scene::findings;
 use tiza_qa::{Live, fixture, scratch};
 
 /// `tiza render FILE --step N --format txt`, which must succeed.
@@ -88,13 +89,6 @@ fn live_doc(text: &str, name: &str) -> (Live, PathBuf) {
     let doc = tiza_core::fs::parse_document(text, None).expect("the document loads");
     let save = dir.join("doc.tiza");
     (Live::open(doc, save.clone(), dir.join("live.sock")), save)
-}
-
-fn findings(live: &Live) -> Vec<Value> {
-    live.api_ok("check", json!({}))["findings"]
-        .as_array()
-        .unwrap()
-        .clone()
 }
 
 fn ignored_findings(f: &[Value]) -> Vec<Value> {

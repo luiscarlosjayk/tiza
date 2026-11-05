@@ -25,6 +25,8 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
+use tiza_qa::follow::{lines, saved_code};
+use tiza_qa::scene::all_steps;
 use tiza_qa::{Live, scratch};
 
 const MAIN: &str = "fn main() {\n    let a = 1;\n}\n";
@@ -55,10 +57,6 @@ fn base(live: &Live) -> Vec<String> {
     live.with(|app| app.doc.base().to_vec())
 }
 
-fn lines(text: &str) -> Vec<String> {
-    text.lines().map(str::to_string).collect()
-}
-
 fn message(live: &Live) -> String {
     live.message().unwrap_or_default().0
 }
@@ -86,11 +84,6 @@ fn save(path: &Path, content: &str) {
     std::fs::rename(&tmp, path).unwrap();
 }
 
-fn saved_code(tiza: &Path) -> Value {
-    let v: Value = serde_json::from_str(&std::fs::read_to_string(tiza).unwrap()).unwrap();
-    v["code"].clone()
-}
-
 /// `tiza check --json` of `path`, as the live check gives it at its default
 /// width (100 columns of code): `tiza check` takes the terminal that has
 /// them.
@@ -104,31 +97,6 @@ fn check_file(path: &Path) -> (i32, Value) {
     let v = serde_json::from_slice(&out.stdout)
         .unwrap_or_else(|e| panic!("{e}: {}", String::from_utf8_lossy(&out.stdout)));
     (out.status.code().unwrap_or(-1), tiza_qa::as_live_report(v))
-}
-
-fn all_steps(args: &[&str], out: &Path) -> Vec<String> {
-    let _ = std::fs::remove_dir_all(out);
-    let r = tiza_qa::command()
-        .arg("render")
-        .args(args)
-        .args(["--all-steps", "--format", "txt", "--width", "100", "--out"])
-        .arg(format!("{}/", out.display()))
-        .output()
-        .unwrap();
-    assert!(
-        r.status.success(),
-        "render {args:?}: {}",
-        String::from_utf8_lossy(&r.stderr)
-    );
-    let mut files: Vec<PathBuf> = std::fs::read_dir(out)
-        .unwrap()
-        .map(|e| e.unwrap().path())
-        .collect();
-    files.sort();
-    files
-        .iter()
-        .map(|f| std::fs::read_to_string(f).unwrap())
-        .collect()
 }
 
 /// AC4: the live instance is what a fresh load of its autosave gives.

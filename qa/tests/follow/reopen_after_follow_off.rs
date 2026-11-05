@@ -22,6 +22,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 use tiza_core::Document;
+use tiza_qa::follow::{code, lines};
 use tiza_qa::{Live, scratch};
 
 const CODE: &str = "fn main() {\n    let x = 1;\n    println!(\"{x}\");\n}\n";
@@ -77,14 +78,6 @@ fn paste(live: &Live) {
 
 fn status(live: &Live) -> Value {
     live.api_ok("follow.status", json!({}))
-}
-
-fn code(live: &Live) -> Vec<String> {
-    live.with(|app| app.doc.code.clone())
-}
-
-fn lines(text: &str) -> Vec<String> {
-    text.lines().map(str::to_string).collect()
 }
 
 fn message(live: &Live) -> String {

@@ -34,7 +34,8 @@
 //! `--width` only the widths that matter count.
 
 use serde_json::{Value, json};
-use tiza_core::layout::{LayoutOptions, MAX_WIDTH, MIN_WIDTH, layout};
+use tiza_core::layout::{MAX_WIDTH, MIN_WIDTH};
+use tiza_qa::layout::lay;
 use tiza_qa::{
     Live, McpClient, check_width_for_code, example, fixture, scratch, side_padding_of, tiza,
     tiza_ok,
@@ -59,19 +60,6 @@ fn path(rel: &str) -> String {
 
 fn open(path: &str) -> tiza_core::Document {
     tiza_core::fs::open(path).unwrap().document
-}
-
-/// The layout `tiza render --step STEP --width WIDTH` draws of the whole
-/// document.
-fn lay(doc: &tiza_core::Document, width: usize, step: u32) -> tiza_core::layout::Layout {
-    let opts = LayoutOptions {
-        width,
-        step,
-        line_numbers: doc.numbers_or(true),
-        margin_cap: doc.margin.map(usize::from),
-        ..Default::default()
-    };
-    layout(doc, &tiza_core::Theme::dark(), &opts)
 }
 
 /// Some step of the take, every one from 0 to the last (not only those

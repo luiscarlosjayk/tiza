@@ -7,6 +7,7 @@
 //! each place that Tiza looks.
 
 use std::path::{Path, PathBuf};
+use tiza_qa::repo_root;
 
 fn rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
     for entry in std::fs::read_dir(dir).unwrap() {
@@ -17,13 +18,6 @@ fn rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
             out.push(path);
         }
     }
-}
-
-fn root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
 }
 
 /// The lines of a file of `qa/tests` that start the binary directly.
@@ -57,15 +51,15 @@ fn starts_with_a_config(text: &str) -> bool {
 #[test]
 fn every_qa_test_starts_tiza_through_tiza_qa_command() {
     let mut files = Vec::new();
-    rs_files(&root().join("qa/tests"), &mut files);
-    rs_files(&root().join("site/checks/tests"), &mut files);
+    rs_files(&repo_root().join("qa/tests"), &mut files);
+    rs_files(&repo_root().join("site/checks/tests"), &mut files);
     let mut found = Vec::new();
     for file in files {
         let text = std::fs::read_to_string(&file).unwrap();
         for n in direct_starts(&text) {
             found.push(format!(
                 "{}:{n}",
-                file.strip_prefix(root()).unwrap().display()
+                file.strip_prefix(repo_root()).unwrap().display()
             ));
         }
     }
@@ -78,7 +72,7 @@ fn every_qa_test_starts_tiza_through_tiza_qa_command() {
 #[test]
 fn a_crate_test_that_starts_tiza_gives_it_an_empty_config() {
     let mut files = Vec::new();
-    for entry in std::fs::read_dir(root().join("crates")).unwrap() {
+    for entry in std::fs::read_dir(repo_root().join("crates")).unwrap() {
         let tests = entry.unwrap().path().join("tests");
         if tests.is_dir() {
             rs_files(&tests, &mut files);
@@ -87,7 +81,7 @@ fn a_crate_test_that_starts_tiza_gives_it_an_empty_config() {
     let found: Vec<String> = files
         .iter()
         .filter(|f| starts_with_a_config(&std::fs::read_to_string(f).unwrap()))
-        .map(|f| f.strip_prefix(root()).unwrap().display().to_string())
+        .map(|f| f.strip_prefix(repo_root()).unwrap().display().to_string())
         .collect();
     assert!(
         found.is_empty(),

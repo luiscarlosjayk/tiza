@@ -38,10 +38,10 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
+use tiza_qa::follow::{OLD, files, lines, repro, saved_code};
+use tiza_qa::scene::all_steps;
 use tiza_qa::{Live, McpClient, scratch};
 
-/// QA 1's repro: a move at step 1, no `step`.
-const OLD: &str = "fn main() {\n    let x = 1;\n}\n";
 /// The editor's save: the move's `find` still matches.
 const NEW: &str = "fn main() {\n    let x = 1;\n    println!(\"{x}\");\n}\n";
 const WAITING: &str = "paused; loads at step 0";
@@ -49,35 +49,6 @@ const WAITING: &str = "paused; loads at step 0";
 const SAID: &str = "following main.rs; step 0 loads a save";
 
 const WAIT: Duration = Duration::from_secs(10);
-
-fn repro(note: bool) -> Value {
-    let mut doc = json!({
-        "schema": 1,
-        "source": {"language": "rs", "first_line": 1},
-        "code": {"file": "main.rs"},
-        "annotations": [],
-        "moves": [{
-            "at_step": 1, "action": "code.patch", "op": "replace",
-            "find": "x = 1", "content": "    let x = 2;"
-        }]
-    });
-    if note {
-        // Something drawn on the patched code, for the fresh-load checks.
-        doc["annotations"] =
-            json!([{"id": "a1", "step": 1, "type": "note", "line": 2, "text": "now 2"}]);
-    }
-    doc
-}
-
-/// `main.rs` (OLD) and `doc.tiza` (the repro) in a scratch folder.
-fn files(name: &str, note: bool) -> (PathBuf, PathBuf, PathBuf) {
-    let dir = scratch(name);
-    let src = dir.join("main.rs");
-    std::fs::write(&src, OLD).unwrap();
-    let tiza = dir.join("doc.tiza");
-    std::fs::write(&tiza, repro(note).to_string()).unwrap();
-    (dir, src, tiza)
-}
 
 /// The repro opened as the TUI opens it: at step 1, follow off.
 fn opened(name: &str) -> (Live, PathBuf, PathBuf) {
@@ -94,10 +65,6 @@ fn status(live: &Live) -> Value {
 
 fn base(live: &Live) -> Vec<String> {
     live.with(|app| app.doc.base().to_vec())
-}
-
-fn lines(text: &str) -> Vec<String> {
-    text.lines().map(str::to_string).collect()
 }
 
 fn message(live: &Live) -> String {
@@ -148,32 +115,6 @@ fn check_file(path: &Path) -> (i32, Value) {
     (out.status.code().unwrap_or(-1), tiza_qa::as_live_report(v))
 }
 
-/// `tiza render SOURCE --all-steps --format txt`: one text per step.
-fn all_steps(args: &[&str], out: &Path) -> Vec<String> {
-    let _ = std::fs::remove_dir_all(out);
-    let r = tiza_qa::command()
-        .arg("render")
-        .args(args)
-        .args(["--all-steps", "--format", "txt", "--width", "100", "--out"])
-        .arg(format!("{}/", out.display()))
-        .output()
-        .unwrap();
-    assert!(
-        r.status.success(),
-        "render {args:?}: {}",
-        String::from_utf8_lossy(&r.stderr)
-    );
-    let mut files: Vec<PathBuf> = std::fs::read_dir(out)
-        .unwrap()
-        .map(|e| e.unwrap().path())
-        .collect();
-    files.sort();
-    files
-        .iter()
-        .map(|f| std::fs::read_to_string(f).unwrap())
-        .collect()
-}
-
 /// AC3: the live instance is what a fresh load of its autosave gives (the
 /// same `check` report, `tiza check` exits 0, the same `render
 /// --all-steps`), so quitting now leaves exactly this.
@@ -196,11 +137,6 @@ fn same_as_fresh(live: &Live, tiza: &Path, what: &str) {
     let live_steps = all_steps(&["--socket", &sock], &dir.join("render-live"));
     let disk_steps = all_steps(&[tiza.to_str().unwrap()], &dir.join("render-disk"));
     assert_eq!(live_steps, disk_steps, "{what}: render --all-steps");
-}
-
-fn saved_code(tiza: &Path) -> Value {
-    let v: Value = serde_json::from_str(&std::fs::read_to_string(tiza).unwrap()).unwrap();
-    v["code"].clone()
 }
 
 /// Test step 2 after follow went on at step 1: the save waits (the screen

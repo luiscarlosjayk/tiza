@@ -2,15 +2,7 @@
 
 use serde_json::json;
 use tiza_qa::Live;
-
-/// The number of annotations and the revision.
-fn state(live: &Live) -> (u64, u64) {
-    let s = live.api_ok("status", json!({}));
-    (
-        s["annotations"].as_u64().unwrap(),
-        s["revision"].as_u64().unwrap(),
-    )
-}
+use tiza_qa::scene::state;
 
 #[test]
 fn a_range_opens_its_document_from_an_earlier_session() {

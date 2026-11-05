@@ -18,46 +18,8 @@
 //! - AC9 This table drives the card's list through the real command runner.
 //! - AC10 A rejected command never ends in a success message.
 
+use tiza_qa::tui::{CODE, count, fresh, rejected};
 use tiza_qa::{Live, scratch};
-
-const CODE: &str = "fn main() {\n    let s = String::from(\"hi\");\n    takes(s);\n    // println!(\"{s}\");\n}\n\nfn takes(s: String) {\n    println!(\"{s}\");\n}\n";
-
-fn fresh(name: &str) -> Live {
-    let live = Live::from_code(CODE, "rs", name);
-    live.command("note 1 first");
-    live.command("spot 7-9");
-    live.command("step 2");
-    live.command("note 8 later");
-    live.command("step 1");
-    live
-}
-
-fn count(live: &Live) -> usize {
-    live.with(|a| a.doc.annotations.len())
-}
-
-/// Runs `cmd`; the message must be an error containing `expect`, and the
-/// annotation count and the step must not change.
-fn rejected(live: &Live, cmd: &str, expect: &str) {
-    let before = (
-        count(live),
-        live.with(|a| a.doc.step),
-        live.with(|a| a.doc.max_step()),
-    );
-    live.command(cmd);
-    let (msg, err) = live.message().unwrap_or_default();
-    assert!(err, "`:{cmd}` was not rejected: {msg}");
-    assert!(
-        msg.contains(expect),
-        "`:{cmd}`: expected «{expect}», got: {msg}"
-    );
-    let after = (
-        count(live),
-        live.with(|a| a.doc.step),
-        live.with(|a| a.doc.max_step()),
-    );
-    assert_eq!(before, after, "`:{cmd}` changed the document: {msg}");
-}
 
 #[test]
 fn table_of_typos_is_rejected_with_a_way_forward() {

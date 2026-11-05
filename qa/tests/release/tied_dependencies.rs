@@ -16,7 +16,7 @@
 //! the tree (rustix and signal-hook, through crossterm, and toml_parser,
 //! through toml) get the same guard.
 
-use std::path::PathBuf;
+use tiza_qa::repo_root;
 
 /// Direct dependencies of ours that some other crate of the tree pulls
 /// too, and the crate whose version they follow.
@@ -28,15 +28,8 @@ const TIED: &[(&str, &str)] = &[
     ("toml_parser", "toml"),
 ];
 
-fn root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
-
 fn read(rel: &str) -> String {
-    std::fs::read_to_string(root().join(rel)).unwrap()
+    std::fs::read_to_string(repo_root().join(rel)).unwrap()
 }
 
 /// The versions of `name` in Cargo.lock.

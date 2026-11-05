@@ -15,13 +15,7 @@
 use std::path::{Path, PathBuf};
 
 use tiza_qa::Live;
-
-fn root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
+use tiza_qa::repo_root;
 
 /// Every `.rs` file under `crates/`, as (path, contents).
 fn crate_sources() -> Vec<(PathBuf, String)> {
@@ -36,7 +30,7 @@ fn crate_sources() -> Vec<(PathBuf, String)> {
         }
     }
     let mut out = Vec::new();
-    walk(&root().join("crates"), &mut out);
+    walk(&repo_root().join("crates"), &mut out);
     assert!(!out.is_empty());
     out
 }

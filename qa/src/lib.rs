@@ -13,8 +13,14 @@ use ratatui::{Terminal, backend::TestBackend};
 use tiza_core::Document;
 use tiza_tui::app::App;
 
+pub mod follow;
 pub mod help_keys;
+pub mod ipc;
+pub mod layout;
 pub mod markdown;
+pub mod repo;
+pub mod scene;
+pub mod tui;
 
 /// The root of the repository: the folder above `qa/`.
 pub fn repo_root() -> PathBuf {

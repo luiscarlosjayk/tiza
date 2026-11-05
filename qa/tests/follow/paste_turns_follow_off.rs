@@ -28,6 +28,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 use tiza_core::Document;
+use tiza_qa::follow::{code, lines};
 use tiza_qa::{Live, fixture, scratch, tiza};
 
 const CODE: &str = "fn main() {\n    let s = String::new();\n    takes(s);\n}\n";
@@ -64,14 +65,6 @@ fn open_followed(name: &str, code: &str, by_hand: bool) -> (Live, PathBuf) {
 
 fn status(live: &Live) -> Value {
     live.api_ok("follow.status", json!({}))
-}
-
-fn code(live: &Live) -> Vec<String> {
-    live.with(|app| app.doc.code.clone())
-}
-
-fn lines(text: &str) -> Vec<String> {
-    text.lines().map(str::to_string).collect()
 }
 
 fn bar(live: &Live) -> String {

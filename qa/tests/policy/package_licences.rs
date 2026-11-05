@@ -1,49 +1,9 @@
 //! The packages carry the license texts, and `tiza` leaves out its tests.
 
-use std::path::PathBuf;
-use std::process::{Command, Output};
-
-fn root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
-
-fn read(rel: &str) -> String {
-    std::fs::read_to_string(root().join(rel)).unwrap_or_else(|e| panic!("{rel}: {e}"))
-}
-
-fn text(o: &Output) -> String {
-    format!(
-        "{}{}",
-        String::from_utf8_lossy(&o.stdout),
-        String::from_utf8_lossy(&o.stderr)
-    )
-}
+use tiza_qa::repo::packaged;
+use tiza_qa::repo_file as read;
 
 // --- crates.io pages -----------------------------------------------------
-
-/// The files `cargo package` would put in the crate.
-fn packaged(name: &str) -> Vec<String> {
-    let out = Command::new(env!("CARGO"))
-        .args([
-            "package",
-            "--list",
-            "--offline",
-            "--allow-dirty",
-            "-p",
-            name,
-        ])
-        .current_dir(root())
-        .output()
-        .unwrap();
-    assert!(out.status.success(), "{}", text(&out));
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .map(str::to_string)
-        .collect()
-}
 
 /// QA P2-2: every crate carries the licence texts (links in each crate
 /// directory to the repository's, packaged as files), and QA P3-6: `tiza`

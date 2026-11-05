@@ -48,6 +48,7 @@ use serde_json::json;
 use tiza_core::Document;
 use tiza_core::fs;
 use tiza_core::model::MAX_HOLD_MS;
+use tiza_qa::tui::step;
 use tiza_qa::{Live, McpClient, fixture, scratch, tiza, typing_speed};
 use tiza_tui::app::App;
 
@@ -90,10 +91,6 @@ fn press_then<R: Send + 'static>(
         tiza_tui::on_key(a, key, KeyModifiers::NONE);
         f(a)
     })
-}
-
-fn step(live: &Live) -> u32 {
-    live.with(|a| a.doc.step)
 }
 
 /// Waits (10 s at most) until `cond` holds.

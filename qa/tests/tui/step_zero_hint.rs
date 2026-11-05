@@ -17,6 +17,7 @@
 use crossterm::event::KeyCode;
 use serde_json::json;
 use tiza_qa::Live;
+use tiza_qa::tui::step;
 use tiza_tui::app::{step_hint, step_hint_start};
 use tiza_tui::ui::fit_message;
 
@@ -34,10 +35,6 @@ fn at_step_0(name: &str) -> Live {
     live.command("step 0");
     live.with(|a| a.message = None);
     live
-}
-
-fn step(live: &Live) -> u32 {
-    live.with(|a| a.doc.step)
 }
 
 #[test]

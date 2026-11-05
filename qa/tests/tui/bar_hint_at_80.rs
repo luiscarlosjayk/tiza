@@ -43,11 +43,12 @@
 //! labels under the lines` plus `•  unsaved (:w)` under `--no-save` /
 //! `:autosave off` (`open(…, true)` here).
 
-use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use crossterm::event::KeyCode;
-use serde_json::{Value, json};
+use serde_json::json;
+use tiza_qa::ipc::ipc_at;
+use tiza_qa::tui::info;
 use tiza_qa::{Live, example, fixture, scratch};
 
 const STEP_HINT: &str = "(step 1, press n)";
@@ -286,30 +287,6 @@ fn open_mods(name: &str) -> Live {
 fn bar(live: &Live, cols: u16) -> String {
     let screen = live.screen(cols, 30);
     screen.lines().last().unwrap_or_default().to_string()
-}
-
-fn info(live: &Live) -> String {
-    match live.message() {
-        Some((m, false)) => m,
-        other => panic!("expected an info message, got {other:?}"),
-    }
-}
-
-/// The agent's `annotation.add` / `.update` at the injected clock `at`, so
-/// the 1 s grouping of agent notices is tested without sleeping.
-fn ipc_at(live: &Live, method: &str, params: Value, at: Instant) -> Value {
-    let method = method.to_string();
-    live.with(move |a| {
-        let (tx, rx) = mpsc::channel();
-        let req = tiza_core::protocol::Request {
-            id: json!(1),
-            method,
-            params,
-        };
-        a.handle_ipc_at(req, tx, at);
-        let resp = rx.recv().unwrap();
-        resp.result.unwrap_or_else(|| panic!("{:?}", resp.error))
-    })
 }
 
 fn agent_box2(live: &Live) {

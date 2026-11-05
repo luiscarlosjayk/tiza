@@ -22,31 +22,10 @@ use std::thread;
 use std::time::Duration;
 
 use crossterm::event::KeyCode;
-use serde_json::{Value, json};
+use serde_json::json;
+use tiza_qa::ipc::{send_async, wait_pending};
 use tiza_qa::{Live, McpClient};
 use tiza_tui::app::Overlay;
-
-/// Sends a request from another thread and returns a handle to its reply.
-fn send_async(
-    socket: &std::path::Path,
-    method: &str,
-    params: Value,
-) -> thread::JoinHandle<tiza_core::protocol::Response> {
-    let socket = socket.to_path_buf();
-    let method = method.to_string();
-    thread::spawn(move || tiza_tui::ipc::call(&socket, &method, params).expect("socket"))
-}
-
-fn wait_pending(live: &Live, n: usize) {
-    let start = std::time::Instant::now();
-    while live.with(|a| a.proposals.len()) < n {
-        assert!(
-            start.elapsed() < Duration::from_secs(10),
-            "waiting for {n} proposals"
-        );
-        thread::sleep(Duration::from_millis(10));
-    }
-}
 
 #[test]
 fn mutations_wait_and_reads_do_not() {

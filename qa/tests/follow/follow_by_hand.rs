@@ -28,6 +28,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use serde_json::json;
+use tiza_qa::follow::code;
 use tiza_qa::{Live, scratch};
 use tiza_tui::follow::Poll;
 
@@ -54,10 +55,6 @@ fn watching(live: &Live) -> Option<&'static str> {
 /// Whether a read of the followed file is due after the debounce.
 fn reload_due(live: &Live) -> bool {
     live.with(|app| app.follow.as_ref().is_some_and(|f| f.reload_due()))
-}
-
-fn code(live: &Live) -> Vec<String> {
-    live.with(|app| app.doc.code.clone())
 }
 
 /// AC1, AC2: by `:follow on`, by `follow.set` and after `:ref`, the

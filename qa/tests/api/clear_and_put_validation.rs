@@ -40,6 +40,7 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 use tiza_core::protocol::Response;
+use tiza_qa::scene::state;
 use tiza_qa::{Live, McpClient, tiza_ok};
 
 const CODE: &str = "fn main() {\n    let a = 1;\n    let b = 2;\n}\n";
@@ -54,15 +55,6 @@ fn three_notes(name: &str) -> Live {
         );
     }
     live
-}
-
-/// The number of annotations and the revision.
-fn state(live: &Live) -> (u64, u64) {
-    let s = live.api_ok("status", json!({}));
-    (
-        s["annotations"].as_u64().unwrap(),
-        s["revision"].as_u64().unwrap(),
-    )
 }
 
 /// A call that must be answered within 10 s (a parked request waits up to

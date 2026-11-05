@@ -18,19 +18,9 @@
 
 use serde_json::{Value, json};
 use tiza_core::check::{Bound, last_step, min_clean_width, saturation_bounds, saturation_width};
-use tiza_core::layout::{LayoutOptions, MAX_WIDTH, MIN_WIDTH, layout};
+use tiza_core::layout::{MAX_WIDTH, MIN_WIDTH};
 use tiza_qa::fixture;
-
-fn lay(doc: &tiza_core::Document, width: usize, step: u32) -> tiza_core::layout::Layout {
-    let opts = LayoutOptions {
-        width,
-        step,
-        line_numbers: doc.numbers_or(true),
-        margin_cap: doc.margin.map(usize::from),
-        ..Default::default()
-    };
-    layout(doc, &tiza_core::Theme::dark(), &opts)
-}
+use tiza_qa::layout::{doc_of, lay};
 
 /// No step is searched from the widest width (the bound held), and the
 /// take at the bound is the take at the widest width at every step.
@@ -64,10 +54,6 @@ fn clean_the_slow_way(doc: &tiza_core::Document) -> Option<usize> {
         Some(MAX_WIDTH) => None,
         Some(w) => Some(w + 1),
     }
-}
-
-fn doc_of(v: &Value) -> tiza_core::Document {
-    tiza_core::fs::parse_document(&v.to_string(), None).unwrap()
 }
 
 #[test]

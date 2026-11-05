@@ -1,21 +1,11 @@
 //! The issue and discussion forms are valid YAML and ask for what a report
 //! needs.
 
-use std::path::PathBuf;
 use std::process::Command;
+use tiza_qa::repo_file as read;
+use tiza_qa::repo_root;
 
 const REPO: &str = "https://github.com/luiscarlosjayk/tiza";
-
-fn root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
-
-fn read(rel: &str) -> String {
-    std::fs::read_to_string(root().join(rel)).unwrap_or_else(|e| panic!("{rel}: {e}"))
-}
 
 // --- How to help, and security (AC7) ----------------------------------
 
@@ -23,7 +13,7 @@ fn read(rel: &str) -> String {
 /// the system (macOS and the GitHub runners have it); `None` when neither
 /// is there.
 fn yaml(rel: &str) -> Option<serde_json::Value> {
-    let path = root().join(rel);
+    let path = repo_root().join(rel);
     let tries: [(&str, &[&str]); 2] = [
         (
             "python3",
@@ -68,7 +58,7 @@ fn the_issue_and_discussion_forms_are_valid_and_complete() {
         ".github/DISCUSSION_TEMPLATE/feedback.yml",
     ];
     for f in files {
-        assert!(root().join(f).is_file(), "{f} is missing");
+        assert!(repo_root().join(f).is_file(), "{f} is missing");
     }
     // As text, always: no blank issues, and the ways out.
     let config = read(".github/ISSUE_TEMPLATE/config.yml");

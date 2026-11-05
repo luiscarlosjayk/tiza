@@ -52,6 +52,7 @@ use std::process::Output;
 use std::time::Duration;
 
 use serde_json::{Value, json};
+use tiza_qa::ipc::sock;
 use tiza_qa::{Live, McpClient, example, scratch};
 
 /// Every MCP export must answer well before this (debug builds included).
@@ -122,10 +123,6 @@ fn open_live(path: &Path) -> Live {
 /// An empty directory to run live renders from.
 fn elsewhere(name: &str) -> PathBuf {
     scratch(&format!("{name}-cwd"))
-}
-
-fn sock(live: &Live) -> &str {
-    live.socket.to_str().unwrap()
 }
 
 fn render_file(path: &Path, step: u32, format: &str) -> String {

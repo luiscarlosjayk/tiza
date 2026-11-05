@@ -22,6 +22,7 @@
 
 use crossterm::event::{KeyCode, KeyModifiers};
 use tiza_qa::Live;
+use tiza_qa::tui::step;
 use tiza_tui::app::{Mode, Overlay};
 
 /// Three steps: 0 (the code), 1 and 2 (a note each). The cursor on line 2,
@@ -37,10 +38,6 @@ fn three_steps(name: &str) -> Live {
         a.cursor_col = 4;
     });
     live
-}
-
-fn step(live: &Live) -> u32 {
-    live.with(|a| a.doc.step)
 }
 
 fn col(live: &Live) -> u32 {
