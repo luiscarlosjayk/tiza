@@ -843,6 +843,10 @@ pub struct App {
     /// The cursor line the last frame saw: in presentation mode the view
     /// follows the cursor only in a frame where its line changed.
     pub(crate) view_cursor_line: u32,
+    /// The size of the terminal (columns, rows) of the last frame, when
+    /// that frame was in presentation mode and showed the end of code that
+    /// did not fit: after a resize the next frame shows the end again.
+    pub(crate) view_end: Option<(u16, u16)>,
     /// A key that moves the view in presentation mode, for the next frame.
     pub(crate) view_request: Option<ViewRequest>,
     /// The last message about an agent change the view does not show,
@@ -957,6 +961,7 @@ impl App {
             held_unresolved: false,
             view_anchor: None,
             view_cursor_line: cursor_line,
+            view_end: None,
             view_request: None,
             agent_notice: None,
             agent_deferred: Vec::new(),

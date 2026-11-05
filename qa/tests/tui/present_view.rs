@@ -362,6 +362,78 @@ fn g_and_shift_g_go_to_the_ends_and_the_view_stops_there() {
     assert_eq!(scroll_after(&live, &keys), 2, "g j j");
 }
 
+/// The first and the last line of code in a new frame at `cols×rows`.
+fn lines_in_view(live: &Live, cols: u16, rows: u16) -> (Option<u32>, Option<u32>) {
+    live.with(move |a| {
+        draw(a, cols, rows);
+        let first = a.hit.rows.iter().find_map(|r| *r);
+        let last = a.hit.rows.iter().rev().find_map(|r| *r);
+        (first, last)
+    })
+}
+
+#[test]
+fn at_the_end_of_the_code_a_resize_keeps_the_end_in_view() {
+    // The presenter is at the end of the code, and the terminal gets
+    // smaller and bigger: a split pane, the frame of a recording, a bigger
+    // font. The last line stays in view, as `G` put it.
+    let live = open_lines("view-end", 30, "0 0");
+    live.with(|a| {
+        draw(a, 52, 15);
+        key(a, KeyCode::Char('G'));
+    });
+    assert_eq!(lines_in_view(&live, 52, 15).1, Some(30));
+    for (cols, rows) in [(52, 9), (52, 11), (52, 8), (40, 8), (52, 19), (52, 15)] {
+        assert_eq!(
+            lines_in_view(&live, cols, rows).1,
+            Some(30),
+            "at {cols}x{rows}"
+        );
+    }
+    // A view key leaves the end: then a smaller terminal keeps the top
+    // line again (a bigger one stops the view at the end, as before).
+    let first = live.with(|a| {
+        draw(a, 52, 9);
+        key(a, KeyCode::Char('k'));
+        draw(a, 52, 9);
+        a.hit.rows.iter().find_map(|r| *r)
+    });
+    assert_eq!(lines_in_view(&live, 52, 8).0, first, "after k");
+}
+
+#[test]
+fn away_from_the_end_a_resize_keeps_the_top_line() {
+    // In the middle of the code.
+    let live = open_lines("view-middle", 60, "0 0");
+    live.with(|a| {
+        draw(a, 52, 15);
+        for _ in 0..20 {
+            key(a, KeyCode::Char('j'));
+        }
+    });
+    assert_eq!(lines_in_view(&live, 52, 15).0, Some(21));
+    assert_eq!(lines_in_view(&live, 52, 9).0, Some(21), "smaller");
+    assert_eq!(lines_in_view(&live, 52, 11).0, Some(21), "bigger");
+    // All the code fits, then not: the top line stays.
+    let live = open_lines("view-fits", 10, "0 0");
+    assert_eq!(lines_in_view(&live, 52, 15), (Some(1), Some(10)));
+    assert_eq!(lines_in_view(&live, 52, 6).0, Some(1), "smaller");
+}
+
+#[test]
+fn in_normal_mode_the_cursor_keeps_the_last_line_in_view_after_a_resize() {
+    let code: String = (1..=30).map(|i| format!("line {i}\n")).collect();
+    let live = Live::from_code(&code, "txt", "view-end-normal");
+    live.command("pad 0 0");
+    live.with(|a| {
+        a.autosave = false;
+        draw(a, 52, 15);
+        key(a, KeyCode::Char('G'));
+    });
+    assert_eq!(lines_in_view(&live, 52, 15).1, Some(30));
+    assert_eq!(lines_in_view(&live, 52, 9).1, Some(30), "smaller");
+}
+
 #[test]
 fn in_a_short_document_the_keys_move_nothing() {
     let live = open_lines("view-short", 5, "0 0");

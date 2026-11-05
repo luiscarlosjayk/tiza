@@ -153,6 +153,20 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     {
         app.scroll = row;
     }
+    // At the end of the code, a resize keeps the end in view, as `G` put
+    // it: a smaller terminal (a split pane, the frame of a recording, a
+    // bigger font) does not push the last lines off the screen. A held
+    // view and the live pointer keep their own lines. Only the terminal:
+    // a row that the bar takes (the chip of a change for review) keeps the
+    // top line, as before.
+    let size = (area.width, area.height);
+    if app.present
+        && app.scroll_held.is_none()
+        && app.pointer.is_none()
+        && app.view_end.is_some_and(|end| end != size)
+    {
+        app.scroll = total.saturating_sub(visible);
+    }
 
     // A view that a `scroll` holds: its target where `align` puts it, on
     // the rows of this frame (the annotations of the step came in, the
@@ -289,6 +303,8 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     }
     // What the next frame keeps.
     app.view_anchor = view_anchor_of(&layout, app.scroll);
+    app.view_end = (app.present && visible > 0 && app.scroll > 0 && app.scroll + visible >= total)
+        .then_some(size);
     app.view_cursor_line = app.cursor_line;
     let end = (app.scroll + visible).min(total);
     // While an enter effect plays: its frame, on the rows in view only.
