@@ -153,7 +153,10 @@ pub struct TypingState {
     /// The enter effects of the step play when the typing ends: a step
     /// forward, not the step the TUI opens at.
     pub then_effect: bool,
-    last: std::time::Instant,
+    /// The time on the time line of the typing when the last unit shown is
+    /// due (the start of the typing before the first one): `typing_tick_at`
+    /// measures the time from it.
+    pub last: std::time::Instant,
 }
 
 /// An enter effect in progress (experimental): the new annotations of the
@@ -3944,23 +3947,29 @@ impl App {
         let Some(t) = &mut self.typing else {
             return false;
         };
-        let elapsed = now.saturating_duration_since(t.last);
-        let item = &t.plan.items[t.index];
-        let speed = std::time::Duration::from_millis(item.speed_ms);
-        let units = (elapsed.as_micros() / speed.as_micros().max(1)) as usize;
-        if units == 0 {
-            return false;
-        }
-        t.last += speed * units as u32;
-        t.revealed += units;
-        let mut done = false;
-        while t.revealed >= t.plan.items[t.index].units {
-            t.revealed -= t.plan.items[t.index].units;
-            t.index += 1;
-            if t.index >= t.plan.items.len() {
-                done = true;
+        // The time since the last unit: each item takes the time of the
+        // units it has left, at its own speed, and gives what is left of
+        // the time to the next item (the time line of
+        // `TypingPlan::export_frames`).
+        let mut left = now.saturating_duration_since(t.last);
+        let before = (t.index, t.revealed);
+        while let Some(item) = t.plan.items.get(t.index) {
+            let speed = item.speed_ms.max(1);
+            let rest = item.units.saturating_sub(t.revealed) as u64;
+            let need = std::time::Duration::from_millis(speed.saturating_mul(rest));
+            if left < need {
+                let units = (left.as_millis() / u128::from(speed)) as u64;
+                t.revealed += units as usize;
+                t.last += std::time::Duration::from_millis(units * speed);
                 break;
             }
+            left -= need;
+            t.last += need;
+            (t.index, t.revealed) = (t.index + 1, 0);
+        }
+        let done = t.index >= t.plan.items.len();
+        if !done && (t.index, t.revealed) == before {
+            return false;
         }
         let (index, then_effect) = (t.index, t.then_effect);
         // The `scroll` moves that come before the item typed now, or after
