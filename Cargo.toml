@@ -37,7 +37,7 @@ tiza-export = { path = "crates/tiza-export", version = "0.2.0" }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 thiserror = "2"
-unicode-width = "0.2.2"
+unicode-width = "0.2.3"
 unicode-segmentation = "1.13.3"
 syntect = { version = "5.3.0", default-features = false, features = ["parsing", "dump-load", "regex-fancy"] }
 two-face = { version = "0.5.2", default-features = false, features = ["syntect-fancy"] }
@@ -57,14 +57,14 @@ clap = { version = "4.6.7", features = ["derive"] }
 
 base64 = "0.23.1"
 # File watching for follow mode: notify 8.x stable (9 is still rc).
-notify = "8.2.0"
+notify = "8.2.1"
 # The sha256 of the followed file as Tiza read it, in `follow.status`: an agent compares it with the file it
 # saved. No default features: no `std`, and `asm` stays off (pure Rust). Version 0.10.9 is in Cargo.lock
 # already (through ratatui-termwiz, which is not built): one version for `cargo deny`.
 sha2 = { version = "0.10.9", default-features = false }
 proptest = "1.12.0"
 insta = "1.49.0"
-jsonschema = { version = "0.59.0", default-features = false }
+jsonschema = { version = "0.60.2", default-features = false }
 # SVG → PNG: resvg (usvg + tiny-skia + fontdb). Fonts are embedded, so no system fonts are needed;
 # `system-fonts` only adds the optional fallback for emoji/CJK.
 resvg = { version = "0.49.0", default-features = false, features = ["text", "system-fonts", "memmap-fonts"] }
@@ -79,7 +79,7 @@ rustix = { version = "1.1", default-features = false, features = ["std", "termio
 # version tied to crossterm's; never bumped alone.
 signal-hook = "0.3.18"
 # Theme override files: `~/.config/tiza/config.toml`, `--theme-file`. Parse only.
-toml = { version = "1.1", default-features = false, features = ["parse", "serde"] }
+toml = { version = "1.2", default-features = false, features = ["parse", "serde"] }
 # The tokens of the config file for its recovery: the same lexer as the parser, so Tiza never splits a
 # string or takes text inside one as entries. Already in the tree through toml, with the same features:
 # version tied to toml's; never bumped alone.
