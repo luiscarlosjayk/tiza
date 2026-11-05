@@ -106,6 +106,18 @@ png = "0.18.1"
 [workspace.lints.rust]
 unsafe_code = "deny"
 
+[profile.dev]
+# On macOS the default ("unpacked") keeps the .o file of each codegen unit in
+# target/debug/deps for the debugger, and each commit builds new ones (the
+# build stamp rebuilds every crate): 4,700 files a commit, a million after
+# some weeks. Then fseventsd makes each file watcher start slowly, and the
+# Mac too. "packed" writes the debug info of each binary into one .dSYM and
+# keeps no .o. Line tables only: a debugger shows the file and the line, not
+# the local variables, and deps stays the size of today. On Linux, Cargo
+# packs the debug info into one .dwp. scripts/deps-check.sh checks the count.
+split-debuginfo = "packed"
+debug = "line-tables-only"
+
 [profile.release]
 # Fat LTO: -0.9 MB on macOS arm64 at the same speed. Keep the default
 # panic = "unwind": a panic in a socket or MCP thread must fail that request
