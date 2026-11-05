@@ -6,7 +6,7 @@
 
 use crate::Document;
 use crate::canvas::{Canvas, Cell, Sym};
-use crate::layout::{LayoutOptions, StableGeometry, layout_with, stable_geometry};
+use crate::layout::{LayoutOptions, StableGeometry, layout_typed, layout_with, stable_geometry};
 use crate::theme::Theme;
 
 /// What a take is made of.
@@ -137,18 +137,21 @@ fn generate(
                 .map(|(_, f)| f)
                 .unwrap_or(d.source.first_line);
             d.source.first_line = first_line;
-            plan.each_frame(first_line, |code, delay, last| {
-                if last {
+            plan.each_frame(first_line, |code, delay, at| {
+                let Some((index, revealed)) = at else {
                     return; // the full code is the step's own frame below
-                }
+                };
                 d.code = code;
-                emit(
-                    step,
-                    &lay(&d, step, true, None),
-                    delay.min(max),
-                    true,
-                    false,
+                // The colors of the code at the end of the step, as in the TUI.
+                let typed = plan.highlight_at(
+                    first_line,
+                    index,
+                    revealed,
+                    &d.source.language,
+                    theme.syntax,
                 );
+                let canvas = layout_typed(&d, theme, &options(&d, step, true), None, &typed).canvas;
+                emit(step, &canvas, delay.min(max), true, false);
             });
         }
         // The document's own timing first: a named step's `auto_advance_ms` is how long its
@@ -631,5 +634,46 @@ mod tests {
         let delays: Vec<u64> = f.iter().map(|f| f.delay_ms).collect();
         assert_eq!(delays, vec![2000, 50, 3000, 4000]);
         assert_eq!(timed_steps(&d, &AnimOptions::default()), vec![1]);
+    }
+
+    #[test]
+    fn the_typed_frames_of_an_export_keep_the_colors_of_the_lines_not_typed() {
+        // A half-typed `fn dangle(` opens a bracket: highlighted as it is,
+        // the line below it changes colors and comes back.
+        let mut d = Document::from_code(
+            "fn main() {\n    let r = dangle();\n}\n\nfn dangle() -> &String {\n    let s = String::from(\"hello\");\n    &s\n}\n",
+            "rs",
+            None,
+        );
+        d.add_move(
+            serde_json::from_value(json!({
+                "at_step": 1, "action": "code.patch", "op": "replace",
+                "find": "fn dangle() -> &String {", "content": "fn dangle() -> String {",
+                "typing": "char", "speed_ms": 50
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let f = frames(&d, &Theme::dark(), &AnimOptions::default());
+        let row_of = |c: &Canvas, text: &str| {
+            let y = c
+                .to_plain_text()
+                .lines()
+                .position(|l| l.contains(text))
+                .unwrap_or_else(|| panic!("no row with {text:?}"));
+            (0..c.width)
+                .map(|x| c.get(x, y).map(|cell| (cell.sym.clone(), cell.style)))
+                .collect::<Vec<_>>()
+        };
+        let done = f.iter().find(|x| x.step == 1 && !x.typing).unwrap();
+        let want = row_of(&done.canvas, "let s = String");
+        let typed: Vec<_> = f.iter().filter(|x| x.typing).collect();
+        assert_eq!(typed.len(), "fn dangle() -> String {".len());
+        for (i, x) in typed.iter().enumerate() {
+            assert!(
+                row_of(&x.canvas, "let s = String") == want,
+                "typed frame {i}: the line below the typed line has other colors"
+            );
+        }
     }
 }

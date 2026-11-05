@@ -20,7 +20,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use crate::canvas::{
     Canvas, CellStyle, Part, Rgb, Trace, code_grapheme_width, code_width, display_width,
 };
-use crate::highlight::{Segment, highlight_cached};
+use crate::highlight::{Segment, TypedHighlight, highlight_cached};
 use crate::model::{Annotation, Document, Emphasis, Shape, TextSpan};
 use crate::theme::Theme;
 
@@ -563,24 +563,58 @@ pub(crate) fn layout_measures(
         theme,
         opts,
         geometry,
-        Paint { code: false, spare },
+        Paint {
+            code: false,
+            spare,
+            typed: None,
+        },
         false,
         Some(opts.step),
     )
 }
 
+/// [`layout_with`] for a frame of a typing animation: the code takes the
+/// colors of `typed` ([`crate::moves::TypingPlan::highlight_at`]) and is
+/// not highlighted as it is, so the lines that are not typed keep their
+/// colors while a line is half typed. A line whose text is not the one of
+/// `typed` is highlighted with the code, as [`layout_with`] does.
+pub fn layout_typed(
+    doc: &Document,
+    theme: &Theme,
+    opts: &LayoutOptions,
+    geometry: Option<&StableGeometry>,
+    typed: &TypedHighlight,
+) -> Layout {
+    layout_run(
+        doc,
+        theme,
+        opts,
+        geometry,
+        Paint {
+            code: true,
+            spare: None,
+            typed: Some(typed),
+        },
+        false,
+        spot_step(doc, opts),
+    )
+}
+
 /// What the drawing run of [`layout_pass`] paints, and into which buffer.
-struct Paint {
+struct Paint<'a> {
     /// The text of the code and the line numbers.
     code: bool,
     /// A canvas to lay the layout out into instead of a new one.
     spare: Option<Canvas>,
+    /// The colors of a frame of a typing animation ([`layout_typed`]).
+    typed: Option<&'a TypedHighlight>,
 }
 
-impl Paint {
-    const ALL: Paint = Paint {
+impl Paint<'static> {
+    const ALL: Paint<'static> = Paint {
         code: true,
         spare: None,
+        typed: None,
     };
 }
 
@@ -592,7 +626,7 @@ fn layout_run(
     theme: &Theme,
     opts: &LayoutOptions,
     geometry: Option<&StableGeometry>,
-    paint: Paint,
+    paint: Paint<'_>,
     trace: bool,
     spot_step: Option<u32>,
 ) -> Layout {
@@ -794,7 +828,7 @@ fn layout_pass(
     geometry: Option<&StableGeometry>,
     under: &Under,
     shared: &Shared,
-    draw: Option<Paint>,
+    draw: Option<Paint<'_>>,
 ) -> Pass {
     let under_callouts = &under.callouts;
     let width = opts.width.max(20);
@@ -1649,7 +1683,12 @@ fn layout_pass(
     let mut marks: Vec<(usize, usize)> = Vec::new();
     // `check`'s sweeps do not paint the code (see `layout_measures`).
     if paint.code {
-        let segments = highlight_cached(&doc.code, &doc.source.language, theme.syntax);
+        // A typed frame takes the colors of its plan; the code is highlighted
+        // only for a line that has none there (and then once for all).
+        let whole = std::cell::OnceCell::new();
+        let highlighted = || {
+            whole.get_or_init(|| highlight_cached(&doc.code, &doc.source.language, theme.syntax))
+        };
         for (y, row) in rows.iter().enumerate() {
             let Row::Code(line) = row else { continue };
             let text = doc.line_text(*line).unwrap_or("");
@@ -1668,8 +1707,14 @@ fn layout_pass(
             // draws an empty row, never an index out of bounds.
             let segs = line
                 .checked_sub(doc.source.first_line)
-                .and_then(|i| segments.get(i as usize))
-                .map_or(&[][..], Vec::as_slice);
+                .and_then(|i| {
+                    let i = i as usize;
+                    paint
+                        .typed
+                        .and_then(|t| t.line(i, text))
+                        .or_else(|| highlighted().get(i).map(Vec::as_slice))
+                })
+                .unwrap_or(&[]);
             let drawn = paint_code(
                 &mut canvas,
                 code_x,

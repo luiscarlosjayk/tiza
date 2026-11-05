@@ -1344,10 +1344,26 @@ impl App {
         traced: bool,
     ) -> (Layout, Option<tiza_core::canvas::Trace>) {
         self.layouts.set(self.layouts.get() + 1);
+        // While a step types, the lines keep the colors of the code at the
+        // end of the step: the half-typed code is not highlighted.
+        let typed = self.typing.as_ref().map(|t| {
+            t.plan.highlight_at(
+                doc.source.first_line,
+                t.index,
+                t.revealed,
+                &doc.source.language,
+                theme.syntax,
+            )
+        });
         let run = |g: Option<&tiza_core::layout::StableGeometry>| {
             if traced {
                 let (l, t) = tiza_core::layout::layout_traced(doc, theme, opts, g);
                 (l, Some(t))
+            } else if let Some(typed) = &typed {
+                (
+                    tiza_core::layout::layout_typed(doc, theme, opts, g, typed),
+                    None,
+                )
             } else {
                 (tiza_core::layout::layout_with(doc, theme, opts, g), None)
             }

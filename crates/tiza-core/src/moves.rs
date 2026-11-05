@@ -1980,15 +1980,72 @@ impl TypingPlan {
 
     /// [`TypingPlan::frames`] one at a time: each code is made when `f`
     /// takes it, so the codes of the animation are never all held at once.
-    /// The last call, the full code, has `true`.
-    pub fn each_frame(&self, first_line: u32, mut f: impl FnMut(Vec<String>, u64, bool)) {
+    /// Each call has the item and the units shown of it, as
+    /// [`TypingPlan::code_at`] takes them; the last call, the full code,
+    /// has `None`.
+    pub fn each_frame(
+        &self,
+        first_line: u32,
+        mut f: impl FnMut(Vec<String>, u64, Option<(usize, usize)>),
+    ) {
         for (k, item) in self.items.iter().enumerate() {
             for revealed in 0..item.units {
-                f(self.code_at(first_line, k, revealed), item.speed_ms, false);
+                f(
+                    self.code_at(first_line, k, revealed),
+                    item.speed_ms,
+                    Some((k, revealed)),
+                );
             }
         }
         let last_speed = self.items.last().map_or(0, |i| i.speed_ms);
-        f(self.full.clone(), last_speed, true);
+        f(self.full.clone(), last_speed, None);
+    }
+
+    /// The colors of the frame that [`TypingPlan::code_at`] gives: every
+    /// line as in the code at the end of the step, the typed line cut to
+    /// what shows of it, the lines still to type blank. The half-typed code
+    /// is not highlighted: an open bracket or quote in it would change the
+    /// colors of the lines below it until it closes, and they would blink.
+    pub fn highlight_at(
+        &self,
+        first_line: u32,
+        index: usize,
+        revealed: usize,
+        language: &str,
+        theme: two_face::theme::EmbeddedThemeName,
+    ) -> crate::highlight::TypedHighlight {
+        use crate::highlight::{cut_segments, highlight, highlight_cached};
+        let base = highlight_cached(&self.full, language, theme);
+        let mut lines = BTreeMap::new();
+        // The same lines as `code_at`, in the same order.
+        for (k, item) in self.items.iter().enumerate().skip(index) {
+            let shown = if k == index {
+                partial_content(&item.lines, item.mode, revealed)
+            } else {
+                vec![String::new(); item.lines.len()]
+            };
+            for (i, l) in shown.into_iter().enumerate() {
+                let Some(at) = (item.range.start + i as u32).checked_sub(first_line) else {
+                    continue;
+                };
+                let at = at as usize;
+                if at >= self.full.len() {
+                    continue;
+                }
+                // A later patch of the step changed the typed line: the
+                // part that shows is highlighted alone.
+                let segs = base
+                    .get(at)
+                    .and_then(|s| cut_segments(s, &l))
+                    .unwrap_or_else(|| {
+                        highlight(std::slice::from_ref(&l), language, theme)
+                            .pop()
+                            .unwrap_or_default()
+                    });
+                lines.insert(at, segs);
+            }
+        }
+        crate::highlight::TypedHighlight { base, lines }
     }
 }
 
@@ -2676,5 +2733,126 @@ mod tests {
         assert_eq!(partial_content(&lines, Typing::Char, 4), vec!["ab", "c"]);
         assert_eq!(typing_units(&lines, Typing::Char), 5);
         assert_eq!(typing_units(&lines, Typing::Line), 2);
+    }
+
+    /// A document of `code` with the moves of `moves` (JSON), all at step 1.
+    fn typed_doc(code: &str, moves: &[serde_json::Value]) -> Document {
+        let mut d = Document::from_code(code, "rs", None);
+        for m in moves {
+            d.add_move(serde_json::from_value(m.clone()).unwrap())
+                .unwrap();
+        }
+        d
+    }
+
+    const DANGLE: &str = "fn main() {\n    let r = dangle();\n}\n\nfn dangle() -> &String {\n    let s = String::from(\"hello\");\n    &s\n}\n";
+
+    /// Each frame of the typing of step 1 of `d`, with its colors: every
+    /// line has segments with its own text; a line that no item types has
+    /// the colors of the code at the end of the step; a typed line has the
+    /// start of the colors of its line there. Returns the frame codes.
+    fn check_typed_colors(d: &Document) -> Vec<Vec<String>> {
+        let theme = crate::theme::Theme::dark().syntax;
+        let lang = d.source.language.clone();
+        let plan = typing_plan(d, 1).expect("a typing at step 1");
+        let first = d.source.first_line;
+        let base = crate::highlight::highlight(&plan.full, &lang, theme);
+        let typed_lines: Vec<usize> = plan
+            .items
+            .iter()
+            .flat_map(|it| it.range.clone())
+            .map(|l| (l - first) as usize)
+            .collect();
+        let mut codes = Vec::new();
+        plan.each_frame(first, |code, _, at| {
+            let Some((index, revealed)) = at else { return };
+            let th = plan.highlight_at(first, index, revealed, &lang, theme);
+            for (i, text) in code.iter().enumerate() {
+                let segs = th.line(i, text).unwrap_or_else(|| {
+                    panic!("frame {index}/{revealed}: line {i} {text:?} has no colors")
+                });
+                if typed_lines.contains(&i) {
+                    let want = crate::highlight::cut_segments(&base[i], text);
+                    if let Some(want) = want {
+                        assert_eq!(
+                            segs,
+                            want.as_slice(),
+                            "typed line {i} at {index}/{revealed}"
+                        );
+                    }
+                } else {
+                    assert_eq!(segs, base[i].as_slice(), "line {i} at {index}/{revealed}");
+                }
+            }
+            codes.push(code);
+        });
+        codes
+    }
+
+    #[test]
+    fn a_typed_line_does_not_change_the_colors_of_the_lines_below() {
+        let d = typed_doc(
+            DANGLE,
+            &[serde_json::json!({
+                "at_step": 1, "action": "code.patch", "op": "replace",
+                "find": "fn dangle() -> &String {", "content": "fn dangle() -> String {",
+                "typing": "char", "speed_ms": 50
+            })],
+        );
+        let codes = check_typed_colors(&d);
+        // The case is a real one: highlighted as it is, a half-typed
+        // `fn dangle(` gives line 6 other colors.
+        let theme = crate::theme::Theme::dark().syntax;
+        let plan = typing_plan(&d, 1).unwrap();
+        let after = crate::highlight::highlight(&plan.full, &d.source.language, theme);
+        assert!(
+            codes.iter().any(|c| {
+                crate::highlight::highlight(c, &d.source.language, theme)[5] != after[5]
+            }),
+            "no frame of the half-typed code changes line 6: the test shows nothing"
+        );
+    }
+
+    #[test]
+    fn typed_colors_hold_for_comments_several_lines_and_added_or_removed_lines() {
+        let insert = |content: &str, typing: &str| {
+            serde_json::json!({
+                "at_step": 1, "action": "code.patch", "op": "insert",
+                "after": "fn main() {", "content": content, "typing": typing, "speed_ms": 10
+            })
+        };
+        // A patch that opens a comment: the lines below take the colors of
+        // the end of the step from the first frame.
+        check_typed_colors(&typed_doc(DANGLE, &[insert("    /* open", "char")]));
+        // Several typed lines, and a typing by lines.
+        check_typed_colors(&typed_doc(
+            DANGLE,
+            &[insert("    let a = (1,\n        2);", "char")],
+        ));
+        check_typed_colors(&typed_doc(
+            DANGLE,
+            &[insert("    let a = (1,\n        2);", "line")],
+        ));
+        // A typed patch that removes a line (two lines become one).
+        check_typed_colors(&typed_doc(
+            DANGLE,
+            &[serde_json::json!({
+                "at_step": 1, "action": "code.patch", "op": "replace", "position": "6-7",
+                "content": "    String::from(\"hello\")", "typing": "char", "speed_ms": 10
+            })],
+        ));
+        // A `wait` before the typing, and a later instant patch of the step
+        // that changes the typed line: the part that shows has colors.
+        check_typed_colors(&typed_doc(
+            DANGLE,
+            &[
+                serde_json::json!({"at_step": 1, "action": "wait", "ms": 100}),
+                insert("    let b = 1;", "char"),
+                serde_json::json!({
+                    "at_step": 1, "action": "code.patch", "op": "replace",
+                    "find": "let b = 1;", "content": "    let b = 2;"
+                }),
+            ],
+        ));
     }
 }

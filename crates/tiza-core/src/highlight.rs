@@ -286,6 +286,70 @@ pub fn highlight_cached(code: &[String], language: &str, theme: EmbeddedThemeNam
     fresh
 }
 
+/// The colors of a frame of a typing animation
+/// ([`crate::moves::TypingPlan::highlight_at`]): the highlight of the code
+/// at the end of the step, with the lines that the frame shows otherwise
+/// (the typed line cut to what shows of it, the lines still to type blank).
+/// The half-typed code itself is never highlighted: an open bracket or
+/// quote in it would change the colors of the lines below until it closes.
+#[derive(Debug, Clone)]
+pub struct TypedHighlight {
+    /// The highlight of the code at the end of the step.
+    pub base: Highlighted,
+    /// The lines that the frame shows otherwise, by index into the code.
+    pub lines: std::collections::BTreeMap<usize, Vec<Segment>>,
+}
+
+impl TypedHighlight {
+    /// The segments of line `i` (an index into the code) when their text is
+    /// `text`. `None` for other code: the caller highlights that code itself.
+    pub fn line(&self, i: usize, text: &str) -> Option<&[Segment]> {
+        let segs = match self.lines.get(&i) {
+            Some(s) => s.as_slice(),
+            None => self.base.get(i)?.as_slice(),
+        };
+        same_text(segs, text).then_some(segs)
+    }
+}
+
+/// The text of `segs` is `text`.
+fn same_text(segs: &[Segment], text: &str) -> bool {
+    let mut rest = text;
+    for s in segs {
+        match rest.strip_prefix(s.text.as_str()) {
+            Some(r) => rest = r,
+            None => return false,
+        }
+    }
+    rest.is_empty()
+}
+
+/// The segments of the first `text` of a highlighted line, with their
+/// colors: the last one is cut when `text` ends inside it. `None` when the
+/// line does not start with `text`.
+pub fn cut_segments(segs: &[Segment], text: &str) -> Option<Vec<Segment>> {
+    let mut out = Vec::new();
+    let mut rest = text;
+    for s in segs {
+        if rest.is_empty() {
+            break;
+        }
+        if let Some(r) = rest.strip_prefix(s.text.as_str()) {
+            out.push(s.clone());
+            rest = r;
+        } else if s.text.starts_with(rest) {
+            out.push(Segment {
+                text: rest.to_string(),
+                ..s.clone()
+            });
+            rest = "";
+        } else {
+            return None;
+        }
+    }
+    rest.is_empty().then_some(out)
+}
+
 /// Highlights every line. If the language is unknown, returns plain text.
 ///
 /// Long files are split into chunks highlighted on several threads;
