@@ -15,6 +15,7 @@ mod common;
 mod ctrl_c_cancels;
 mod enter_effects;
 mod goto_own_camera;
+mod half_sequence_at_the_end_of_a_read;
 mod help_panel;
 mod live_pointer;
 mod mouse;

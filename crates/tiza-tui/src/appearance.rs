@@ -597,10 +597,25 @@ fn osc_disabled() -> bool {
     std::env::var_os("TIZA_NO_OSC").is_some()
 }
 
-/// The terminal crossterm reads keys from: stdin when it is one, else the
-/// controlling terminal. The query goes there, so the answer comes back
-/// with the keys.
+/// The blocking open of the terminal that [`own_nonblocking_input`] keeps
+/// before it puts its own open on fd 0. The colour query of a resize and
+/// the size go through it: a write with `O_NONBLOCK` fails when the output
+/// queue is full (a frame just went out), and the query would be lost or
+/// cut.
+static KEPT_INPUT: std::sync::OnceLock<std::fs::File> = std::sync::OnceLock::new();
+
+/// The terminal crossterm reads keys from, in an open that blocks. The
+/// query goes there, so the answer comes back with the keys.
 fn input_terminal() -> Option<std::fs::File> {
+    if let Some(kept) = KEPT_INPUT.get() {
+        return kept.try_clone().ok();
+    }
+    pick_input_terminal()
+}
+
+/// The terminal crossterm reads keys from: stdin when it is one, else the
+/// controlling terminal. A `dup` of stdin, or a new open of `/dev/tty`.
+fn pick_input_terminal() -> Option<std::fs::File> {
     use std::os::fd::AsFd;
     let stdin = std::io::stdin();
     if rustix::termios::isatty(stdin.as_fd()) {
@@ -612,6 +627,42 @@ fn input_terminal() -> Option<std::fs::File> {
             .open("/dev/tty")
             .ok()
     }
+}
+
+/// Puts on stdin Tiza's own open of the terminal that crossterm reads keys
+/// from (as [`pick_input_terminal`] picks it), non-blocking. crossterm's
+/// `use-dev-tty` source reads again while its bytes make no event, until a
+/// read would block: on a blocking descriptor, a half sequence at the end
+/// of a read (`ESC [`, which Alt+[ sends) held the event loop, and the API
+/// with it, until the next key. A new open of the device, not a flag on the
+/// descriptor of fd 0: that one is the shell's too, and would stay
+/// non-blocking after Tiza is killed. (`/dev/fd/0` is no new open on macOS:
+/// it is a `dup`.)
+///
+/// Call it after [`query_host`], whose read does not expect `WouldBlock`
+/// (the bytes that it did not read stay in the terminal's queue, for any
+/// open of it), and before crossterm's first poll, which takes fd 0 when it
+/// is a terminal. When it fails (no terminal, no name for it, as on Linux
+/// without `/proc`), the input stays as it was, with the old limit: a half
+/// sequence stops the loop until the next key.
+pub fn own_nonblocking_input() -> std::io::Result<()> {
+    use rustix::fs::{Mode, OFlags};
+    let blocking = pick_input_terminal().ok_or(std::io::ErrorKind::NotFound)?;
+    let path = rustix::termios::ttyname(&blocking, Vec::new())?;
+    let flags = OFlags::RDWR | OFlags::NONBLOCK | OFlags::NOCTTY | OFlags::CLOEXEC;
+    let tty = rustix::fs::open(path.as_c_str(), flags, Mode::empty())?;
+    let _ = KEPT_INPUT.set(blocking);
+    rustix::stdio::dup2_stdin(&tty)?;
+    Ok(())
+}
+
+/// Only in the tests' build: whether the open that the colour query of a
+/// resize writes to blocks ([`KEPT_INPUT`]).
+#[cfg(feature = "test-hooks")]
+pub fn query_terminal_blocks() -> Option<bool> {
+    let tty = input_terminal()?;
+    let flags = rustix::fs::fcntl_getfl(&tty).ok()?;
+    Some(!flags.contains(rustix::fs::OFlags::NONBLOCK))
 }
 
 /// Sends the query while the TUI runs (after a resize), to the same

@@ -8767,6 +8767,7 @@ impl App {
                         "held": self.checks.hold().held(),
                         "waiters": self.checks.running_waiters(),
                     });
+                    st["query_blocks"] = json!(crate::appearance::query_terminal_blocks());
                 }
                 st
             }

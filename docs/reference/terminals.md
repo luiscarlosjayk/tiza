@@ -239,3 +239,4 @@ With no answer to OSC 11, Tiza shows no message. It keeps the theme that it star
 - No key needs the kitty keyboard protocol. Tiza reads the keys as a plain terminal sends them.
 - Tiza reads keys from `/dev/tty` when standard input is not a terminal, for example a pipe or a file. See [Privacy and network](../concepts/privacy-and-network.md#the-terminal).
 - Tiza reads `Shift-Tab` as the back-tab sequence `ESC [ Z`.
+- Many terminals send Escape and `[` together for Alt+`[`, and Escape and `O` together for Alt+`O`. Then Tiza waits for the next key, because these keys can be the start of a longer key sequence. While Tiza waits, the screen and the [socket API](socket-api.md) continue to operate. One or more of the next keys can be lost, or Tiza can read them as a part of the sequence. For example, Escape, `[` and `A` are the up arrow key.

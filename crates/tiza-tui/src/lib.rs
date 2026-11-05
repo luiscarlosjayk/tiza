@@ -105,6 +105,10 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     // the terminal; the probe always. Keys typed meanwhile were read with
     // the answers: handled before the first frame.
     let start_up = appearance::query_host(app.theme_auto || app.theme.is_terminal());
+    // From here the keys come from Tiza's own non-blocking open of the
+    // terminal: a half sequence at the end of a read (`ESC [`) waits in
+    // crossterm for the next key, and the loop and the API go on.
+    let _ = appearance::own_nonblocking_input();
     if let Some(host) = start_up.host {
         app.set_host(host);
     }
@@ -242,8 +246,9 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     }
     let result = if opts.smoke {
         // One frame, then one poll of the input source: with stdin piped the
-        // events come from /dev/tty (crossterm `use-dev-tty`), which is what
-        // the smoke test is there to prove.
+        // events come from /dev/tty (Tiza's own open of it on fd 0, read by
+        // crossterm `use-dev-tty`), which is what the smoke test is there to
+        // prove.
         draw_frame(&mut terminal, &mut app)
             .and_then(|_| event::poll(Duration::from_millis(100)))
             .map(|_| End::Quit)

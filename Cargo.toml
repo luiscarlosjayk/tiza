@@ -68,7 +68,8 @@ resvg = { version = "0.48.1", default-features = false, features = ["text", "sys
 # Character coverage of the embedded faces: the SVG embeds only the faces it draws. Already in the tree through usvg:
 # version tied to usvg's (resvg); never bumped alone — it moves in the commit that bumps resvg, `cargo tree -d` showing one skrifa.
 skrifa = { version = "0.44.0", default-features = false, features = ["std"] }
-# Host appearance query: raw mode + timed read on /dev/tty before crossterm starts; already in the tree through crossterm:
+# Host appearance query: raw mode + timed read on /dev/tty before crossterm starts; Tiza's own non-blocking open of the
+# terminal for crossterm's keys (ttyname, open, dup2 on stdin). Already in the tree through crossterm:
 # version tied to crossterm's; never bumped alone.
 rustix = { version = "1.1", default-features = false, features = ["std", "termios", "fs", "stdio", "process"] }
 # SIGHUP as a flag the event loop reads: the terminal went away, exit in order. Already in the tree through crossterm:
