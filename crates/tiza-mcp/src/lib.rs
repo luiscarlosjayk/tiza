@@ -21,7 +21,6 @@ use rmcp::{
     schemars,
     service::RequestContext,
     tool, tool_handler, tool_router,
-    transport::stdio,
 };
 use serde_json::{Value, json};
 
@@ -2039,7 +2038,9 @@ fn panicked(what: &str, _payload: Box<dyn std::any::Any + Send>) -> McpError {
 
 /// Starts the MCP server over stdio (blocks until the client closes).
 pub async fn serve(socket: PathBuf) -> anyhow::Result<()> {
-    let service = TizaServer::new(socket).serve(stdio()).await?;
+    let service = TizaServer::new(socket)
+        .serve((tokio::io::stdin(), tokio::io::stdout()))
+        .await?;
     service.waiting().await?;
     Ok(())
 }
