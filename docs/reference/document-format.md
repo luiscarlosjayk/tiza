@@ -603,6 +603,9 @@ With `"typing": "line"` or `"char"`, Tiza types the content on the screen.
 - `speed_ms` is the time for each line or each character.
 - With `"char"`, Tiza also types the spaces and the tabs at the start of a line, and the end of each line but the last. Each takes `speed_ms`. Thus a line with a large indent waits before its first letter shows.
 - The annotations of the step appear when the typing ends.
+- A typed move waits for the typed moves and the `wait` moves before it in the step. Until its turn:
+  - a `replace` with as many new lines as old lines shows its old lines;
+  - another typed move shows blank lines. Thus the lines below it do not move while Tiza types.
 - While Tiza types, each line has the colors of the code at the end of the step. A line that shows only in part has the colors of its full line. Thus, if the content opens a comment or a string, the lines below it change color when the typing starts, not when it ends.
 - Any key except Ctrl-C finishes the typing. Tiza uses that key only to finish the typing.
 - Thus an `n` during the typing finishes the typing. It does not go to the next step. Press `n` again.

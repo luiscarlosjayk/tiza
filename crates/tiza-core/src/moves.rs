@@ -1914,10 +1914,27 @@ pub struct TypingItem {
     /// Lines of the step's full code (absolute) the content occupies.
     pub range: std::ops::Range<u32>,
     pub lines: Vec<String>,
+    /// The lines that a `replace` writes over, as they were before it
+    /// (empty for an insert and a `wait`).
+    pub before: Vec<String>,
     pub mode: Typing,
     /// Milliseconds per unit (line or grapheme).
     pub speed_ms: u64,
     pub units: usize,
+}
+
+impl TypingItem {
+    /// What the lines of the item show before its turn: the lines that it
+    /// writes over, when they are as many as its new lines; else blank
+    /// lines, so that the line count of the step does not change while it
+    /// types.
+    pub fn waiting(&self) -> Vec<String> {
+        if self.before.len() == self.lines.len() {
+            self.before.clone()
+        } else {
+            vec![String::new(); self.lines.len()]
+        }
+    }
 }
 
 /// The typing animation of a step: the code with every move of the step
@@ -1944,8 +1961,8 @@ pub struct Cue {
 
 impl TypingPlan {
     /// The code while item `index` has `revealed` units shown: earlier
-    /// items complete, later ones blank (the line count never changes, so
-    /// every shifted annotation stays put).
+    /// items complete, later ones as they wait ([`TypingItem::waiting`]:
+    /// the line count never changes, so every shifted annotation stays put).
     pub fn code_at(&self, first_line: u32, index: usize, revealed: usize) -> Vec<String> {
         let mut code = self.full.clone();
         for (k, item) in self.items.iter().enumerate() {
@@ -1954,7 +1971,7 @@ impl TypingPlan {
             } else if k == index {
                 partial_content(&item.lines, item.mode, revealed)
             } else {
-                vec![String::new(); item.lines.len()]
+                item.waiting()
             };
             for (i, l) in shown.into_iter().enumerate() {
                 // A typed line outside the shown window is simply not drawn.
@@ -2003,7 +2020,7 @@ impl TypingPlan {
 
     /// The colors of the frame that [`TypingPlan::code_at`] gives: every
     /// line as in the code at the end of the step, the typed line cut to
-    /// what shows of it, the lines still to type blank. The half-typed code
+    /// what shows of it, the lines still to type as they wait. The half-typed code
     /// is not highlighted: an open bracket or quote in it would change the
     /// colors of the lines below it until it closes, and they would blink.
     pub fn highlight_at(
@@ -2022,7 +2039,7 @@ impl TypingPlan {
             let shown = if k == index {
                 partial_content(&item.lines, item.mode, revealed)
             } else {
-                vec![String::new(); item.lines.len()]
+                item.waiting()
             };
             for (i, l) in shown.into_iter().enumerate() {
                 let Some(at) = (item.range.start + i as u32).checked_sub(first_line) else {
@@ -2094,6 +2111,23 @@ pub fn typing_plan(doc: &crate::Document, step: u32) -> Option<TypingPlan> {
         if lost {
             continue;
         }
+        // The lines that a `replace` writes over, as they were before it.
+        let base;
+        let old: &[String] = match proj.patches[..k].iter().rev().find(|l| l.file == ap.file) {
+            Some(prev) => &prev.after,
+            None => {
+                base = doc.view_base_code(&ap.file).unwrap_or_default();
+                &base
+            }
+        };
+        let replaced = &ap.map.replaced;
+        let before = match (
+            replaced.start.checked_sub(ap.map.first_line),
+            replaced.end.checked_sub(ap.map.first_line),
+        ) {
+            (Some(a), Some(b)) => old.get(a as usize..b as usize).unwrap_or_default().to_vec(),
+            _ => Vec::new(),
+        };
         let lines = p.content_lines();
         items.push((
             ap.index,
@@ -2101,6 +2135,7 @@ pub fn typing_plan(doc: &crate::Document, step: u32) -> Option<TypingPlan> {
                 range,
                 units: typing_units(&lines, p.typing),
                 lines,
+                before,
                 mode: p.typing,
                 speed_ms: p.speed().max(1),
             },
@@ -2113,6 +2148,7 @@ pub fn typing_plan(doc: &crate::Document, step: u32) -> Option<TypingPlan> {
                 TypingItem {
                     range: 0..0,
                     lines: Vec::new(),
+                    before: Vec::new(),
                     mode: Typing::Instant,
                     speed_ms: w.ms.max(1),
                     units: 1,
@@ -2854,5 +2890,79 @@ mod tests {
                 }),
             ],
         ));
+    }
+
+    /// Step 1 of `DANGLE`: a typed insert, a `wait`, then the typed patch
+    /// `later` (JSON).
+    fn insert_wait_then(later: serde_json::Value) -> Document {
+        typed_doc(
+            DANGLE,
+            &[
+                serde_json::json!({
+                    "at_step": 1, "action": "code.patch", "op": "insert",
+                    "after": "let r = dangle();", "content": "    let q = (1,",
+                    "typing": "char", "speed_ms": 20
+                }),
+                serde_json::json!({"at_step": 1, "action": "wait", "ms": 100}),
+                later,
+            ],
+        )
+    }
+
+    #[test]
+    fn a_later_typed_replace_shows_its_old_line_until_its_turn() {
+        let d = insert_wait_then(serde_json::json!({
+            "at_step": 1, "action": "code.patch", "op": "replace", "find": "&s",
+            "content": "    s", "typing": "char", "speed_ms": 20
+        }));
+        let plan = typing_plan(&d, 1).unwrap();
+        let first = d.source.first_line;
+        // The items: the insert, the wait, the replace. The replaced line is
+        // line 8 of the code of the step (one line is inserted above it).
+        assert_eq!(plan.items.len(), 3);
+        let line8 = |k: usize, r: usize| plan.code_at(first, k, r)[7].clone();
+        for (k, r) in [(0, 0), (0, 5), (0, 14), (1, 0)] {
+            assert_eq!(
+                line8(k, r),
+                "    &s",
+                "item {k}, {r} units: before the turn of the replace"
+            );
+        }
+        // Its turn: the new line types over it.
+        assert_eq!(line8(2, 0), "");
+        assert_eq!(line8(2, 5), "    s");
+        // The colors hold for each frame, the old line too.
+        check_typed_colors(&d);
+    }
+
+    #[test]
+    fn a_later_typed_patch_with_another_line_count_is_blank_until_its_turn() {
+        // Two lines become one, and an insert: the line count of the step
+        // does not change while it types, so these stay blank, as before.
+        for later in [
+            serde_json::json!({
+                "at_step": 1, "action": "code.patch", "op": "replace", "position": "6-7",
+                "content": "    String::from(\"hello\")", "typing": "char", "speed_ms": 20
+            }),
+            serde_json::json!({
+                "at_step": 1, "action": "code.patch", "op": "insert", "after": "&s",
+                "content": "    // done", "typing": "char", "speed_ms": 20
+            }),
+        ] {
+            let d = insert_wait_then(later);
+            let plan = typing_plan(&d, 1).unwrap();
+            let first = d.source.first_line;
+            let item = &plan.items[2];
+            let at = (item.range.start - first) as usize;
+            for (k, r) in [(0, 3), (1, 0)] {
+                let code = plan.code_at(first, k, r);
+                assert!(
+                    code[at..at + item.lines.len()].iter().all(String::is_empty),
+                    "item {k}, {r} units: {:?}",
+                    &code[at..at + item.lines.len()]
+                );
+            }
+            check_typed_colors(&d);
+        }
     }
 }

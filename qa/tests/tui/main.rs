@@ -19,6 +19,7 @@ mod goto_own_camera;
 mod half_screen_keys;
 mod half_sequence_at_the_end_of_a_read;
 mod help_panel;
+mod later_patch_waits;
 mod listening_mark;
 mod live_pointer;
 mod mark_message;

@@ -676,4 +676,51 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn a_later_typed_replace_keeps_its_old_line_in_the_frames_before_its_turn() {
+        // A typed insert, a `wait`, then a typed replace of `&s`: the export
+        // shows `&s` until the replace types. Only the text of the frames is
+        // read, not how many there are or how long they stay.
+        let mut d = Document::from_code(
+            "fn main() {\n    let r = dangle();\n}\n\nfn dangle() -> &String {\n    let s = String::from(\"hello\");\n    &s\n}\n",
+            "rs",
+            None,
+        );
+        for m in [
+            json!({"at_step": 1, "action": "code.patch", "op": "insert", "after": "let r = dangle();",
+                   "content": "    let q = (1,", "typing": "char", "speed_ms": 50}),
+            json!({"at_step": 1, "action": "wait", "ms": 500}),
+            json!({"at_step": 1, "action": "code.patch", "op": "replace", "find": "&s",
+                   "content": "    s", "typing": "char", "speed_ms": 50}),
+        ] {
+            d.add_move(serde_json::from_value(m).unwrap()).unwrap();
+        }
+        let f = frames(&d, &Theme::dark(), &AnimOptions::default());
+        let texts: Vec<String> = f
+            .iter()
+            .filter(|x| x.typing)
+            .map(|x| x.canvas.to_plain_text())
+            .collect();
+        // The first typed frame: nothing of the insert yet, `&s` there.
+        assert!(texts[0].contains("&s"), "{}", texts[0]);
+        // The wait: the insert done, `&s` still there.
+        assert!(
+            texts
+                .iter()
+                .any(|t| t.contains("let q = (1,") && t.contains("&s")),
+            "no frame shows the insert done and the old line"
+        );
+        // Each frame before the replace types shows the old line.
+        for (i, t) in texts.iter().enumerate() {
+            if !t.contains("&s") {
+                // From here on, the replace types: no frame after shows `&s`.
+                assert!(
+                    texts[i..].iter().all(|u| !u.contains("&s")),
+                    "frame {i}: `&s` comes back"
+                );
+                break;
+            }
+        }
+    }
 }

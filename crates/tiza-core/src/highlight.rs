@@ -289,7 +289,7 @@ pub fn highlight_cached(code: &[String], language: &str, theme: EmbeddedThemeNam
 /// The colors of a frame of a typing animation
 /// ([`crate::moves::TypingPlan::highlight_at`]): the highlight of the code
 /// at the end of the step, with the lines that the frame shows otherwise
-/// (the typed line cut to what shows of it, the lines still to type blank).
+/// (the typed line cut to what shows of it, the lines still to type as they wait).
 /// The half-typed code itself is never highlighted: an open bracket or
 /// quote in it would change the colors of the lines below until it closes.
 #[derive(Debug, Clone)]
