@@ -546,6 +546,11 @@ fn draw_frame(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> io::Res
     drawn.and(ended)
 }
 
+/// The mark that the test build writes when the event loop listens
+/// (`Pty.wait_listening` in the pty harness of qa/ waits for it).
+#[cfg(feature = "test-hooks")]
+const LISTENING_MARK: &[u8] = b"\x1b]7799;tiza-listens\x07";
+
 fn event_loop(
     terminal: &mut ratatui::DefaultTerminal,
     app: &mut App,
@@ -560,6 +565,17 @@ fn event_loop(
     // redrew until a key.
     if let Err(e) = event::poll(Duration::ZERO) {
         return hung_up_or(hangup, e);
+    }
+    // The test build tells a pty test that the loop listens: from here on a
+    // key or a resize is read. A terminal ignores this private OSC. It must
+    // come after the poll above (it is the poll that catches SIGWINCH), and
+    // only the order of these lines keeps it there: a test cannot see a mark
+    // that comes too early, because a resize before the poll is also drawn.
+    #[cfg(feature = "test-hooks")]
+    {
+        use std::io::Write as _;
+        let mut out = io::stdout();
+        let _ = out.write_all(LISTENING_MARK).and_then(|()| out.flush());
     }
     // A resize after the colour query at start and before that poll came
     // as no event: ask again, as for a resize from now on.

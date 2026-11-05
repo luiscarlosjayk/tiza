@@ -17,6 +17,7 @@ mod enter_effects;
 mod goto_own_camera;
 mod half_sequence_at_the_end_of_a_read;
 mod help_panel;
+mod listening_mark;
 mod live_pointer;
 mod mouse;
 mod newer_moves;

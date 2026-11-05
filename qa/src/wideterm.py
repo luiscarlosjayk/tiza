@@ -2,7 +2,9 @@
 characters two cells wide (as some terminals draw U+26A0 and the like),
 with autowrap (pending wrap at the last column, scroll at the last row) or
 without it, and it answers a cursor position request (`ESC [ 6 n`) and the
-background query (OSC 11) as such a terminal would. `feed` gives the
+background query (OSC 11) as such a terminal would: a dark background, or a
+light one with `light=True`. With `fg=True` it also answers the text color
+query (OSC 10). `feed` gives the
 answers back, so that the test decides when they reach the program. Grown
 from `terminal_rows` of `pty.py`, which measures with Unicode and has no
 wrap and no scroll.
@@ -25,8 +27,10 @@ VS16 = "\ufe0f"
 
 
 class Term:
-    def __init__(self, rows, cols, wide=(), autowrap=True, cpr=True, vs16_wide=True):
+    def __init__(self, rows, cols, wide=(), autowrap=True, cpr=True, vs16_wide=True,
+                 light=False, fg=False):
         self.rows, self.cols = rows, cols
+        self.light, self.fg = light, fg
         self.wide = set(wide)
         self.autowrap = autowrap
         self.cpr = cpr
@@ -95,7 +99,7 @@ class Term:
     # ---- the stream ----
     def feed(self, data):
         """Feeds output of the program; returns the bytes the terminal
-        answers (CPR, OSC 11)."""
+        answers (CPR, OSC 11, OSC 10)."""
         text = self.rest + data.decode("utf-8", errors="replace")
         m = PARTIAL.search(text)
         if m and m.group(0):
@@ -123,7 +127,11 @@ class Term:
                     (self.r, self.c), self.pending = self.saved, False
             elif osc is not None:
                 if osc.startswith("11;?"):
-                    out += b"\x1b]11;rgb:0000/0000/0000\x1b\\"
+                    bg = b"f7f7/f5f5/efef" if self.light else b"0000/0000/0000"
+                    out += b"\x1b]11;rgb:" + bg + b"\x1b\\"
+                elif osc.startswith("10;?") and self.fg:
+                    fg = b"1f1f/2323/2828" if self.light else b"d0d0/d0d0/d0d0"
+                    out += b"\x1b]10;rgb:" + fg + b"\x1b\\"
             elif final is not None:
                 out += self.csi(params or "", final)
         return out

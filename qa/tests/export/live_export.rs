@@ -1389,6 +1389,7 @@ fn a_dropped_request_leaves_no_animation_drawing_the_value() {
 /// feature (the tests' binary): in every source file of every crate, each
 /// read of a hook's environment variable (`TIZA_TEST_*`, `TIZA_MCP_TEST_*`,
 /// `TIZA_MCP_EXPORT_TIMEOUT_MS`) is behind `#[cfg(feature = "test-hooks")]`,
+/// so is the mark that the event loop listens,
 /// no crate turns it on by default, every manifest names it only in
 /// `[features]` (`qa` only for a dev-dependency), and the old unguarded
 /// names are gone.
@@ -1419,6 +1420,9 @@ fn the_test_hooks_are_never_in_a_release_build() {
     }
     files.sort();
     let mut seen = Vec::new();
+    // The mark that the event loop listens (`Pty.wait_listening`): one
+    // constant, behind the feature.
+    let mut marks = Vec::new();
     for path in &files {
         let file = path.strip_prefix(&root).unwrap().display().to_string();
         let text = std::fs::read_to_string(path).unwrap();
@@ -1428,6 +1432,17 @@ fn the_test_hooks_are_never_in_a_release_build() {
         );
         let lines: Vec<&str> = text.lines().collect();
         for (i, l) in lines.iter().enumerate() {
+            if l.contains("tiza-listens") {
+                marks.push(format!("{file}:{}", i + 1));
+                let guarded = lines[i.saturating_sub(3)..i]
+                    .iter()
+                    .any(|p| p.contains("#[cfg(feature = \"test-hooks\")]"));
+                assert!(
+                    guarded,
+                    "{file}:{}: the listening mark is outside #[cfg(feature = \"test-hooks\")]",
+                    i + 1
+                );
+            }
             for read in ["env::var(\"", "env::var_os(\""] {
                 for (at, _) in l.match_indices(read) {
                     let rest = &l[at + read.len()..];
@@ -1455,6 +1470,7 @@ fn the_test_hooks_are_never_in_a_release_build() {
     // call to it outside the feature does not build), `:panic`, and the
     // two of the MCP server.
     assert_eq!(seen.len(), 4, "{seen:#?}");
+    assert_eq!(marks.len(), 1, "{marks:#?}");
     for manifest in [
         "crates/tiza-tui/Cargo.toml",
         "crates/tiza-mcp/Cargo.toml",

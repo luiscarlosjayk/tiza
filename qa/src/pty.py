@@ -213,6 +213,15 @@ class Pty:
             print("WAIT_TIMEOUT", what, flush=True)
         return ok
 
+    LISTENING = b"\x1b]7799;tiza-listens\x07"
+
+    def wait_listening(self, timeout=10.0):
+        """Waits for the mark that a TUI of the test build writes when its
+        event loop listens: a key or a resize from now on is read. Use it
+        before a step that needs a listening TUI, such as a resize. The first
+        `?1049h` only says that the screen is set up."""
+        return self.wait_for(lambda out: self.LISTENING in out, timeout, "the TUI listens")
+
     def settle(self, seconds):
         """Lets the reader keep reading for `seconds` (a negative check's
         short settle)."""

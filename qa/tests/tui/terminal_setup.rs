@@ -185,7 +185,7 @@ def key(keys, updates=1, what=None):
     before = len(s.out)
     s.send(keys)
     return s.wait_for(lambda out: closed_since(out, before, updates), 10, what or repr(keys))
-if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists("s.sock"), 10, "first frame"):
+if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists("s.sock"), 10, "first frame") and s.wait_listening():
     key(b"G")
     key(b"g")
     key(b"n", 5, "five frames of the effect")
