@@ -3,6 +3,7 @@
 
 mod agent_scenarios;
 mod build_identity;
+mod context_budget;
 mod discovery;
 mod export_image_config;
 mod invisible_code;

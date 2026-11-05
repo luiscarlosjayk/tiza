@@ -4,6 +4,13 @@
     "archive_bytes": 8000000,
     "growth_pct": 10
   },
+  "mcp_tools_list": {
+    "bytes": 47000,
+    "measured": 44448,
+    "commit": "92a76001",
+    "measured_on": "2026-11-05",
+    "reason": "the size of 0.2.1, with a margin of about 5 %"
+  },
   "targets": {
     "aarch64-apple-darwin": {
       "binary_bytes": 12799824,
