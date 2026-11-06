@@ -1,6 +1,6 @@
 # ╭─ Tiza ─▶
 
-![Tiza: draw on top of code in your terminal to explain, debug and teach. Three real Tiza frames of the ownership example: steps 1, 4 and 7](https://raw.githubusercontent.com/luiscarlosjayk/tiza/main/docs/img/hero.png)
+![Tiza: draw on top of code in your terminal to explain, debug and teach. Three real Tiza frames of the ownership example: steps 1, 3 and 6](https://raw.githubusercontent.com/luiscarlosjayk/tiza/main/docs/img/hero.png)
 
 **Draw on top of code in your terminal to explain, debug and teach.**
 
