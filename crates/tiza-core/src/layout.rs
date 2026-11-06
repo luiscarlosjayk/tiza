@@ -252,8 +252,8 @@ pub struct StableGeometry {
     /// ([`Pinned`]); `None` when it has no label. With moves, it shows no
     /// step live, so the code being typed does not count.
     take: Option<Arc<Document>>,
-    /// A hash of `take`, without the code being typed: the key of
-    /// [`PINNED`].
+    /// A hash of `take` and of its code (with moves, the base code: not the
+    /// code being typed): the key of [`PINNED`].
     take_hash: u64,
     /// The labels that go under their line, for each width the take was
     /// laid out at with this geometry.
@@ -445,14 +445,21 @@ pub fn stable_geometry(doc: &Document, opts: &LayoutOptions) -> StableGeometry {
         if !take.moves.is_empty() {
             take.step = u32::MAX;
         }
+        // The key: the document as JSON, which leaves the code out, plus the
+        // code itself. With moves, the code of each step comes from the base
+        // and the moves; the step on screen is not part of the take.
         let mut keyed = take.clone();
-        if !keyed.moves.is_empty() {
-            keyed.code.clear();
-        }
+        keyed.step = 0;
         let mut h = std::collections::hash_map::DefaultHasher::new();
         serde_json::to_string(&keyed)
             .unwrap_or_default()
             .hash(&mut h);
+        if take.moves.is_empty() {
+            take.code.hash(&mut h);
+        } else {
+            take.base_code.hash(&mut h);
+            take.view_code.hash(&mut h);
+        }
         g.take_hash = h.finish();
         g.take = Some(Arc::new(take));
     }
@@ -1924,8 +1931,14 @@ fn layout_pass(
     // one step is under it at every step it shows at, so the code does not
     // go down a row in the middle of a scene. Without a take (`stable`
     // off, the authoring screen) each step decides alone: a known limit.
+    // Another known limit: each step is laid out once with no label pinned.
+    // When a pinned row at one step cuts one more label there, that label
+    // goes under its line at that step only (no document or fixture has
+    // it).
     // Only under a line of code: rows under a line of a drawing or of prose
-    // would break it, so a label there stays cut (`check` warns).
+    // would break it, so a label there stays cut (`check` warns). A window
+    // of a Markdown file is judged from its own lines: when it starts inside
+    // a block, its lines count as prose, as for the colors.
     let code_lines = crate::highlight::code_lines(&doc.code, &doc.source.language);
     let is_code = |line: u32| {
         line.checked_sub(first_line)
@@ -3697,6 +3710,59 @@ mod tests {
             .find(|c| c.sym == "┆")
             .unwrap();
         assert_eq!(note_cell.style.fg, Some(th.dimmed));
+    }
+
+    #[test]
+    fn a_take_whose_code_changes_decides_again_where_its_labels_go() {
+        // One process, the same annotations, new code (a followed file, an
+        // edit not saved yet): the labels that went under their line with
+        // the long code fit in the margin of the short code.
+        let mut d = doc();
+        d.add(Annotation {
+            id: "n1".into(),
+            step: 1,
+            color: None,
+            effect: None,
+            markers: None,
+            file: None,
+            shape: Shape::Note {
+                line: 2,
+                text: "s is born here and lives until it is moved".into(),
+            },
+        })
+        .unwrap();
+        let th = Theme::dark();
+        let opts = LayoutOptions {
+            width: 80,
+            step: 1,
+            ..Default::default()
+        };
+        let long = layout(&d, &th, &opts);
+        let text = long.canvas.to_plain_text();
+        assert_eq!(long.row_of_line[&3], long.row_of_line[&2] + 2, "{text}");
+        let mut short = d.clone();
+        short.code = [
+            "fn main() {",
+            "    let s = 1;",
+            "    takes(s);",
+            "    f(s);",
+            "}",
+            "",
+            "fn takes(t) {",
+            "    f(t);",
+            "}",
+        ]
+        .map(String::from)
+        .to_vec();
+        let l = layout(&short, &th, &opts);
+        let text = l.canvas.to_plain_text();
+        assert_eq!(l.row_of_line[&3], l.row_of_line[&2] + 1, "{text}");
+        assert!(
+            l.canvas
+                .row_text(l.row_of_line[&2])
+                .contains("┆ s is born here and lives until it is moved"),
+            "{text}"
+        );
     }
 
     #[test]
