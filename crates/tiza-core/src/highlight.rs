@@ -592,6 +592,35 @@ fn fences(code: &[String]) -> Vec<Option<Fence>> {
         .collect()
 }
 
+/// For each line of `code` in `language`, whether it is code: every line
+/// of a source file, no line of plain text, and in Markdown the lines inside
+/// a fenced code block (not its fences). The layout gives a cut label rows
+/// of its own under a line of code only: rows under a line of a drawing or
+/// of prose would break it.
+pub(crate) fn code_lines(code: &[String], language: &str) -> Vec<bool> {
+    match normalize_language(language).as_str() {
+        "txt" => vec![false; code.len()],
+        "md" => {
+            let mut inside = false;
+            fences(code)
+                .into_iter()
+                .map(|f| match f {
+                    Some(Fence::Open(_)) => {
+                        inside = true;
+                        false
+                    }
+                    Some(Fence::Close(_)) => {
+                        inside = false;
+                        false
+                    }
+                    None => inside,
+                })
+                .collect()
+        }
+        _ => vec![true; code.len()],
+    }
+}
+
 /// For each line of a Markdown file, how many bytes of its start syntect
 /// does not get. The grammar (bat's, compiled into two-face) knows a fence
 /// only at column 0: a fence indented by 1 to 3 spaces did not open, and
@@ -854,6 +883,20 @@ mod tests {
         let mut mid: Vec<String> = (0..30).map(|i| format!("line {i}")).collect();
         mid[12] = "# vim: ft=toml".into();
         assert_eq!(detect_language(None, &mid).language, "txt");
+    }
+
+    #[test]
+    fn code_lines_are_a_source_file_and_the_inside_of_a_markdown_block() {
+        let md = lines("# Title\n```rust\nlet x = 1;\n```\n┌──┐\n  ~~~\nx\n  ~~~");
+        assert_eq!(
+            code_lines(&md, "markdown"),
+            [false, false, true, false, false, false, true, false]
+        );
+        // A block that is not closed ends with the file.
+        assert_eq!(code_lines(&lines("```\na\nb"), "md"), [false, true, true]);
+        assert_eq!(code_lines(&lines("a\nb"), "text"), [false, false]);
+        assert_eq!(code_lines(&lines("a\nb"), ""), [false, false]);
+        assert_eq!(code_lines(&lines("a\n```\nb"), "rust"), [true, true, true]);
     }
 
     #[test]

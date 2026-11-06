@@ -186,12 +186,13 @@ fn widened_until_drawn_the_update_says_visible() {
 #[test]
 fn a_clipped_label_stays_visible_and_says_so() {
     // Test step 3: a long note on L3 in the margin, cut with … at 120
-    // columns.
+    // columns: it is too long for the row under its line too, so it stays
+    // in the margin.
     let (live, tiza) = opened("clipped");
     terminal(&live, 122);
     let r = add(
         &live,
-        json!({"type": "note", "line": 3, "text": "the log level of the whole service, read once when it starts and never again"}),
+        json!({"type": "note", "line": 3, "text": "the log level of the whole service, read once when it starts and never again, so a change to it needs a restart of every worker"}),
     );
     assert_eq!(r["visible"], true, "{r}");
     assert_eq!(
@@ -296,10 +297,11 @@ fn no_terminal_size_uses_the_default_width_and_names_it() {
     live.with(|app| app.size = (0, 0));
     assert_eq!(live.with(|app| app.screen_width()), 100);
     // At 100 the labels are in the margin; this one, on the last line,
-    // has no rows below to wrap into and is cut.
+    // has no rows below to wrap into, and it is too long for the row under
+    // its line: it is cut.
     let r = add(
         &live,
-        json!({"type": "note", "line": 4, "text": "the secret token the API calls carry"}),
+        json!({"type": "note", "line": 4, "text": "the secret token the API calls carry, which the service reads from the environment once when it starts"}),
     );
     assert_eq!(r["visible"], true, "{r}");
     assert!(

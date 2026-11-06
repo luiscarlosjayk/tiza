@@ -11,6 +11,9 @@ Tiza puts a label, a legend or a note in the right margin when the margin has ro
 - A line with two or more labels at the step shows them all under it, also when the margin has room.
 - Under the line, the label of a highlight or a mark starts under its span when it fits there.
 - The label of an arrow that goes to another line is beside the code of that line, after the glyph of the arrow, when the code column has room for it. When it has no room, the label goes in the right margin or under the line.
+- In the right margin, a long label continues on the free rows under its line. When no row is free, the label of a line of code goes under the line, if it fits there whole. Examples are a next line with a label of its own, the end of the code, and a callout block on the rows under the line. A line of code is a line of a source file, or a line in a fenced block (```` ``` ````) of a Markdown file. In a drawing or in other text, Tiza cuts the label with `…`, and `tiza check` tells you.
+- When a label goes under its line at one step, it is under its line at each step that shows it. Thus the code does not move down a row in the middle of the take.
+- Under the line, a label that a callout block cuts continues on the rows under it, before the block.
 
 ## `:mark`
 

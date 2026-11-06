@@ -5,7 +5,8 @@ expression: out
   1          fn main() {
   2 ╭───────     let s = String::from("hola");
     │                ◀───╯                                                      nace s
-  3 │            takes(s);                                                      ━▶ move: s pasa a …
+  3 │            takes(s);
+    │                · ━▶ move: s pasa a takes
   4 │            // println!("{s}"); // error: value borrowed here after move   ┆ s ya no es dueña:
   5 │                                                                             usarla aquí no
   6 │            let t = String::from("mundo");                                   compila

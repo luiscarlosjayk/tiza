@@ -414,26 +414,27 @@ fn presentation_mode_uses_the_same_rule() {
 }
 
 #[test]
-fn check_counts_the_new_rows() {
+fn check_counts_the_new_rows_and_the_labels_that_go_under_their_line() {
     // Before two labels on a line, consecutive.tiza lost «sent as a bearer header» at 100
-    // columns and no width showed every label; now nothing is clipped from
-    // 81 columns on (below that the last line's margin note is clipped).
+    // columns and no width showed every label. A margin note of the last
+    // line with no rows below goes under its line when it does not fit, so
+    // nothing is clipped from 37 columns on.
     let p = path("consecutive.tiza");
     let out = tiza_ok(&["check", &p, "--width", "100"]);
     assert!(out.contains("0 errors, 0 warnings"), "{out}");
     // In a terminal: 2 columns more, its padding of 1 at each side.
     assert!(
-        out.contains("no label is clipped at 83 or wider (81 columns of code"),
+        out.contains("no label is clipped at 39 or wider (37 columns of code"),
         "{out}"
     );
-    // two-labels-hl is clean under the lines from 30 columns, but at 62,
-    // where the margin first appears, step 2 clips the note of L3: the
-    // narrowest width from which every wider one is clean is 63.
+    // two-labels-hl is clean under the lines from 30 columns; at 62, where
+    // the margin first appears, the note of L3 that does not fit there goes
+    // under its line: every width from 30 on is clean.
     let p = path("two-labels-hl.tiza");
     let out = tiza_ok(&["check", &p, "--width", "100"]);
     assert!(out.contains("0 errors, 0 warnings"), "{out}");
     assert!(
-        out.contains("no label is clipped at 65 or wider (63 columns of code"),
+        out.contains("no label is clipped at 32 or wider (30 columns of code"),
         "{out}"
     );
     // The library agrees, step by step.
@@ -441,7 +442,7 @@ fn check_counts_the_new_rows() {
     assert!(lay(&doc, 100, 1, false).clipped_labels.is_empty());
     assert_eq!(
         tiza_core::check::min_clean_width(&doc, &tiza_core::Theme::dark()),
-        Some(81)
+        Some(37)
     );
 }
 

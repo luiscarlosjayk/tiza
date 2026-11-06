@@ -819,10 +819,11 @@ fn assert_clear_of_blocks(at: &str, text: &str) {
 }
 
 #[test]
-fn a_note_under_its_line_stops_one_cell_before_the_margin_block() {
+fn a_note_under_its_line_goes_on_in_the_row_below_before_the_margin_block() {
     // The note of L2 goes under its line (the block leaves fewer than 14
-    // columns beside it) and the block covers that row: before, the row ran
-    // under the block, cut with no «…» and no warning.
+    // columns beside it) and the block covers that row. It stops one cell
+    // before the block and goes on in the row under it, whole: before, it
+    // was cut there with «…».
     let env = std::fs::read_to_string(fixture("render/margin_callouts/four.env")).unwrap();
     let code: Vec<&str> = env.lines().collect();
     let fill = |t: &str| t.replace("{L1}", code[0]).replace("{L2}", code[1]);
@@ -831,22 +832,23 @@ fn a_note_under_its_line_stops_one_cell_before_the_margin_block() {
         fill(
             " 1   {L1}  ╭────────────────────────────╮
  2   {L2}                       │ user, password, host, port │
-     ┆ the live token: rotate it right after the demo, never comm… │ and database in one value  │
- 3   LOG_LEVEL=info                                                ╰────────────────────────────╯
+     ┆ the live token: rotate it right after the demo, never       │ and database in one value  │
+       commit it again                                             ╰────────────────────────────╯
+ 3   LOG_LEVEL=info
  4   PORT=8080
 "
         )
     );
-    assert_eq!(
-        check_cuts("under-beside-block.tiza", 99),
-        vec![("n2".to_string(), false)]
-    );
+    assert!(check_cuts("under-beside-block.tiza", 99).is_empty());
 }
 
 #[test]
-fn arrow_labels_under_their_line_stop_before_the_margin_block() {
-    // The label of an arrow that ends on L2 and the label of an arrow along
-    // L2, both under L2 beside the block of L1.
+fn arrow_labels_under_their_line_go_on_below_the_margin_block_whole() {
+    // The label of an arrow along L2 and the label of an arrow that ends on
+    // L2, both under L2 beside the block of L1. The first goes on in the
+    // row under it before the block; the second, with the glyph of its
+    // arrow, gets the row after the block, whole. Before, both were cut
+    // with «…».
     let env = std::fs::read_to_string(fixture("render/margin_callouts/four.env")).unwrap();
     let code: Vec<&str> = env.lines().collect();
     let fill = |t: &str| t.replace("{L1}", code[0]).replace("{L2}", code[1]);
@@ -856,19 +858,15 @@ fn arrow_labels_under_their_line_stop_before_the_margin_block() {
             " 1     {L1}  ╭──────────────────────────╮
  2 ╭─▶ {L2}                       │ user, password, host,    │
    │   ╰─────────▶                                                   │ port and database in one │
-   │   · the name and the value of the token are split at the equal… │ value                    │
-   │   ─▶ the port and the token go to the same service, so keep th… ╰──────────────────────────╯
+   │   · the name and the value of the token are split at the equals │ value                    │
+   │     sign                                                        ╰──────────────────────────╯
+   │   ─▶ the port and the token go to the same service, so keep the two of them in step
  3 │   LOG_LEVEL=info
  4 ╰── PORT=8080
 "
         )
     );
-    let mut cuts = check_cuts("arrow-beside-block.tiza", 99);
-    cuts.sort();
-    assert_eq!(
-        cuts,
-        vec![("a2".to_string(), false), ("a3".to_string(), false)]
-    );
+    assert!(check_cuts("arrow-beside-block.tiza", 99).is_empty());
 }
 
 #[test]

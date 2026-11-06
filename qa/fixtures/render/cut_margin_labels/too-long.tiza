@@ -1,0 +1,24 @@
+{
+ "schema": 1,
+ "title": "too long",
+ "source": {
+  "language": "sh",
+  "first_line": 1
+ },
+ "code": [
+  "DB_URL=postgres://demo:demo@localhost/app",
+  "API_TOKEN=demo-token-123",
+  "LOG_LEVEL=info",
+  "PORT=8080",
+  "WORKERS=4"
+ ],
+ "annotations": [
+  {
+   "id": "n1",
+   "step": 1,
+   "type": "note",
+   "line": 5,
+   "text": "the token every call to the payments service carries, and it is far too long to fit on the one row under its line as well"
+  }
+ ]
+}

@@ -324,7 +324,7 @@ fn a_step_with_nothing_new_warns() {
 
 #[test]
 fn clipped_labels_at_the_default_width_and_the_narrowest_clean_one() {
-    let file = fixture("check/preflight/ownership.rs.tiza");
+    let file = fixture("check/preflight/ownership-prose.tiza");
     let file = file.to_str().unwrap();
     // Plain `check`: the default width, a terminal of 100 columns. The
     // document has a padding of 2 at each side: 96 columns of code.
@@ -368,7 +368,7 @@ fn clipped_labels_at_the_default_width_and_the_narrowest_clean_one() {
         "{plain}"
     );
     let (_, v) = check_json(
-        &fixture("check/preflight/ownership.rs.tiza"),
+        &fixture("check/preflight/ownership-prose.tiza"),
         &["--width", "100"],
     );
     assert_eq!(v["width"], 96);
@@ -823,7 +823,7 @@ fn check_help_has_no_socket_or_session() {
 
 #[test]
 fn a_clean_width_below_the_narrowest_one_says_so() {
-    let file = fixture("check/preflight/ownership.rs.tiza");
+    let file = fixture("check/preflight/ownership-prose.tiza");
     let file = file.to_str().unwrap();
     // The document has a padding of 2 at each side: a terminal has 4
     // columns more than the code. A terminal of 89 (85 columns of code): no
@@ -853,7 +853,7 @@ fn a_clean_width_below_the_narrowest_one_says_so() {
     assert_eq!(code, 1);
     assert!(out.contains("83-97 are clean too"), "{out}");
     let (_, v) = check_json(
-        &fixture("check/preflight/ownership.rs.tiza"),
+        &fixture("check/preflight/ownership-prose.tiza"),
         &["--width", "89"],
     );
     // In columns of code, and in columns of the terminal.
@@ -869,7 +869,7 @@ fn a_clean_width_below_the_narrowest_one_says_so() {
     // `narrower`.
     for w in ["104", "112"] {
         let (_, v) = check_json(
-            &fixture("check/preflight/ownership.rs.tiza"),
+            &fixture("check/preflight/ownership-prose.tiza"),
             &["--width", w],
         );
         assert!(v.get("narrower").is_none(), "{w}: {v}");

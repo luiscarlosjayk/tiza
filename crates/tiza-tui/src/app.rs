@@ -7090,7 +7090,7 @@ impl App {
                 "margin" => match rest.trim() {
                     "" => Ok(match self.doc.margin {
                         Some(n) => format!(
-                            "margin {n} (a longer note, label or legend continues on the free rows below, then is cut with …; :margin auto removes the cap)"
+                            "margin {n} (a longer note, label or legend continues on the free rows below, then goes under its line of code or is cut with …; :margin auto removes the cap)"
                         ),
                         None => "margin auto (the right margin takes what the width leaves)".into(),
                     }),
@@ -7116,7 +7116,7 @@ impl App {
                         self.doc.margin = Some(cap as u16);
                         self.touch();
                         Ok(format!(
-                            "margin {cap}: a longer note, label or legend continues on the free rows below, then is cut with … (saved in the document)"
+                            "margin {cap}: a longer note, label or legend continues on the free rows below, then goes under its line of code or is cut with … (saved in the document)"
                         ))
                     }
                 },

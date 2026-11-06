@@ -16,6 +16,7 @@
 //!   its block cuts none of them.
 
 use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
 
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -123,6 +124,9 @@ pub struct Layout {
     /// Labels and notes drawn clipped with `…`, or left out for lack of
     /// room, in drawing order (`tiza check` warns about them).
     pub clipped_labels: Vec<ClippedLabel>,
+    /// The labels this layout gave rows of their own under their line
+    /// (see [`Pinned`]): what a take keeps for every step they show at.
+    pinned: Pinned,
 }
 
 /// One label the layout could not draw whole.
@@ -236,7 +240,7 @@ fn assign_lanes<T: Copy + Ord + std::ops::Sub<Output = T>>(
 /// The geometry a take shares across its steps: computed from the
 /// maximum over every step, so a frame at step 1 and one at step 7 put the
 /// code at the same x and keep the same margin.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default)]
 pub struct StableGeometry {
     /// Lane of each multi-line arrow, by annotation id, fixed for the take.
     pub lane_of: std::collections::HashMap<String, usize>,
@@ -244,6 +248,114 @@ pub struct StableGeometry {
     pub box_depth: usize,
     pub code_full_w: usize,
     pub num_w: usize,
+    /// The take, to find the labels that go under their line at some step
+    /// ([`Pinned`]); `None` when it has no label. With moves, it shows no
+    /// step live, so the code being typed does not count.
+    take: Option<Arc<Document>>,
+    /// A hash of `take`, without the code being typed: the key of
+    /// [`PINNED`].
+    take_hash: u64,
+    /// The labels that go under their line, for each width the take was
+    /// laid out at with this geometry.
+    pinned: Arc<Mutex<BTreeMap<PinKey, Arc<Pinned>>>>,
+}
+
+impl PartialEq for StableGeometry {
+    fn eq(&self, other: &Self) -> bool {
+        self.lane_of == other.lane_of
+            && self.lane_count == other.lane_count
+            && self.box_depth == other.box_depth
+            && self.code_full_w == other.code_full_w
+            && self.num_w == other.num_w
+            && self.take_hash == other.take_hash
+    }
+}
+
+impl Eq for StableGeometry {}
+
+/// What decides which labels go under their line, besides the take.
+type PinKey = (usize, Option<usize>, bool, usize);
+
+/// The labels of a take that go under their line at some step: they go
+/// there at every step they show at, so the code does not go down a row
+/// in the middle of a scene when the next line gets a label or a block
+/// comes beside them.
+#[derive(Debug, Clone, Default)]
+struct Pinned {
+    /// Annotations whose line puts its labels under itself (a margin label
+    /// that does not fit whole in the rows it gets there).
+    ids: std::collections::BTreeSet<String>,
+    /// Labels under their line that go on in the rows under it, with the
+    /// cells for their text (`Under::wrap`): the fewest of the take.
+    wrap: BTreeMap<String, usize>,
+}
+
+/// The labels that go under their line, by the hash of a take and the
+/// options that decide them: a geometry computed again for the same take
+/// (each tick of a typing, a layout with no geometry) finds them here. The
+/// last 16 are kept.
+static PINNED: Mutex<Vec<PinEntry>> = Mutex::new(Vec::new());
+
+/// A take's hash and options, and its [`Pinned`].
+type PinEntry = ((u64, PinKey), Arc<Pinned>);
+
+impl StableGeometry {
+    /// The labels of the take that go under their line at `opts`'s width:
+    /// the take is laid out once at each step where something changes.
+    fn pinned(&self, theme: &Theme, opts: &LayoutOptions) -> Arc<Pinned> {
+        let Some(take) = &self.take else {
+            return Arc::default();
+        };
+        let key: PinKey = (
+            opts.width,
+            opts.margin_cap,
+            opts.line_numbers,
+            opts.tab_width,
+        );
+        if let Some(p) = self.pinned.lock().ok().and_then(|m| m.get(&key).cloned()) {
+            return p;
+        }
+        let global = (self.take_hash, key);
+        let cached = PINNED
+            .lock()
+            .ok()
+            .and_then(|c| c.iter().find(|(k, _)| *k == global).map(|(_, p)| p.clone()));
+        let p = cached.unwrap_or_else(|| {
+            let mut p = Pinned::default();
+            let none = Pinned::default();
+            for step in take.change_steps(take.max_step()) {
+                let o = LayoutOptions {
+                    step,
+                    focus: None,
+                    pointer: None,
+                    typing: false,
+                    ..*opts
+                };
+                let paint = Paint {
+                    code: false,
+                    spare: None,
+                    typed: None,
+                };
+                let l = layout_core(take, theme, &o, Some(self), paint, false, Some(step), &none);
+                p.ids.extend(l.pinned.ids);
+                for (id, w) in l.pinned.wrap {
+                    let e = p.wrap.entry(id).or_insert(w);
+                    *e = (*e).min(w);
+                }
+            }
+            let p = Arc::new(p);
+            if let Ok(mut c) = PINNED.lock() {
+                c.retain(|(k, _)| *k != global);
+                c.insert(0, (global, p.clone()));
+                c.truncate(16);
+            }
+            p
+        });
+        if let Ok(mut m) = self.pinned.lock() {
+            m.insert(key, p.clone());
+        }
+        p
+    }
 }
 
 /// Sizes the lanes, the box band and the code column for every step of
@@ -326,6 +438,24 @@ pub fn stable_geometry(doc: &Document, opts: &LayoutOptions) -> StableGeometry {
         .collect();
     let (lanes, count) = assign_lanes(&mut spans);
     g.lane_count = count;
+    // A take with no label has nothing to put under its line.
+    if doc.annotations.iter().any(|a| has_label(&a.shape)) {
+        use std::hash::{Hash, Hasher};
+        let mut take = doc.clone();
+        if !take.moves.is_empty() {
+            take.step = u32::MAX;
+        }
+        let mut keyed = take.clone();
+        if !keyed.moves.is_empty() {
+            keyed.code.clear();
+        }
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        serde_json::to_string(&keyed)
+            .unwrap_or_default()
+            .hash(&mut h);
+        g.take_hash = h.finish();
+        g.take = Some(Arc::new(take));
+    }
     for (i, (id, _, _)) in arrow_span.into_iter().enumerate() {
         g.lane_of.insert(id, lanes[i]);
     }
@@ -655,6 +785,27 @@ fn layout_run(
         }
         g => g,
     };
+    // A stable layout puts a label under its line at every step it shows at
+    // when it goes there at one of them (see [`Pinned`]).
+    let pinned = match geometry {
+        Some(g) if opts.stable => g.pinned(theme, opts),
+        _ => Arc::default(),
+    };
+    layout_core(doc, theme, opts, geometry, paint, trace, spot_step, &pinned)
+}
+
+/// [`layout_run`] with the labels that go under their line (`pinned`).
+#[allow(clippy::too_many_arguments)]
+fn layout_core(
+    doc: &Document,
+    theme: &Theme,
+    opts: &LayoutOptions,
+    geometry: Option<&StableGeometry>,
+    paint: Paint<'_>,
+    trace: bool,
+    spot_step: Option<u32>,
+    pinned: &Pinned,
+) -> Layout {
     // With moves (ADR 0007) the document is drawn as it looks at `opts.step`:
     // the code at that step and the annotations shifted through the patches
     // of later steps; those without an anchor are left out.
@@ -692,6 +843,7 @@ fn layout_run(
             .max(1),
         trace,
         spot_step,
+        pinned: pinned.ids.clone(),
     };
     // Whether a margin block fits, and which rows it covers, is only known
     // once the rows exist, so the rows are planned again while a plan finds
@@ -712,7 +864,7 @@ fn layout_run(
     });
     let plan = |under: &Under| match layout_pass(doc, theme, opts, geometry, under, &shared, None) {
         Pass::Planned(more, free) => (more, free),
-        Pass::Drawn(_) => unreachable!("a plan draws nothing"),
+        Pass::Drawn(..) => unreachable!("a plan draws nothing"),
     };
     // Whether the layout of `trial` cuts or leaves out only labels that the
     // layout of `now` also cuts: a block beside a line can take the room of
@@ -725,7 +877,7 @@ fn layout_run(
                 typed: None,
             };
             match layout_pass(doc, theme, opts, geometry, under, &shared, Some(paint)) {
-                Pass::Drawn(l) => l.clipped_labels,
+                Pass::Drawn(l, _) => l.clipped_labels,
                 Pass::Planned(..) => unreachable!("a drawing pass returns its layout"),
             }
         };
@@ -734,66 +886,95 @@ fn layout_run(
             .iter()
             .all(|c| now.iter().any(|n| n.id == c.id && n.text == c.text))
     };
-    let mut under = Under::default();
-    let mut free = Under::default();
-    while planning {
-        let more;
-        (more, free) = plan(&under);
-        let before = (under.callouts.len(), under.lines.len());
-        under.callouts.extend(more.callouts);
-        under.lines.extend(more.lines);
-        planning = (under.callouts.len(), under.lines.len()) != before;
-    }
-    // A decision of an early plan can be stale: the rows of a later
-    // decision moved a block, and the margin beside a line is free again.
-    // The last plan names what of `under` its rows would leave in the
-    // margin (`free`, a hint); each one goes back to the margin when a plan
-    // without it asks for nothing more. The hints are tried once each, from
-    // the first line down: one that goes back only takes room in the margin
-    // and removes rows under its line, so it never makes room for one above
-    // it. (Without stable geometry, on the authoring screen, fewer rows can
-    // take an arrow lane away and widen the margin; a hint above can then
-    // miss its turn, and the layout is still whole.) At most one plan for
-    // each member (two for a callout, see below), and none when nothing is
-    // free. A callout whose line
-    // keeps its labels beside the blocks can find no row of its line free
-    // in the margin: its hint is tried once more with the labels of its
-    // line under it, whose row frees that room (one row under the line in
-    // place of the rows of a block). That try stays only when it cuts no
-    // label more: the block can take the room of a label under its line.
-    let mut last: Option<FreeKey> = None;
+    let mut under = Under {
+        wrap: pinned.wrap.clone(),
+        ..Default::default()
+    };
+    let (code, typed) = (paint.code, paint.typed);
+    let mut spare = paint.spare;
+    let mut rounds = 0;
+    // The layout is drawn, and planned again from what it found too wide
+    // (`more`): a line that puts its labels under itself and a label under
+    // its line that goes on in the rows below only give rows to labels, so
+    // `under` only grows and this ends. A layout with no cut label is drawn
+    // once, as before.
     loop {
-        let next = free_order(doc, &free)
-            .into_iter()
-            .find(|k| last.as_ref().is_none_or(|l| free_rank(k) > free_rank(l)));
-        let Some(key) = next else { break };
-        let mut trial = under.clone();
-        match &key {
-            (_, true, _, id) => {
-                trial.back.insert(id.clone());
-                trial.callouts.remove(id)
-            }
-            (line, false, _, _) => trial.lines.remove(line),
-        };
-        let (more, trial_free) = plan(&trial);
-        if more.callouts.is_empty() && more.lines.is_empty() {
-            under = trial;
-            free = trial_free;
-        } else if let (line, true, _, _) = &key
-            && !trial.lines.contains(line)
-        {
-            trial.lines.insert(*line);
+        let mut free = Under::default();
+        while planning {
+            let more;
+            (more, free) = plan(&under);
+            let before = under.size();
+            under.extend(more);
+            planning = under.size() != before;
+        }
+        // A decision of an early plan can be stale: the rows of a later
+        // decision moved a block, and the margin beside a line is free again.
+        // The last plan names what of `under` its rows would leave in the
+        // margin (`free`, a hint); each one goes back to the margin when a plan
+        // without it asks for nothing more. The hints are tried once each, from
+        // the first line down: one that goes back only takes room in the margin
+        // and removes rows under its line, so it never makes room for one above
+        // it. (Without stable geometry, on the authoring screen, fewer rows can
+        // take an arrow lane away and widen the margin; a hint above can then
+        // miss its turn, and the layout is still whole.) At most one plan for
+        // each member (two for a callout, see below), and none when nothing is
+        // free. A callout whose line
+        // keeps its labels beside the blocks can find no row of its line free
+        // in the margin: its hint is tried once more with the labels of its
+        // line under it, whose row frees that room (one row under the line in
+        // place of the rows of a block). That try stays only when it cuts no
+        // label more: the block can take the room of a label under its line.
+        let mut last: Option<FreeKey> = None;
+        loop {
+            let next = free_order(doc, &free)
+                .into_iter()
+                .find(|k| last.as_ref().is_none_or(|l| free_rank(k) > free_rank(l)));
+            let Some(key) = next else { break };
+            let mut trial = under.clone();
+            match &key {
+                (_, true, _, id) => {
+                    trial.back.insert(id.clone());
+                    trial.callouts.remove(id)
+                }
+                (line, false, _, _) => trial.lines.remove(line),
+            };
             let (more, trial_free) = plan(&trial);
-            if more.callouts.is_empty() && more.lines.is_empty() && cuts_no_more(&trial, &under) {
+            if more.callouts.is_empty() && more.lines.is_empty() {
                 under = trial;
                 free = trial_free;
+            } else if let (line, true, _, _) = &key
+                && !trial.lines.contains(line)
+            {
+                trial.lines.insert(*line);
+                let (more, trial_free) = plan(&trial);
+                if more.callouts.is_empty() && more.lines.is_empty() && cuts_no_more(&trial, &under)
+                {
+                    under = trial;
+                    free = trial_free;
+                }
             }
+            last = Some(key);
         }
-        last = Some(key);
-    }
-    match layout_pass(doc, theme, opts, geometry, &under, &shared, Some(paint)) {
-        Pass::Drawn(l) => l,
-        Pass::Planned(..) => unreachable!("a drawing pass returns its layout"),
+        let paint = Paint {
+            code,
+            spare: spare.take(),
+            typed,
+        };
+        let (l, more) = match layout_pass(doc, theme, opts, geometry, &under, &shared, Some(paint))
+        {
+            Pass::Drawn(l, more) => (l, more),
+            Pass::Planned(..) => unreachable!("a drawing pass returns its layout"),
+        };
+        let before = under.size();
+        under.extend(more);
+        // `under` only grows, by members of the visible annotations; the
+        // bound is a guard.
+        rounds += 1;
+        if under.size() == before || rounds > 8 {
+            return l;
+        }
+        spare = Some(l.canvas);
+        planning = true;
     }
 }
 
@@ -845,6 +1026,9 @@ struct Shared {
     trace: bool,
     /// The step whose spotlights are active (none with `None`).
     spot_step: Option<u32>,
+    /// The annotations whose line puts its labels under itself at every
+    /// step of the take ([`Pinned`]).
+    pinned: std::collections::BTreeSet<String>,
 }
 
 /// What one run of [`layout_pass`] gives back.
@@ -852,23 +1036,51 @@ enum Pass {
     /// A plan's verdict: what must go under its line, and what of the
     /// `under` it was given its rows would leave in the margin (a hint).
     Planned(Under, Under),
-    /// The layout, drawn.
-    Drawn(Layout),
+    /// The layout, drawn, and what the next plan must change so that no
+    /// label is cut while it has a row of its own to take (see
+    /// [`layout_with`]).
+    Drawn(Layout, Under),
 }
 
 /// What a run of the layout moves under its line (see [`layout_with`]).
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 struct Under {
     /// Margin callouts drawn as a block under their line.
     callouts: std::collections::BTreeSet<String>,
-    /// Lines whose labels go under them because a margin block covers
-    /// their row.
+    /// Lines whose labels go under them: a margin block covers their row,
+    /// or a margin label of theirs does not fit whole in the rows it gets
+    /// there (the next line has a label of its own, a block takes the rows
+    /// below, the rows end).
     lines: std::collections::BTreeSet<u32>,
+    /// Labels under their line that a margin block on their row cuts: the
+    /// label id, and the cells for its text before the block. Its words go
+    /// on in the rows under it.
+    wrap: BTreeMap<String, usize>,
+    /// The lines of `lines` there because a margin label of theirs does not
+    /// fit whole in the rows it gets.
+    cut: std::collections::BTreeSet<u32>,
     /// Margin callouts that went back to the margin from under their line:
     /// their block starts on a row of their line before the blocks under
     /// it, never beside the block of another callout of their line that
     /// stays under it or on the bottom row of a box.
     back: std::collections::BTreeSet<String>,
+}
+
+impl Under {
+    /// How many members it has: a plan that adds none ends the planning.
+    fn size(&self) -> (usize, usize, usize) {
+        (self.callouts.len(), self.lines.len(), self.wrap.len())
+    }
+
+    /// Adds what a plan moves under its line (`back` is not a plan's).
+    fn extend(&mut self, more: Under) {
+        self.callouts.extend(more.callouts);
+        self.lines.extend(more.lines);
+        self.cut.extend(more.cut);
+        for (id, w) in more.wrap {
+            self.wrap.entry(id).or_insert(w);
+        }
+    }
 }
 
 /// One run of the layout of `doc` (already as the step shows it) with
@@ -1121,8 +1333,15 @@ fn layout_pass(
         .filter(|&(_, n)| *n >= 2)
         .map(|(line, _)| *line)
         .collect();
-    // Lines whose margin row a callout block covers (see `layout_with`).
-    let covered = |line: u32| under.lines.contains(&line);
+    // Lines whose labels go under them (see `layout_with`): a callout
+    // block covers their margin row, a margin label of theirs does not fit
+    // there, or it does not fit at another step of the take (`Pinned`).
+    let pinned_lines: std::collections::BTreeSet<u32> = vis
+        .iter()
+        .filter(|a| shared.pinned.contains(&a.id))
+        .filter_map(|a| label_line(&a.shape))
+        .collect();
+    let covered = |line: u32| under.lines.contains(&line) || pinned_lines.contains(&line);
     let in_margin = |line: u32| labels_in_margin && !under_lines.contains(&line) && !covered(line);
 
     // ---- callouts: decide placement and pre-wrap their text ----
@@ -1234,6 +1453,10 @@ fn layout_pass(
     let mut row_of_line = BTreeMap::new();
     // "Under" texts: index into `unders` referenced by Row::Under
     let mut unders: Vec<(Label, bool)> = Vec::new(); // (label, is_note)
+    // The `unders` that are a piece of a label under its line on several
+    // rows: whether it goes on with the words of the one before, and the
+    // whole text of the label.
+    let mut pieces_of: BTreeMap<usize, (bool, String)> = BTreeMap::new();
     // Labels drawn with `…` or left out.
     let mut clipped: Vec<ClippedLabel> = Vec::new();
     let clip = |clipped: &mut Vec<ClippedLabel>, id: &str, text: &str, dropped: bool| {
@@ -1310,18 +1533,25 @@ fn layout_pass(
                 if (!labels_in_margin || covered(line))
                     && let Some(l) = label
                 {
-                    unders.push((
-                        Label {
-                            id: a.id.clone(),
-                            text: l.clone(),
-                            color: color_of(a),
-                            note: false,
-                            glyph: None,
-                            at: None,
-                        },
-                        false,
-                    ));
-                    rows.push(Row::Under(unders.len() - 1));
+                    let pieces = label_pieces(l, under.wrap.get(&a.id));
+                    let several = pieces.len() > 1;
+                    for (k, piece) in pieces.into_iter().enumerate() {
+                        if several {
+                            pieces_of.insert(unders.len(), (k > 0, l.clone()));
+                        }
+                        unders.push((
+                            Label {
+                                id: a.id.clone(),
+                                text: piece,
+                                color: color_of(a),
+                                note: false,
+                                glyph: None,
+                                at: None,
+                            },
+                            false,
+                        ));
+                        rows.push(Row::Under(unders.len() - 1));
+                    }
                 }
             }
         }
@@ -1383,20 +1613,30 @@ fn layout_pass(
                     _ => None,
                 };
                 if let Some((text, color, is_note, start)) = lbl {
-                    unders.push((
-                        Label {
-                            id: a.id.clone(),
-                            text,
-                            color,
-                            note: is_note,
-                            glyph: None,
-                            at: start.map(|c| {
-                                col_to_x(doc.line_text(line).unwrap_or(""), c, opts.tab_width)
-                            }),
-                        },
-                        is_note,
-                    ));
-                    rows.push(Row::Under(unders.len() - 1));
+                    // A label in pieces starts at the code, as one that is
+                    // cut under its span does (step 6).
+                    let pieces = label_pieces(&text, under.wrap.get(&a.id));
+                    let several = pieces.len() > 1;
+                    let at = start
+                        .filter(|_| !several)
+                        .map(|c| col_to_x(doc.line_text(line).unwrap_or(""), c, opts.tab_width));
+                    for (k, piece) in pieces.into_iter().enumerate() {
+                        if several {
+                            pieces_of.insert(unders.len(), (k > 0, text.clone()));
+                        }
+                        unders.push((
+                            Label {
+                                id: a.id.clone(),
+                                text: piece,
+                                color,
+                                note: is_note,
+                                glyph: None,
+                                at,
+                            },
+                            is_note,
+                        ));
+                        rows.push(Row::Under(unders.len() - 1));
+                    }
                 }
             }
         }
@@ -1645,6 +1885,163 @@ fn layout_pass(
             }
         }
     }
+    // (top row, bottom row, right rail x) of each box: a label under a line
+    // inside a box ends a cell before the box's right rail, as the code does.
+    let box_rails: Vec<(usize, usize, usize)> = (0..boxes.len())
+        .filter_map(|bi| {
+            let top = rows.iter().position(|r| *r == Row::BoxTop(bi))?;
+            let bottom = rows.iter().position(|r| *r == Row::BoxBottom(bi))?;
+            Some((top, bottom, rbox_x0 + (box_depth - 1 - boxes[bi].depth)))
+        })
+        .collect();
+    // Where a label under its line on row `y` ends: before the innermost
+    // box around the row and the first margin block on it (neither is drawn
+    // over, nor touched: one cell short of it), when it is on the canvas.
+    let under_end = |y: usize| {
+        box_rails
+            .iter()
+            .filter(|(top, bottom, _)| *top < y && y < *bottom)
+            .map(|(_, _, rx)| *rx)
+            .chain(
+                blocks
+                    .iter()
+                    .filter(|(_, by, _, bh)| *by <= y && y < by + bh)
+                    .map(|(bx, ..)| *bx),
+            )
+            .min()
+            .filter(|&rx| rx < width)
+            .map_or(width, |rx| rx - 1)
+    };
+    // What the next plan must change so that a label is not cut with `…`
+    // when rows under its line can show it whole:
+    // - a line whose margin labels do not fit whole in the rows step 7 gives
+    //   them (the next line has a label of its own, a block takes the rows
+    //   below, the rows end) puts its labels under itself, when each one
+    //   fits whole there;
+    // - a label under its line that a margin block on its row cuts goes on
+    //   in the rows under it (`Under::wrap`).
+    // A take decides once (`Pinned`): a label that goes under its line at
+    // one step is under it at every step it shows at, so the code does not
+    // go down a row in the middle of a scene. Without a take (`stable`
+    // off, the authoring screen) each step decides alone: a known limit.
+    // Only under a line of code: rows under a line of a drawing or of prose
+    // would break it, so a label there stays cut (`check` warns).
+    let code_lines = crate::highlight::code_lines(&doc.code, &doc.source.language);
+    let is_code = |line: u32| {
+        line.checked_sub(first_line)
+            .and_then(|k| code_lines.get(k as usize))
+            .copied()
+            .unwrap_or(false)
+    };
+    // The line of each row: the code row at or above it.
+    let line_at = |y: usize| {
+        rows[..=y].iter().rev().find_map(|r| match r {
+            Row::Code(l) => Some(*l),
+            _ => None,
+        })
+    };
+    let mut more = Under::default();
+    if labels_in_margin && margin_w > 0 {
+        let LabelRows {
+            owner, line_row, ..
+        } = label_rows(&rows, &margin);
+        // A row under a line whose label (step 6) leaves the margin blank
+        // and no block takes: a label of that line goes on there (step 7).
+        let blank: Vec<bool> = rows
+            .iter()
+            .enumerate()
+            .map(|(r, row)| match row {
+                Row::Under(i) => {
+                    let (lbl, _) = &unders[*i];
+                    let x = code_x + lbl.at.unwrap_or(0) + 2 + display_width(&lbl.text, 4);
+                    shift[r] == 0
+                        && x < margin_x.saturating_sub(1)
+                        && !blocks.iter().any(|(_, by, _, bh)| *by <= r && r < by + bh)
+                }
+                _ => true,
+            })
+            .collect();
+        let mut taken = occupied.clone();
+        for (y, labels) in margin.iter().enumerate() {
+            if labels.is_empty() || occupied[y] || !line_at(y).is_some_and(is_code) {
+                continue;
+            }
+            let own_end = own_rows_end(&rows, y);
+            let free = |r: usize, taken: &[bool]| {
+                r < height
+                    && !taken[r]
+                    && (!reserved[r]
+                        || r == y
+                        || (owner[r].is_some() && owner[r] == line_row[y] && blank[r]))
+            };
+            let mut next_row = y;
+            let mut fits = true;
+            for l in labels {
+                let Some(mut r) = (next_row..own_end).find(|&r| free(r, &taken)) else {
+                    fits = false;
+                    break;
+                };
+                let s0 = shift[r];
+                let prefix = if l.note { NOTE_PREFIX } else { "" };
+                let text_w = margin_w.saturating_sub(s0 + display_width(prefix, 4) + 1);
+                let pieces = wrap_words(&l.text, text_w);
+                if text_w < 4 || pieces.iter().any(|p| display_width(p, 4) > text_w) {
+                    fits = false;
+                    break;
+                }
+                for _ in &pieces {
+                    if !free(r, &taken) || shift[r] > s0 {
+                        fits = false;
+                        break;
+                    }
+                    taken[r] = true;
+                    r += 1;
+                }
+                next_row = r;
+                if !fits {
+                    break;
+                }
+            }
+            // Under its line, a label has the row from the code to the
+            // rail of the box around it or the right edge (a block on the
+            // row makes it go on in the rows below): the line goes there
+            // only when each label fits whole, so a row is never added for
+            // a label that stays cut. The room is the one after an arrow's
+            // glyph (`─▶ `), the widest start of a label there.
+            let rail = box_rails
+                .iter()
+                .filter(|(top, bottom, _)| *top < y && y < *bottom)
+                .map(|(_, _, rx)| *rx)
+                .min()
+                .filter(|&rx| rx < width)
+                .map_or(width, |rx| rx - 1);
+            let room = rail.saturating_sub(code_x + 3);
+            if !fits && labels.iter().all(|l| display_width(&l.text, 4) <= room) {
+                more.lines.extend(line_at(y));
+                more.cut.extend(line_at(y));
+            }
+        }
+    }
+    for (y, row) in rows.iter().enumerate() {
+        let Row::Under(i) = row else { continue };
+        let (lbl, _) = &unders[*i];
+        // Only a label that a margin block on its row cuts: before the
+        // block it has room, and the rows under it are its own.
+        let block_on_row = blocks.iter().any(|(_, by, _, bh)| *by <= y && y < by + bh);
+        if lbl.glyph.is_some()
+            || under.wrap.contains_key(&lbl.id)
+            || !block_on_row
+            || !line_at(y).is_some_and(is_code)
+        {
+            continue;
+        }
+        // The text starts after the `· ` at the code (a label that is cut
+        // under its span starts at the code: step 6).
+        let room = under_end(y).saturating_sub(code_x + 2);
+        if display_width(&lbl.text, 4) > room && room >= 14 {
+            more.wrap.insert(lbl.id.clone(), room);
+        }
+    }
     let Some(paint) = draw else {
         // Lines with a margin label on a row a block takes: their labels go
         // under them in the next run (see `layout_with`).
@@ -1709,11 +2106,14 @@ fn layout_pass(
                     .filter(|l| row_of_line.get(l).is_some_and(|&y| !occupied[y])),
             );
         }
+        lines.extend(more.lines);
         return Pass::Planned(
             Under {
                 callouts: retry,
                 lines,
                 back: Default::default(),
+                wrap: more.wrap,
+                cut: more.cut,
             },
             free,
         );
@@ -2226,35 +2626,15 @@ fn layout_pass(
     };
 
     // ---- 6. labels under the lines ----
-    // (top row, bottom row, right rail x) of each box: a label under a line
-    // inside a box ends a cell before the box's right rail, as the code does.
-    let box_rails: Vec<(usize, usize, usize)> = (0..boxes.len())
-        .filter_map(|bi| {
-            let top = rows.iter().position(|r| *r == Row::BoxTop(bi))?;
-            let bottom = rows.iter().position(|r| *r == Row::BoxBottom(bi))?;
-            Some((top, bottom, rbox_x0 + (box_depth - 1 - boxes[bi].depth)))
-        })
-        .collect();
     for (y, row) in rows.iter().enumerate() {
         let Row::Under(i) = row else { continue };
         let (lbl, is_note) = &unders[*i];
         label_painter(&mut canvas, &lbl.id);
-        // The innermost box around this row and the first margin block on
-        // it: neither is drawn over, nor touched (one cell short of it), when
-        // it is on the canvas.
-        let end = box_rails
-            .iter()
-            .filter(|(top, bottom, _)| *top < y && y < *bottom)
-            .map(|(_, _, rx)| *rx)
-            .chain(
-                blocks
-                    .iter()
-                    .filter(|(_, by, _, bh)| *by <= y && y < by + bh)
-                    .map(|(bx, ..)| *bx),
-            )
-            .min()
-            .filter(|&rx| rx < width)
-            .map_or(width, |rx| rx - 1);
+        let end = under_end(y);
+        let (cont, whole) = match pieces_of.get(i) {
+            Some((cont, whole)) => (*cont, whole.as_str()),
+            None => (false, lbl.text.as_str()),
+        };
         let style = base.fg(lbl.color).italic();
         let x = match &lbl.glyph {
             Some(g) => {
@@ -2265,7 +2645,11 @@ fn layout_pass(
                     + 1
             }
             None => {
-                let prefix = if *is_note { "┆ " } else { "· " };
+                let prefix = match (cont, *is_note) {
+                    (true, _) => "  ",
+                    (false, true) => "┆ ",
+                    (false, false) => "· ",
+                };
                 // The label of a span starts under its span when it fits
                 // there; a note, or a label that does not fit, at the code.
                 let px = lbl
@@ -2279,7 +2663,7 @@ fn layout_pass(
         };
         let avail = end.saturating_sub(x);
         if display_width(&lbl.text, 4) > avail {
-            clip(&mut clipped, &lbl.id, &lbl.text, avail <= 1);
+            clip(&mut clipped, &lbl.id, whole, avail <= 1 && !cont);
         }
         keep_bg(&mut canvas, x, y, |c| {
             c.put_str_clipped(x, y, &lbl.text, avail, style.prose())
@@ -2403,7 +2787,8 @@ fn layout_pass(
     // into words and continues on the free rows below. A row that belongs to
     // another line's label is never taken by a continuation or an overflow
     // (so labels do not drift away from their line); what does not fit is
-    // clipped with an ellipsis on the last row it got. A line with several
+    // clipped with an ellipsis on the last row it got (a label of code that
+    // fits whole under its line went there: see `more`). A line with several
     // labels draws them under itself (`under_lines`), so a code row
     // here holds one label; should a row still get several, the next ones
     // start on the free rows after the previous one.
@@ -2544,16 +2929,60 @@ fn layout_pass(
         }
     }
 
-    Pass::Drawn(Layout {
-        canvas,
-        rows,
-        code_w,
-        row_of_line,
-        code_x,
-        code_needs: (code_full_w > code_w).then_some(code_x + code_full_w + box_depth + 1),
-        labels_in_margin,
-        clipped_labels: clipped,
-    })
+    Pass::Drawn(
+        Layout {
+            canvas,
+            rows,
+            code_w,
+            row_of_line,
+            code_x,
+            code_needs: (code_full_w > code_w).then_some(code_x + code_full_w + box_depth + 1),
+            labels_in_margin,
+            clipped_labels: clipped,
+            pinned: Pinned {
+                ids: vis
+                    .iter()
+                    .filter(|a| label_line(&a.shape).is_some_and(|l| under.cut.contains(&l)))
+                    .map(|a| a.id.clone())
+                    .collect(),
+                wrap: under.wrap.clone(),
+            },
+        },
+        more,
+    )
+}
+
+/// The line whose labels a label of `shape` is one of: a note's, a mark's,
+/// a highlight's with a label, an arrow's with a label (the line of its
+/// head). `None` for a shape with no label there.
+fn label_line(shape: &Shape) -> Option<u32> {
+    match shape {
+        Shape::Note { line, .. } => Some(*line),
+        Shape::Mark { span, .. }
+        | Shape::Highlight {
+            span,
+            label: Some(_),
+            ..
+        } => Some(span.line),
+        Shape::Arrow {
+            to, label: Some(_), ..
+        } => Some(to.line),
+        _ => None,
+    }
+}
+
+/// Whether `shape` has a label that can go in the margin.
+fn has_label(shape: &Shape) -> bool {
+    label_line(shape).is_some()
+}
+
+/// The rows of a label under its line: one, or the pieces of `text` in
+/// `wrap` cells (`Under::wrap`).
+fn label_pieces(text: &str, wrap: Option<&usize>) -> Vec<String> {
+    match wrap {
+        Some(&w) => wrap_words(text, w),
+        None => vec![text.to_string()],
+    }
 }
 
 /// Splits `text` into chunks of at most `width` cells, breaking on words
@@ -3271,7 +3700,7 @@ mod tests {
     }
 
     #[test]
-    fn margin_label_wraps_over_free_rows_and_is_clipped_before_the_next_lines_label() {
+    fn margin_label_wraps_over_free_rows_and_goes_under_its_line_before_the_next_lines_label() {
         let mut d = doc();
         // A long note on a line whose next line has its own label.
         d.add(Annotation {
@@ -3300,15 +3729,22 @@ mod tests {
         let text = l.canvas.to_plain_text();
         println!("{text}");
         // Line 3 has its own label (the mark), so the long note on line 2
-        // cannot continue onto row 3: it is clipped there with an ellipsis.
-        // Labels never drift away from their line (a second label on line 2
-        // goes under it with the first).
+        // cannot continue onto row 3: it goes whole on a row under line 2,
+        // not cut with `…`. Labels never drift away from their line.
         let row = |line: u32| l.row_of_line[&line];
+        assert!(!text.contains('…'), "{text}");
+        assert!(l.clipped_labels.is_empty(), "{:?}", l.clipped_labels);
         assert!(
-            l.canvas.row_text(row(2)).contains("s is born here"),
+            !l.canvas.row_text(row(2)).contains("s is born here"),
             "{text}"
         );
-        assert!(l.canvas.row_text(row(2)).contains('…'), "{text}");
+        assert_eq!(row(3), row(2) + 2, "one row under line 2: {text}");
+        assert!(
+            l.canvas
+                .row_text(row(2) + 1)
+                .contains("┆ s is born here with String::from and lives until it is moved"),
+            "{text}"
+        );
         assert!(
             l.canvas.row_text(row(3)).contains("━▶ move"),
             "line 3 keeps its label: {text}"

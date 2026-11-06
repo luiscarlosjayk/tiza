@@ -45,13 +45,16 @@ use tiza_qa::{
 /// «33»), with the width it announces now: four of two labels on a line and two written
 /// for this ticket (the second label of L1 arrives with a typing move; the
 /// note comes before the highlight, which also clips at 63).
+// Copies of the fixtures in plain text: a label of prose that does not fit
+// stays cut (a label of code goes under its line), so these keep the
+// widths they clip at.
 const AT_62: [(&str, usize); 6] = [
-    ("render/two_labels_on_a_line/two-labels-hl.tiza", 63),
-    ("render/two_labels_on_a_line/two-labels-mark.tiza", 63),
-    ("render/two_labels_on_a_line/three-labels.tiza", 63),
-    ("render/two_labels_on_a_line/two-labels-hl-mark.tiza", 63),
-    ("check/clean_width/typing.tiza", 63),
-    ("check/clean_width/order-note-first.tiza", 64),
+    ("check/clean_width/prose/two-labels-hl.tiza", 63),
+    ("check/clean_width/prose/two-labels-mark.tiza", 63),
+    ("check/clean_width/prose/three-labels.tiza", 63),
+    ("check/clean_width/prose/two-labels-hl-mark.tiza", 63),
+    ("check/clean_width/prose/typing.tiza", 63),
+    ("check/clean_width/prose/order-note-first.tiza", 64),
 ];
 
 fn path(rel: &str) -> String {
@@ -267,7 +270,7 @@ fn the_62_fixtures_announce_a_width_above_62_and_every_width_above_is_clean() {
         );
     }
     // What QA saw: step 2 at 62 columns clips the note of L3.
-    let p = path("render/two_labels_on_a_line/two-labels-hl.tiza");
+    let p = path("check/clean_width/prose/two-labels-hl.tiza");
     let at = |w: &str| tiza_ok(&["render", &p, "--width", w, "--step", "2", "--format", "txt"]);
     let t62 = at("62");
     assert!(t62.contains("┆ how chatty") && t62.contains('…'), "{t62}");
@@ -586,7 +589,7 @@ fn a_document_that_clips_at_every_width_keeps_saying_so() {
 
 #[test]
 fn the_narrow_layout_below_62_is_unchanged() {
-    let p = path("render/two_labels_on_a_line/two-labels-hl.tiza");
+    let p = path("check/clean_width/prose/two-labels-hl.tiza");
     let doc = open(&p);
     // Below the margin the labels go under the lines and fit from 30 on,
     // as before (the code itself needs 47); only the width announced above
@@ -635,7 +638,7 @@ fn a_margin_cap_and_width_only_count_the_widths_that_matter() {
     }
     // On a document with no cap `--width` does not move the announcement
     // either.
-    let p = path("render/two_labels_on_a_line/two-labels-hl.tiza");
+    let p = path("check/clean_width/prose/two-labels-hl.tiza");
     for w in ["40", "62", "100", "300"] {
         assert_eq!(
             check_json(&p, &["--width", w])["min_clean_width"],
@@ -648,7 +651,7 @@ fn a_margin_cap_and_width_only_count_the_widths_that_matter() {
 #[test]
 fn the_socket_and_mcp_check_say_the_same() {
     let dir = scratch("live");
-    let p = path("render/two_labels_on_a_line/two-labels-hl.tiza");
+    let p = path("check/clean_width/prose/two-labels-hl.tiza");
     let live = Live::open(open(&p), dir.join("doc.tiza"), dir.join("live.sock"));
     let v = live.api_ok("check", json!({}));
     assert_eq!(v["min_clean_width"], 63, "{v}");

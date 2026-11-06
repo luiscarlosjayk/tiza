@@ -50,13 +50,12 @@ fn the_cap_wraps_notes_and_ends_the_frame() {
     assert!(!capped.contains(note), "{capped}");
     assert!(capped.contains("┆ s no longer owns it:"), "{capped}");
     assert!(capped.contains("using it here does"), "{capped}");
-    // Labels still in the margin (not under the line), clipped with … when
-    // longer than the cap; arrows and boxes as before.
-    assert!(capped.contains("━▶ move: s moves into …"), "{capped}");
-    assert!(
-        !capped.contains("· ━▶ move"),
-        "pushed under the line:\n{capped}"
-    );
+    // A label longer than the cap that has no rows below in the margin
+    // goes whole under its line of code, not cut with …; the others stay in
+    // the margin; arrows and boxes as before.
+    assert!(capped.contains("· ━▶ move: s moves into takes"), "{capped}");
+    assert!(!capped.contains('…'), "{capped}");
+    assert!(capped.contains("╌▶ read: shared borrow"), "{capped}");
     let code_x = |t: &str| {
         t.lines()
             .find(|l| l.contains("fn main()"))

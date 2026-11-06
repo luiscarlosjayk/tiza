@@ -278,15 +278,22 @@ fn a_foreign_put_leaves_changes_and_after_w_the_chip_is_autosave_off() {
     assert!(!b.contains("autosave off") && !b.contains("no-save"), "{b}");
 }
 
+/// A note too long to be whole at 100 columns, in the margin or under its
+/// line.
+const LONG: &str = "this note is far too long to fit in the margin and it is also too long for the row under its line, so it is cut";
+
 #[test]
 fn the_chip_and_the_badge_fit_at_80_100_and_120_columns() {
     let live = ownership("chip-widths");
     live.command("step 7");
+    // A note too long for the margin and for the row under its line: it is
+    // cut at 100 columns, so the badge shows there.
+    live.command(&format!("note 9 {LONG}"));
     live.command("autosave off");
     live.with(|a| a.message = None);
     for (cols, badge) in [
         (80, Some("  ! code needs 83 cols")),
-        (100, Some("  ! 3 labels cut")),
+        (100, Some("  ! 1 label cut")),
         (120, None),
     ] {
         let b = bar(&live, cols);
@@ -335,11 +342,12 @@ fn the_saveas_message_shows_whole_at_100_columns_next_to_the_badge() {
     });
     live.command("step 7");
     live.command("note 2 hi");
+    live.command(&format!("note 9 {LONG}"));
     let to = usual_path("msg-on");
     live.command(&format!("saveas {}", to.display()));
     assert!(to.exists(), "{:?}", live.message());
     let b = bar(&live, 100);
-    assert!(b.contains("  ! 3 labels cut"), "{b}");
+    assert!(b.contains("  ! 1 label cut"), "{b}");
     assert!(
         b.trim_end().ends_with("/sub/mine.tiza (autosave on)"),
         "{b}"
@@ -349,12 +357,13 @@ fn the_saveas_message_shows_whole_at_100_columns_next_to_the_badge() {
     // chip shows too.
     let live = ownership("msg-off");
     live.command("step 7");
+    live.command(&format!("note 9 {LONG}"));
     live.command("autosave off");
     let to = usual_path("msg-off");
     live.command(&format!("saveas {}", to.display()));
     assert!(to.exists(), "{:?}", live.message());
     let b = bar(&live, 100);
-    assert!(b.contains("  autosave off  ! 3 labels cut"), "{b}");
+    assert!(b.contains("  autosave off  ! 1 label cut"), "{b}");
     assert!(
         b.trim_end().ends_with("/sub/mine.tiza (autosave off)"),
         "{b}"

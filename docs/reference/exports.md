@@ -122,7 +122,7 @@ An agent calls the MCP tool `export_image` with a `path`. The formats are in [Wh
 | `--theme-file` | A TOML file | The overrides of the document | Theme overrides for this export, instead of the overrides of the document. |
 | `--numbers` | None | The `numbers` field of the document, else `numbers` of the config file, else on. For the live instance, what its screen shows. | Tiza shows the line numbers, and you cannot use it with `--no-numbers`. |
 | `--no-numbers` | None | As `--numbers` | Tiza hides the line numbers. |
-| `--margin-cols` | 12 to 200 cells | The `margin` field of the document | The largest right margin of a step or of `--all-steps`. A longer note, label or legend continues on the free rows under its line. When no row is free, Tiza cuts it with `…`. |
+| `--margin-cols` | 12 to 200 cells | The `margin` field of the document | The largest right margin of a step or of `--all-steps`. A longer note, label or legend continues on the free rows under its line. When no row is free, a label of a line of code goes under the line, if it fits there whole. Otherwise, Tiza cuts it with `…`. |
 | `--lang` | A language id | The `--lang` before `render`, or the detected language | The language of the code. |
 | `--font-size` | 4 to 96 px | 16 | The size of the font in an image or a video. |
 | `--margin` | 0 to 20 cells | 1.5 | The blank margin around the drawing in an image or a video. |
@@ -472,7 +472,7 @@ The fonts are in the `tiza` binary. Thus an image export does not depend on the 
 
 All exports use the layout of the take. Tiza sizes the arrow lanes, the box band and the code column once, for all the steps. Thus the code does not move left or right from one step to the next, and each arrow keeps its lane. A label that fits at step 1 also fits at the last step.
 
-The take has no empty rows for the annotations of later steps. When a step adds a row above or under a line, the code under that row moves down at that step. Examples are a note or a callout under its line, the row of an underline or of brackets, and the border of a box. A step with a `code.patch` or a `code.link` changes the code, so the code can also move at that step.
+The take has no empty rows for the annotations of later steps. When a step adds a row above or under a line, the code under that row moves down at that step. A label of code that goes under its line at a later step is the exception: it is under its line from the step that shows it. Examples are a note or a callout under its line, the row of an underline or of brackets, and the border of a box. A step with a `code.patch` or a `code.link` changes the code, so the code can also move at that step.
 
 Tiza then makes all the frames of a GIF, an animated WebP or a video, or all the files of `--all-steps`, the same size. It adds the background color to the smaller ones.
 

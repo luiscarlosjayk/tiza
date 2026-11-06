@@ -438,17 +438,18 @@ fn mark_glyphs_keep_their_own_run_on_the_grid() {
         .expect("drop glyph");
     assert!(!drop.contains("class=\"p"));
     // Every text run sits on the grid, and the glyph and the
-    // words of `move: s moves` are where step 7 at 100 columns puts them.
+    // words of `move: s moves` are where step 7 at 100 columns puts them:
+    // under their line, whole (in the margin they did not fit).
     assert!(!s.contains("letter-spacing"));
     let count = s.matches("<text ").count();
     assert!(count > 50, "{count} text runs");
     assert_eq!(s.matches("textLength=").count(), count);
     assert!(
-        s.contains(r##"<text x="800.00" y="111.68" textLength="19.20" lengthAdjust="spacing" fill="#f08b5b" xml:space="preserve">━▶</text>"##),
+        s.contains(r##"<text x="272.00" y="132.80" textLength="19.20" lengthAdjust="spacing" fill="#f08b5b" class="i" xml:space="preserve">━▶</text>"##),
         "glyph run"
     );
     assert!(
-        s.contains(r#"<text x="819.20" y="111.68" textLength="163.20""#),
+        s.contains(r#"<text x="291.20" y="132.80" textLength="240.00""#),
         "words run"
     );
 }

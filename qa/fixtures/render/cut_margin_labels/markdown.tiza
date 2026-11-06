@@ -1,0 +1,50 @@
+{
+ "schema": 1,
+ "title": "markdown",
+ "source": {
+  "language": "md",
+  "first_line": 1
+ },
+ "code": [
+  "## Env",
+  "",
+  "```sh",
+  "API_TOKEN=demo-token-123",
+  "LOG_LEVEL=info",
+  "```",
+  "",
+  "\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510",
+  "\u2502 token    \u2502 demo  \u2502",
+  "\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518"
+ ],
+ "annotations": [
+  {
+   "id": "c1",
+   "step": 1,
+   "type": "note",
+   "line": 4,
+   "text": "the token every call to the payments service carries"
+  },
+  {
+   "id": "c2",
+   "step": 1,
+   "type": "note",
+   "line": 5,
+   "text": "chatty"
+  },
+  {
+   "id": "d1",
+   "step": 1,
+   "type": "note",
+   "line": 8,
+   "text": "the token every call to the payments service carries"
+  },
+  {
+   "id": "d2",
+   "step": 1,
+   "type": "note",
+   "line": 9,
+   "text": "the value"
+  }
+ ]
+}

@@ -129,12 +129,12 @@ In `is not in the code shown`, `FILE` can end with the lines on screen, for exam
 | `padding V H (from config.toml)` | `:pad default` set the padding of the config file, or `:pad` shows it. |
 | `padding V H (shown as CV CH: the terminal is too small for more)` | The terminal is too small for the padding. |
 | `padding V H (from --padding, not saved)` | `:pad` shows a padding from `--padding`. |
-| `margin N: a longer note, label or legend continues on the free rows below, then is cut with … (saved in the document)` | `:margin N` set the margin. |
+| `margin N: a longer note, label or legend continues on the free rows below, then goes under its line of code or is cut with … (saved in the document)` | `:margin N` set the margin. |
 | `margin=N: use a number between 12 and 200, or auto` | `:margin N` got a number out of the range. |
 | `margin auto` | `:margin auto` removed the limit. |
 | `margin already auto` | The margin had no limit already. |
 | `margin auto (the right margin takes what the width leaves)` | `:margin` shows that the margin has no limit. |
-| `margin N (a longer note, label or legend continues on the free rows below, then is cut with …; :margin auto removes the cap)` | `:margin` shows the limit. |
+| `margin N (a longer note, label or legend continues on the free rows below, then goes under its line of code or is cut with …; :margin auto removes the cap)` | `:margin` shows the limit. |
 | `layout stable: the layout fits every step, as in presentation mode and exports` | `:layout stable` set the take as the layout. |
 | `layout dynamic: the layout fits the step on screen (exports use every step)` | `:layout dynamic` set the layout of the step on screen. |
 | `layout stable` or `layout dynamic` | `:layout` shows the layout. |

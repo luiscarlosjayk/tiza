@@ -795,4 +795,45 @@ mod tests {
             "{typed:?}, at the end {end}"
         );
     }
+
+    #[test]
+    fn a_label_that_goes_under_its_line_later_is_under_it_in_every_frame() {
+        // The note of L2 fits in the margin at step 1. Step 2 types a line
+        // under L2 with a note of its own: the note of L2 no longer fits
+        // there and goes under its line. It is under it from step 1 on, in
+        // each typed frame too, so the code does not go down a row in the
+        // middle of the take.
+        let note = "the token that every call to the payments service carries in its header";
+        let doc = json!({
+            "schema": 1, "source": {"language": "sh", "first_line": 1},
+            "code": ["DB_URL=postgres://demo:demo@localhost/app", "API_TOKEN=demo-token-123", "PORT=8080", "WORKERS=4"],
+            "annotations": [
+                {"id": "n1", "step": 1, "type": "note", "line": 2, "text": note},
+                {"id": "n2", "step": 2, "type": "note", "line": 3, "text": "json logs"}
+            ],
+            "moves": [
+                {"at_step": 2, "action": "code.patch", "op": "insert", "after": "API_TOKEN=demo-token-123",
+                 "content": "LOG_FORMAT=json", "typing": "char", "speed_ms": 50}
+            ]
+        });
+        let d = crate::fs::parse_document(&doc.to_string(), None).unwrap();
+        let f = frames(&d, &Theme::dark(), &AnimOptions::default());
+        let shown: Vec<&Frame> = f.iter().filter(|x| x.step >= 1).collect();
+        assert!(shown.iter().filter(|x| x.typing).count() > 3);
+        for x in shown {
+            let t = x.canvas.to_plain_text();
+            let rows: Vec<&str> = t.lines().collect();
+            let at = rows
+                .iter()
+                .position(|r| r.contains("API_TOKEN"))
+                .expect("L2");
+            assert!(
+                rows[at + 1].contains(&format!("┆ {note}")),
+                "step {} typing {}:\n{t}",
+                x.step,
+                x.typing
+            );
+            assert!(!t.contains('…'), "{t}");
+        }
+    }
 }
