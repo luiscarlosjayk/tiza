@@ -4,6 +4,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-06
+
 ### Added
 - `tiza close` closes the live instance of a session from another terminal, as `:q` does, and waits until it exits. With unsaved changes, it refuses and exits with code 1. `tiza close --force` closes the instance, and the changes are lost. Use it when you lost the terminal of an instance. See [Close an instance](docs/reference/cli.md#close-an-instance).
 - The socket method `app.quit` closes the instance, as `tiza close` does. It takes `force`, and it refuses with the new error code `unsaved_changes` when closing loses work. In supervised mode, it does not wait for the review: each change that waits gets `unavailable`, and Tiza does not apply it. No MCP tool sends `app.quit`. See [`app.quit`](docs/reference/socket-api.md#appquit).
