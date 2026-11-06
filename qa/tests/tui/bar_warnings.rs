@@ -25,7 +25,9 @@ use tiza_qa::{Live, scratch};
 
 /// A copy of `examples/ownership.rs.tiza` as it was when Luis chose the
 /// words (labels cut at 100 columns, code of 64 columns), with its code, in
-/// a folder of its own: the example itself may change.
+/// a folder of its own: the example itself may change. Its code is plain
+/// text, so its labels stay cut there: under a line of code they go under
+/// the line.
 fn ownership(name: &str) -> Live {
     let dir = scratch(name);
     for f in ["ownership.rs.tiza", "ownership.rs"] {

@@ -2,7 +2,7 @@
   "schema": 1,
   "title": "Ownership in Rust: move, borrow and &mut",
   "source": {
-    "language": "rs",
+    "language": "txt",
     "first_line": 1
   },
   "code": {
