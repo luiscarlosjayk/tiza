@@ -87,12 +87,11 @@ This animation and this text block are real Tiza exports of [the ownership examp
  11 │ ╎ ┏━━━     push(&mut u);                                         ✎▶ &mut borrow
  12 │ ╎ ┃        println!("{u}");                                      ┆ u is now "hey!"
  13 │ ╎ ┃    }
- 14 │ ╎ ┃
-    │ ╎ ┃ ╭─ takes owns s and frees it at the end ───────────────────╮
+ 14 │ ╎ ┃ ╭─ takes owns s and frees it at the end ───────────────────╮
  15 ╰─╎─┃─┼▶ fn takes(s: String) {  ─▶ move                          │
  16   ╎ ┃ │      println!("{s}");                                    │
  17   ╎ ┃ │  }                                                       │ ╳ drop: s dies here
-      ╎ ┃ ╰──────────────────────────────────────────────────────────╯
+ 18   ╎ ┃ ╰──────────────────────────────────────────────────────────╯
 ```
 <!-- /readme-images:ownership-txt -->
 

@@ -1,0 +1,7 @@
+{"schema": 1, "source": {"language": "rs", "first_line": 1},
+ "code": ["fn main() {", "    let s = String::from(\"hi\");", "    let t = s.clone();", "    takes(s);", "    println!(\"{t}\");", "}"],
+ "step": 0,
+ "annotations": [
+   {"id": "n1", "step": 1, "type": "note", "line": 2, "text": "s is born"},
+   {"id": "b1", "step": 2, "type": "box", "from_line": 3, "to_line": 4, "label": "the move"}
+ ]}

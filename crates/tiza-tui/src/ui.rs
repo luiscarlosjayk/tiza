@@ -211,12 +211,16 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         && let Some(&row) = layout.row_of_line.get(&app.cursor_line)
     {
         let mut top = row;
-        while top > 0 && matches!(layout.rows[top - 1], tiza_core::layout::Row::BoxTop(_)) {
+        while top > 0
+            && (matches!(layout.rows[top - 1], tiza_core::layout::Row::BoxTop(_))
+                || layout.top_border_rows.contains(&(top - 1)))
+        {
             top -= 1;
         }
         let mut bottom = row;
         while bottom + 1 < layout.rows.len()
-            && !matches!(layout.rows[bottom + 1], tiza_core::layout::Row::Code(_))
+            && (!matches!(layout.rows[bottom + 1], tiza_core::layout::Row::Code(_))
+                || layout.bottom_border_rows.contains(&(bottom + 1)))
             && bottom + 1 - top < visible
         {
             bottom += 1;
@@ -404,7 +408,15 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
                 .cursor_col
                 .min(app.doc.line_len(app.cursor_line).saturating_sub(1));
             let cx = layout.code_x + tiza_core::layout::col_to_x(text, col, 4);
-            if (cx as u16) < canvas_area.width {
+            // An empty line can hold the border of a box (the row of the
+            // blank line beside it): the cursor does not cover it, and the
+            // line number shows where the cursor is.
+            let drawn = text.is_empty()
+                && frame
+                    .buffer_mut()
+                    .cell((canvas_area.x + cx as u16, y))
+                    .is_some_and(|c| c.symbol() != " ");
+            if (cx as u16) < canvas_area.width && !drawn {
                 frame.buffer_mut().set_style(
                     Rect {
                         x: canvas_area.x + cx as u16,

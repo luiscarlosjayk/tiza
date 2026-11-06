@@ -309,6 +309,7 @@ A range of two markers finds the lines from their text. Tiza keeps the two marke
 - A range can also be `A..B` or `A:B`. Write it without spaces.
 - `:box .` uses the cursor line as the range.
 - Put a marker in `'` or `"` quotes when it has a space.
+- The top border goes on the row of the blank line above the box, and the bottom border goes on the row of the blank line under it. This occurs only when no annotation is on that blank line, at any step. Thus a box that comes in at a later step does not move the code down. When code is right beside the box, the border has a row of its own.
 
 ## `:note`
 

@@ -127,6 +127,12 @@ pub struct Layout {
     /// The labels this layout gave rows of their own under their line
     /// (see [`Pinned`]): what a take keeps for every step they show at.
     pinned: Pinned,
+    /// Rows of a blank line that hold the top border of the box under it:
+    /// what [`Row::BoxTop`] is for a box that has its own row. The view
+    /// keeps them with the first line of the box.
+    pub top_border_rows: std::collections::BTreeSet<usize>,
+    /// Rows of a blank line that hold the bottom border of the box over it.
+    pub bottom_border_rows: std::collections::BTreeSet<usize>,
 }
 
 /// One label the layout could not draw whole.
@@ -1244,6 +1250,24 @@ fn layout_pass(
             })
             .count();
     }
+    // A border of a box goes on the row of the blank line beside the box,
+    // not on a row of its own, when no annotation of the document (at any
+    // step) is on that line: the row is there at every step, so a box that
+    // comes at a later step does not push the code down. One box a line.
+    let free_line = |line: u32| {
+        doc.line_text(line).is_some_and(|t| t.trim().is_empty())
+            && !doc.annotations.iter().any(|a| {
+                a.shape
+                    .line_ranges()
+                    .iter()
+                    .any(|&(f, t)| f.min(t) <= line && line <= f.max(t))
+            })
+    };
+    // The row of each box's top and bottom border when it is the row of a
+    // blank line.
+    let mut top_on: Vec<Option<usize>> = vec![None; boxes.len()];
+    let mut bottom_on: Vec<Option<usize>> = vec![None; boxes.len()];
+    let mut bottoms_next: Vec<usize> = Vec::new();
     let box_depth = boxes
         .iter()
         .map(|b| b.depth + 1)
@@ -1514,10 +1538,22 @@ fn layout_pass(
             .filter(|&i| boxes[i].from == line)
             .collect();
         tops.sort_by_key(|&i| boxes[i].depth);
+        if tops.len() == 1
+            && line > first_line
+            && free_line(line - 1)
+            && rows.last() == Some(&Row::Code(line - 1))
+            && !bottom_on.contains(&Some(rows.len() - 1))
+        {
+            top_on[tops[0]] = Some(rows.len() - 1);
+            tops.clear();
+        }
         rows.extend(tops.into_iter().map(Row::BoxTop));
 
         row_of_line.insert(line, rows.len());
         rows.push(Row::Code(line));
+        for bi in bottoms_next.drain(..) {
+            bottom_on[bi] = Some(rows.len() - 1);
+        }
         if own.iter().any(|&i| match &vis[i].shape {
             Shape::Highlight { span, emphasis, .. } | Shape::Mark { span, emphasis, .. } => {
                 span.line == line
@@ -1655,6 +1691,10 @@ fn layout_pass(
         // here follow the same rule one by one (innermost first).
         let mut bottoms: Vec<usize> = (0..boxes.len()).filter(|&i| boxes[i].to == line).collect();
         bottoms.sort_by_key(|&i| std::cmp::Reverse(boxes[i].depth));
+        if bottoms.len() == 1 && below.is_empty() && free_line(line + 1) {
+            bottoms_next.push(bottoms[0]);
+            bottoms.clear();
+        }
         let mut here = below.clone();
         // Narrowest range first: it sits inside more boxes.
         here.sort_by_key(|&(from, _)| std::cmp::Reverse(from));
@@ -1896,8 +1936,9 @@ fn layout_pass(
     // inside a box ends a cell before the box's right rail, as the code does.
     let box_rails: Vec<(usize, usize, usize)> = (0..boxes.len())
         .filter_map(|bi| {
-            let top = rows.iter().position(|r| *r == Row::BoxTop(bi))?;
-            let bottom = rows.iter().position(|r| *r == Row::BoxBottom(bi))?;
+            let top = top_on[bi].or_else(|| rows.iter().position(|r| *r == Row::BoxTop(bi)))?;
+            let bottom =
+                bottom_on[bi].or_else(|| rows.iter().position(|r| *r == Row::BoxBottom(bi)))?;
             Some((top, bottom, rbox_x0 + (box_depth - 1 - boxes[bi].depth)))
         })
         .collect();
@@ -2369,8 +2410,8 @@ fn layout_pass(
             continue;
         };
         let g = Glyphs::for_border(frame);
-        let top = rows.iter().position(|r| *r == Row::BoxTop(bi));
-        let bottom = rows.iter().position(|r| *r == Row::BoxBottom(bi));
+        let top = top_on[bi].or_else(|| rows.iter().position(|r| *r == Row::BoxTop(bi)));
+        let bottom = bottom_on[bi].or_else(|| rows.iter().position(|r| *r == Row::BoxBottom(bi)));
         let (Some(top), Some(bottom)) = (top, bottom) else {
             continue;
         };
@@ -2960,6 +3001,8 @@ fn layout_pass(
                     .collect(),
                 wrap: under.wrap.clone(),
             },
+            top_border_rows: top_on.iter().flatten().copied().collect(),
+            bottom_border_rows: bottom_on.iter().flatten().copied().collect(),
         },
         more,
     )
@@ -3613,7 +3656,7 @@ mod tests {
     }
 
     #[test]
-    fn boxes_insert_virtual_rows_and_arrows_use_left_rail() {
+    fn a_box_takes_the_blank_line_above_or_a_row_of_its_own_and_arrows_use_left_rail() {
         let d = doc();
         let th = Theme::dark();
         let l = layout(
@@ -3627,9 +3670,15 @@ mod tests {
         );
         let text = l.canvas.to_plain_text();
         println!("{text}");
-        // 9 lines + 2 box rows
-        assert_eq!(l.rows.len(), 11);
-        assert!(text.contains("╭─ takes"));
+        // 9 lines + 1 box row: the top border is on the row of the blank
+        // line 6 (an arrow that goes past it has its own lane), the bottom
+        // border has a row of its own after the last line.
+        assert_eq!(l.rows.len(), 10, "{text}");
+        assert!(
+            l.canvas.row_text(l.row_of_line[&6]).contains("╭─ takes"),
+            "{text}"
+        );
+        assert_eq!(l.rows.last(), Some(&Row::BoxBottom(0)), "{text}");
         assert!(
             text.contains("┼"),
             "the arrow crosses the box rail with a junction"

@@ -17,8 +17,7 @@ expression: symbols
    11 │ ┏━╎━━━     push(&mut u);                                         ✎▶ &mut borrow
    12 │ ┃ ╎        println!("{u}");
    13 │ ┃ ╎    }
-   14 │ ┃ ╎
-      │ ┃ ╎ ╭─ takes owns s and frees it at the end ───────────────────╮
+   14 │ ┃ ╎ ╭─ takes owns s and frees it at the end ───────────────────╮
    15 ╰─┃─╎─┼▶ fn takes(s: String) {  ─▶ move                          │
    16   ┃ ╎ │      println!("{s}");                                    │
    17   ┃ ╎ │  }                                                       │ ╳ drop: s dies here
@@ -30,5 +29,6 @@ expression: symbols
    22   ┃
         ┃   ╭─ mutates without taking ownership ───────────────────────╮
    23   ┗━━━┿▶ fn push(s: &mut String) {  ━▶ &mut                      │
+   24       │      s.push('!');                                        │
 
  ╭▶ NORMAL  step 5/7  100×30  dark  ownership.rs  L1  16 ann.           : command · ? help · q quit

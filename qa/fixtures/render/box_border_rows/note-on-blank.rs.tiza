@@ -1,0 +1,7 @@
+{"schema": 1, "source": {"language": "rs", "first_line": 1},
+ "code": ["fn main() {", "    let s = String::from(\"hi\");", "    takes(s);", "    let n = count();", "}", "", "fn takes(s: String) {", "    println!(\"{s}\");", "}", "", "fn count() -> usize {", "    3", "}"],
+ "step": 0,
+ "annotations": [
+   {"id": "b1", "step": 1, "type": "box", "from_line": 7, "to_line": 9, "label": "takes owns s"},
+   {"id": "n1", "step": 2, "type": "note", "line": 6, "text": "a blank line"}
+ ]}

@@ -107,7 +107,7 @@ A mark is always on one line. After `m` on two or more lines, type the kind, the
 
 ## Special cases
 
-- A click on a label or on the border of a box moves the cursor to the nearest code line above it. For the top border of a box, that is the line before the box. With no code line above, the click does nothing.
+- A click on a label or on the border of a box moves the cursor to the nearest code line above it. For the top border of a box, that is the line before the box. A border on the row of a blank line is on that line: a click on it moves the cursor to that line. With no code line above, the click does nothing.
 - A click on the line numbers moves the cursor to column 0 of that line.
 - A click after the end of a line moves the cursor to the last character of the line. On an empty line, it moves the cursor to column 0. Notes and callouts can be in that space.
 - A click outside the area of the code and the line numbers does nothing. Examples are the status bar, the padding and the rows below the last line.

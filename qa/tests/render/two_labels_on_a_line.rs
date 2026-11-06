@@ -180,7 +180,8 @@ fn examples_with_one_label_per_line_render_as_before() {
     // Later layout decisions change them on purpose, in the commit of each
     // decision: a dimmed mark keeps its label in the margin; a label under
     // its line starts under its span; the label of an arrow over several
-    // lines goes beside the code of its target line.
+    // lines goes beside the code of its target line; the border of a box
+    // goes on the row of a blank line beside it.
     // ownership.rs at 108 is the README's width (scripts/readme-images.sh).
     // ownership-moves (L7) and stack-impl (L20) change on purpose at steps
     // 4-5 and are not here.

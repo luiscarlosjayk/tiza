@@ -3,6 +3,7 @@
 
 mod arrow_styles;
 mod border_styles;
+mod box_border_rows;
 mod box_title_row;
 mod callouts;
 mod chunked_highlighting;

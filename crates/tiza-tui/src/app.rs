@@ -10860,11 +10860,16 @@ pub fn span_rows(layout: &tiza_core::layout::Layout, lines: (u32, u32)) -> Optio
     use tiza_core::layout::Row;
     let rows = &layout.rows;
     let mut top = *layout.row_of_line.get(&lines.0)?;
-    while top > 0 && matches!(rows[top - 1], Row::BoxTop(_)) {
+    while top > 0
+        && (matches!(rows[top - 1], Row::BoxTop(_)) || layout.top_border_rows.contains(&(top - 1)))
+    {
         top -= 1;
     }
     let mut bottom = *layout.row_of_line.get(&lines.1)?;
-    while bottom + 1 < rows.len() && !matches!(rows[bottom + 1], Row::Code(_) | Row::BoxTop(_)) {
+    while bottom + 1 < rows.len()
+        && (!matches!(rows[bottom + 1], Row::Code(_) | Row::BoxTop(_))
+            || layout.bottom_border_rows.contains(&(bottom + 1)))
+    {
         bottom += 1;
     }
     Some((top, bottom))

@@ -1,0 +1,7 @@
+{"schema": 1, "source": {"language": "rs", "first_line": 1},
+ "code": ["", "fn first() {", "    1", "}", "", "fn end() {}"],
+ "step": 0,
+ "annotations": [
+   {"id": "b1", "step": 1, "type": "box", "from_line": 2, "to_line": 4, "label": "outer"},
+   {"id": "b2", "step": 1, "type": "box", "from_line": 2, "to_line": 3, "label": "inner"}
+ ]}

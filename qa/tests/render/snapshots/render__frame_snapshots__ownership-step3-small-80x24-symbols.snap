@@ -20,9 +20,9 @@ expression: symbols
    11 │        push(&mut u);
    12 │        println!("{u}");
    13 │    }
-   14 │
-      │ ╭─ takes owns s and frees it at the end ────────────────────────────╮
+   14 │ ╭─ takes owns s and frees it at the end ────────────────────────────╮
    15 ╰─┼▶ fn takes(s: String) {  ─▶ move                                   │
    16   │      println!("{s}");                                             │
+   17   │  }                                                                │
 
  ╭▶ NORMAL  step 3/7  80×24  dark  ownership.rs  L1  16 ann.    ? help · q quit
