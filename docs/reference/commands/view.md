@@ -174,14 +174,6 @@ Sets the layout of normal mode.
 
 `:layout stable` at the same step. The lanes of the arrows of later steps are there already, as in presentation mode and the exports: an image of the TUI in a real terminal of 100 columns and 30 rows, with the Menlo font.
 
-<img src="../../images/tui/layout-band-dynamic.webp" width="1016" alt="Step 4 of 5. The code starts one column more to the left than in the next image. The note bearer header is under line 2, and the callout debug shows SQL is under line 3, not in the right margin.">
-
-`:layout dynamic` at step 4 of a document whose box comes in at step 5. The band of the box is not there yet, so the code starts one column more to the left. The callout `debug shows SQL` goes under line 3, and the screen has three rows more. An image of the TUI in a real terminal of 122 columns and 30 rows, with the Menlo font.
-
-<img src="../../images/tui/layout-band-stable.webp" width="1016" alt="The same step with the band of the box. The note bearer header is under line 2, and the callout debug shows SQL is in the right margin. The status bar shows stable.">
-
-`:layout stable` at the same step. The band of the box is there already, and the labels are where presentation mode and the exports put them. An image of the TUI in a real terminal of 122 columns and 30 rows, with the Menlo font.
-
 ## `:mouse`
 
 Turns mouse capture on or off, or shows its state.
