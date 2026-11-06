@@ -192,13 +192,12 @@ fn read_only_then_saveas_saves_every_change_there_already() {
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
 }
 
-/// The copy of `examples/ownership.rs.tiza` in `qa/fixtures/tui/bar_warnings/` (labels
-/// cut at 100 columns, code of 64 columns), with its code, in a folder of
-/// its own, with autosave on: the user's own file.
+/// A copy of `examples/ownership.rs.tiza` (code of 64 columns), with its
+/// code, in a folder of its own, with autosave on: the user's own file.
 fn ownership(name: &str) -> Live {
     let dir = scratch(name);
     for f in ["ownership.rs.tiza", "ownership.rs"] {
-        std::fs::copy(tiza_qa::fixture("tui/bar_warnings").join(f), dir.join(f)).unwrap();
+        std::fs::copy(tiza_qa::fixture("saving/no_save").join(f), dir.join(f)).unwrap();
     }
     let doc = tiza_core::fs::open(dir.join("ownership.rs.tiza").to_str().unwrap())
         .unwrap()
