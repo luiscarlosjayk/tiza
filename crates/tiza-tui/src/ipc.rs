@@ -295,16 +295,28 @@ pub fn close(path: &Path, force: bool) -> std::io::Result<Closed> {
 }
 
 fn close_on(mut stream: UnixStream, force: bool) -> std::io::Result<Closed> {
-    use std::io::{ErrorKind, Read};
-    use std::time::Instant;
+    send_quit(&mut stream, force)?;
+    wait_for_exit(stream)
+}
+
+/// Sends `app.quit`. It sets the read timeout first, while the connection
+/// is surely open: see [`wait_for_exit`].
+fn send_quit(stream: &mut UnixStream, force: bool) -> std::io::Result<()> {
+    stream.set_read_timeout(Some(CLOSE_ANSWER_WAIT))?;
     let req = Request {
         id: Value::from(1),
         method: "app.quit".to_string(),
         params: serde_json::json!({ "force": force }),
     };
     writeln!(stream, "{}", serde_json::to_string(&req)?)?;
-    stream.flush()?;
-    stream.set_read_timeout(Some(CLOSE_ANSWER_WAIT))?;
+    stream.flush()
+}
+
+/// Reads the answer of `app.quit`, then waits for the end of the
+/// connection: the instance exited.
+fn wait_for_exit(stream: UnixStream) -> std::io::Result<Closed> {
+    use std::io::{ErrorKind, Read};
+    use std::time::Instant;
     let mut reader = BufReader::new(stream);
     let mut line = String::new();
     let late = |e: &std::io::Error| matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut);
@@ -337,7 +349,13 @@ fn close_on(mut stream: UnixStream, force: bool) -> std::io::Result<Closed> {
         if left.is_zero() {
             return Ok(Closed::Late);
         }
-        reader.get_ref().set_read_timeout(Some(left))?;
+        // Do not stop on an error here. On macOS (XNU), setsockopt gives
+        // EINVAL when the other end of the socket is closed, and an
+        // instance that exits at once after its answer (`--force`) can
+        // close it before this call. The timeout of `send_quit` stays in
+        // force, and the next read gives the end of the connection: the
+        // instance exited.
+        let _ = reader.get_ref().set_read_timeout(Some(left));
         match reader.read(&mut rest) {
             Ok(0) => return Ok(Closed::Exited),
             Ok(_) => {}
@@ -442,5 +460,36 @@ mod tests {
         }
         drop(server);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The instance reads `app.quit`, answers, maybe, and closes the
+    /// connection, all before the client waits: what `--force` can do. On
+    /// macOS, setsockopt on that socket gives EINVAL.
+    fn closed_before_the_wait(answer: Option<&str>) -> Closed {
+        let (mut client, server) = UnixStream::pair().unwrap();
+        send_quit(&mut client, true).unwrap();
+        let mut reader = BufReader::new(server);
+        let mut line = String::new();
+        reader.read_line(&mut line).unwrap();
+        assert!(line.contains("\"app.quit\""), "{line}");
+        let mut server = reader.into_inner();
+        if let Some(answer) = answer {
+            writeln!(server, "{answer}").unwrap();
+        }
+        drop(server);
+        wait_for_exit(client).unwrap()
+    }
+
+    #[test]
+    fn a_close_whose_instance_exits_before_the_wait_says_closed() {
+        let answer = serde_json::to_string(&Response::ok(json!(1), json!({}))).unwrap();
+        match closed_before_the_wait(Some(&answer)) {
+            Closed::Exited => {}
+            other => panic!("{other:?}"),
+        }
+        match closed_before_the_wait(None) {
+            Closed::Exited => {}
+            other => panic!("{other:?}"),
+        }
     }
 }
