@@ -630,11 +630,11 @@ fn a_second_signal_ends_tiza_at_once() {
     let out = blocked(&dir, "twice.py", &["term", "int"]);
     assert!(!out.contains("NOT_STARTED"), "{out}");
     let (elapsed, code) = gone(&out);
-    // The two can come in either order: 143 or 130, never the watchdog.
+    // The two can come in either order: 143 or 130, never the wait of the watchdog.
     assert!(code == 143 || code == 130, "{out}");
     assert!(
         elapsed < tiza_tui::signals::SIGNAL_EXIT_WAIT.as_secs_f64() - 1.0,
-        "gone after {elapsed:.2} s: the watchdog ended it, not the second signal\n{out}"
+        "gone after {elapsed:.2} s: the wait of the watchdog ended it, not the second signal\n{out}"
     );
 }
 
