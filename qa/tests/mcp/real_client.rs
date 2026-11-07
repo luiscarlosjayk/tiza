@@ -44,7 +44,7 @@ fn handshake_tools_and_calls() {
         .iter()
         .map(|t| t["name"].as_str().unwrap())
         .collect();
-    assert_eq!(names.len(), 30, "{names:?}"); // with goto_step, check, point_at and clear_pointer
+    assert_eq!(names.len(), 34, "{names:?}"); // with goto_step, check, point_at, clear_pointer and the 4 tools of a talk
     for t in tools.as_array().unwrap() {
         assert!(
             !t["description"].as_str().unwrap_or("").is_empty(),

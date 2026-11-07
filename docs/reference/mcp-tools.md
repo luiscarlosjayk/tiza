@@ -73,9 +73,20 @@ The server has these tools. The third column names every socket method that each
 | Tool | What it does | Socket method |
 |---|---|---|
 | `set_step` | Shows a step. In presentation mode, to the step on screen it does what `goto_step` does. | `step.set` |
-| `next_step` | Shows the next step. | `step.next` |
-| `prev_step` | Shows the previous step. | `step.prev` |
+| `next_step` | Shows the next step. In a talk, after the last step it opens the next scene. | `step.next` |
+| `prev_step` | Shows the previous step. In a talk, before the first step it opens the scene before. | `step.prev` |
 | `goto_step` | Goes to a named step or to a step number, and applies every move up to that step. | `step.goto` |
+
+### Talk
+
+A talk is a master `.tiza` that lists other `.tiza` files, the scenes. The other tools act on the scene on screen.
+
+| Tool | What it does | Socket method |
+|---|---|---|
+| `talk_status` | Gives the master, the scene on screen and each entry of the list. | `talk.get` |
+| `goto_scene` | Opens a scene by its position or its name, at a step. | `talk.goto` |
+| `set_talk_scenes` | Replaces the whole list of scenes: their order, `skip` and names. It writes the master. | `talk.put` |
+| `insert_scene` | Adds a scene at a position. With `scene`, it writes the file of the scene first. | `talk.insert` |
 
 ### Focus and pointer
 
@@ -247,6 +258,9 @@ The fields of each annotation type are in [Annotations](document-format.md#annot
 | `delete_move` | `index` | The index of the move, from 1, as `list_moves` gives it. |
 | `set_step` | `step` | The step to show. A step after the last step shows the last step. On the empty step after the last one, that step or a later step stays there. |
 | `goto_step` | `id` | The `id` of a named step, or a step number as `4` or `"4"`. |
+| `goto_scene` | `scene`, `step`, `force` | The position of the scene from 1, or its name; a step number or a step `id`, 0 when you leave it out; `true` to go on without the changes that Tiza could not save. |
+| `set_talk_scenes` | `scenes`, `force` | The whole list, as the `entry` values of `talk_status` give it; `true` to write over a master that changed on disk. |
+| `insert_scene` | `file`, `at`, `scene`, `name`, `force` | The `.tiza` file relative to the master; its position from 1; a whole document to write to the file, which must not exist; the name of the entry; as for `set_talk_scenes`. |
 | `set_focus` | `from_line`, `to_line` | The range to keep in focus, or no line to clear the focus. |
 | `point_at` | `line`, `find`, `from`, `to` | The line or the range that the live pointer shows. |
 | `set_theme` | `theme` | `dark`, `light`, `terminal`, `auto` or `toggle`. |
@@ -272,6 +286,7 @@ The fields of each annotation type are in [Annotations](document-format.md#annot
 - When the first line of the range is outside the code, `set_focus` fails with `out_of_range`.
 - A last line after the end of the code becomes the last line.
 - `next_step` after the last step goes to step 0 when the document has `"loop": true`.
+- In a talk, the reply of `next_step`, `prev_step`, `set_step`, `goto_step` and `goto_scene` has `scene`: the `position` and the `name` of the scene on screen. After the last step of a scene, `next_step` opens the next scene at step 0, also with `"loop": true`. The rules of the talk tools are in [Talk methods](socket-api.md#talk-methods).
 - `set_follow` fails when the code is embedded and no followed file is known. See [Agents and follow mode](../guides/follow-the-editor.md#agents-and-follow-mode).
 - At a step where a `code.patch` is applied, `set_follow` turns follow mode on paused. The reply gives `paused`, `pending` and `resume_step`.
 - To know that Tiza read a save of the followed file, compare `hash` in the `follow` field of `status` with the sha256 of the file. A save of the same bytes does not change `hash`: then wait until `reads` increases. See [Agents and follow mode](../guides/follow-the-editor.md#agents-and-follow-mode).

@@ -13,8 +13,10 @@ delete_annotation
 delete_move
 export_image
 get_code
+goto_scene
 goto_step
 highlight
+insert_scene
 list_annotations
 list_kinds
 list_moves
@@ -25,6 +27,8 @@ render_text
 set_focus
 set_follow
 set_step
+set_talk_scenes
 set_theme
 status
+talk_status
 update_annotation

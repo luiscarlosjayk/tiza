@@ -1006,6 +1006,56 @@ print("EXIT", s.finish(10), flush=True)
     );
 }
 
+/// A panic in `talk.goto` while the next scene opens (`talk:panic`), and
+/// a panic in `talk.put` (`request:talk.put`): the request gets an error,
+/// the scene on screen and the whole talk stay, the master keeps its
+/// bytes, and the socket answers.
+#[test]
+fn pty_a_panic_in_talk_goto_or_talk_put_leaves_the_talk_whole() {
+    let reorder = json!({"scenes": ["borrow.tiza", "intro.tiza", {"file": "own.tiza", "name": "own"},
+        {"file": "not-shown.tiza", "skip": true}, "loop.tiza", {"file": "again.tiza", "name": "borrow"}, "2024.tiza"]});
+    for (hook, method, params) in [
+        ("talk:panic", "talk.goto", json!({"scene": "loop"})),
+        ("request:talk.put", "talk.put", reorder),
+    ] {
+        let dir = talk_copy(&format!("talk-pty-panic-{method}"));
+        let steps = format!(
+            r##"
+ok = ok and until([3, 2], "--scene own --step 2")
+before = open("talk.tiza", "rb").read()
+rc, reply = api({method:?}, json.loads({params:?}))
+print("CALL", json.dumps([rc, reply]), flush=True)
+print("HERE", json.dumps(here()), flush=True)
+print("SAME", open("talk.tiza", "rb").read() == before, flush=True)
+talk = answer("talk.get")
+print("TALK", json.dumps([talk.get("position"), len(talk.get("scenes", []))]), flush=True)
+print("PATH", ok, flush=True)
+s.send(b"q")
+print("EXIT", s.finish(10), flush=True)
+"##,
+            params = params.to_string(),
+        );
+        let out = pty_talk(
+            &dir,
+            &["talk.tiza", "--scene", "own", "--step", "2"],
+            hook,
+            &steps,
+        );
+        assert!(out.contains("PATH True"), "{method}:\n{out}");
+        let call: serde_json::Value = serde_json::from_str(text_after(&out, "CALL")).unwrap();
+        assert_ne!(call[0], 0, "{method} fails: {out}");
+        let here: serde_json::Value = serde_json::from_str(text_after(&out, "HERE")).unwrap();
+        assert_eq!(here, json!([3, 2]), "{method}: {out}");
+        assert!(
+            out.contains("SAME True"),
+            "{method}: the master changed: {out}"
+        );
+        let talk: serde_json::Value = serde_json::from_str(text_after(&out, "TALK")).unwrap();
+        assert_eq!(talk, json!([3, 7]), "{method}: {out}");
+        assert!(out.contains("EXIT 0\n"), "{method}: {out}");
+    }
+}
+
 /// The text after `KEY ` on its line.
 fn text_after<'a>(out: &'a str, key: &str) -> &'a str {
     out.lines()

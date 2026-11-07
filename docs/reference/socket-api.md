@@ -124,9 +124,20 @@ printf '%s\n' '{"id":1,"method":"annotation.add","params":{"type":"note","line":
 | Method | Params | What it does | MCP tool |
 |---|---|---|---|
 | `step.set` | `step` | Shows a step. In presentation mode, to the step on screen it does what `step.goto` does. | `set_step` |
-| `step.next` | None | Shows the next step. | `next_step` |
-| `step.prev` | None | Shows the previous step. | `prev_step` |
+| `step.next` | None | Shows the next step. In a talk, after the last step it opens the next scene. | `next_step` |
+| `step.prev` | None | Shows the previous step. In a talk, before the first step it opens the scene before. | `prev_step` |
 | `step.goto` | `id` | Goes to a named step or a step number, and applies every move up to that step. To the step on screen, it puts the cursor and the view back where the last `scroll`, `cursor` or `code.link` move up to that step puts them. | `goto_step` |
+
+### Talk
+
+| Method | Params | What it does | MCP tool |
+|---|---|---|---|
+| `talk.get` | None | Gives the talk: the master, the scene on screen and each entry of its list. | `talk_status` |
+| `talk.goto` | `scene`, `step`, `force` | Opens a scene of the talk by its position or its name, at a step. | `goto_scene` |
+| `talk.put` | `scenes`, `force` | Replaces the list of scenes: their order, `skip` and names. It writes the list in the master. | `set_talk_scenes` |
+| `talk.insert` | `file`, `at`, `scene`, `name`, `force` | Adds a scene to the list. With `scene`, it writes the file of the scene first. | `insert_scene` |
+
+A talk is a master `.tiza` that lists other `.tiza` files. See [Talk](#talk-methods) for the rules. The other methods act on the scene on screen.
 
 ### Focus and pointer
 
@@ -354,6 +365,7 @@ A character (a grapheme) can be more than one code point, for example `d` with a
 | `save_error` | Why the last save of the document failed, for example a read-only folder, or `null` when the last save worked. |
 | `follow` | While follow mode is on: `paused`, `pending`, `resume_step`, `reads` and `hash`, as `follow.status` gives them. |
 | `effect` | Experimental. `true` while an enter effect plays on the screen. |
+| `talk` | When the instance plays a talk: `master`, `title`, and the scene on screen as `position`, `name`, `shown` and `shown_count`. See [Talk methods](#talk-methods). |
 
 - A field that does not apply is not in the result, except `file`, `pointer` and `save_error`, which are `null`.
 - `loop`, `supervised` and `effect` are not in the result when they are `false`. `pending` and `stale_moves` are not in the result when they are 0.
@@ -382,6 +394,61 @@ A character (a grapheme) can be more than one code point, for example `d` with a
 - No parameters, or `null`, is the same as `{}`. A key that is not `force` gets `invalid_argument`.
 - An `app.quit` that waited more than 10 s in the instance (it was busy) gets `unavailable`, and the instance stays open. `tiza close` stops waiting then, and tells you that the instance did not close.
 
+### Talk methods
+
+A talk is a master `.tiza` file that lists other `.tiza` files, the scenes. See [Talk](document-format.md#talk). The methods of a document (`annotation.add`, `scene.put`, `step.set` and the others) act on the scene on screen. The `talk.*` methods act on the talk.
+
+A scene has a **position**, its place in the list of the master from 1. A skipped entry has a position too, so a `skip` does not change the position of the other scenes. A scene also has a **name**: the `name` of its entry, else its file name up to the first dot. A file name that is all digits, such as `2024.tiza`, gives no name.
+
+`status.talk`:
+
+| Field | Meaning |
+|---|---|
+| `master` | The absolute path of the master. |
+| `title` | The `title` of the talk, when it has one. |
+| `position` | The position of the scene on screen. |
+| `name` | The name of the scene on screen, when it has one. |
+| `shown` | The number of the scene on screen among the scenes that show, from 1, or `null` when the scene on screen has `skip`. |
+| `shown_count` | The number of scenes that show. |
+
+- `talk.get` gives these fields and `scenes`, one item for each entry of the master: `entry`, `position`, `name`, `skip` and `steps`.
+  - `entry` is the entry as Tiza writes it: the path alone, or `{file, name, skip}` with only the fields that are set. You can send the `entry` values back to `talk.put`.
+  - `steps` is the last step of the scene, or `null` for a skipped entry. Tiza does not read a skipped entry.
+- A reply of `step.set`, `step.next`, `step.prev`, `step.goto` and `talk.goto` in a talk has `scene`, with the `position` and the `name` of the scene on screen. Look at it after `step.next`: after the last step of a scene, `step.next` opens the next scene at step 0.
+- The requests of one batch go in order, and each one acts on the scene on screen when it runs. A request after a `step.next` or a `talk.goto` that opens another scene acts on the new scene.
+
+`talk.goto`:
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `scene` | integer or string | Required | A position (`7` or `"7"`), or a name. A name goes to the first scene with that name. |
+| `step` | integer or string | `0` | A step number or a step `id` of that scene. |
+| `force` | boolean | `false` | `true` opens the scene also when the scene on screen has changes that Tiza could not save. They are lost. |
+
+- To the scene on screen, `talk.goto` goes to the step, as `step.goto` does.
+- A skipped scene, a position that is not in the list and a name that no scene has give `not_found`. The message gives the positions, the skipped scenes and the names.
+- Changes that Tiza could not save stop the change of scene with `unsaved_changes`. This occurs with `--no-save` or a read-only file. `step.next` and `step.prev` stop in the same way.
+
+`talk.put` and `talk.insert`:
+
+| Field | Method | Type | Meaning |
+|---|---|---|---|
+| `scenes` | `talk.put` | array | The whole new list. Each entry is a path relative to the master, or `{file, name, skip}`. An entry that the list does not have leaves the talk, and the reply names its file in `removed`. |
+| `file` | `talk.insert` | string | The `.tiza` file of the new scene, relative to the master. |
+| `at` | `talk.insert` | integer | The position of the new scene, from 1 to the number of entries + 1. |
+| `scene` | `talk.insert` | object | Optional. A whole document, as `scene.put` takes it. Tiza writes it to `file`, which must not exist. Without `scene`, `file` must be a `.tiza` file that opens. |
+| `name` | `talk.insert` | string | Optional. The `name` of the new entry. |
+| `force` | both | boolean | `true` writes the list also when the list of the master changed on disk. The other keys of the master stay. |
+
+- Before Tiza writes a file, it checks the whole list as it checks a master when it opens: each scene that shows must open, a file shows only once, and a name obeys the rules. A request with an error changes nothing.
+- Tiza writes only `scenes` of the master. The `title`, the `at` and the keys that this version does not know stay.
+- The scene on screen keeps its place by its file. You can give it `skip`: it stays on screen, and `step.next` then opens the next scene that shows. A list without the scene on screen is an error: go to another scene first.
+- `talk.insert` writes a new scene file only in the folder of the master or in a folder under it. It refuses an absolute path, a `..` and a folder that does not exist. Tiza makes no folder. When Tiza cannot write the master after the scene file, it removes the scene file again.
+- With `--no-save`, Tiza does not write the master: `talk.put` and `talk.insert` give `invalid_argument`. `:autosave on` lets Tiza write again.
+- When the master changed on disk while the talk ran, they give `conflict`. Give `force: true` to write your list over it.
+- In supervised mode, `talk.goto`, `talk.put` and `talk.insert` wait for the presenter, and `talk.get` does not. When a `talk.put` moves the scene of a `talk.goto` that waits, the presenter can accept the `talk.goto`, and it gets `conflict`. A change of scene answers each change that waits with `unavailable`: the change was for the scene before.
+- With no talk open, each `talk.*` method gives `unavailable`.
+
 ## Error codes
 
 | Code | When |
@@ -395,8 +462,10 @@ A character (a grapheme) can be more than one code point, for example `d` with a
 | `unsupported_schema` | The document of a `scene.put` has a `schema` that is newer than this version. |
 | `busy` | A newer `check` at another width replaced this `check` before it ran. |
 | `rejected` | In supervised mode, the presenter did not accept the change. |
-| `unavailable` | The instance stops, does not answer, or cannot start a `check`. |
-| `unsaved_changes` | An `app.quit` without `force` would lose work. |
+| `unavailable` | The instance stops, does not answer, or cannot start a `check`. A `talk.*` method when no talk is open. |
+| `unsaved_changes` | An `app.quit` without `force` would lose work. In a talk, a change of scene would lose changes that Tiza could not save. |
+| `conflict` | In a talk, the master changed on disk, or a change that waited for the presenter names a scene that moved. |
+| `io` | Tiza cannot read or write a file, for example a scene of a talk. |
 | `internal` | A bug in Tiza stopped the request. |
 
 - After `busy`, send the `check` again.

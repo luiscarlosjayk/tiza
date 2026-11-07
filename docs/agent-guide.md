@@ -5,6 +5,7 @@ This page is for an agent (Claude Code, Zed, any MCP client) that is going to dr
 - [Connect an agent](agents/setup.md)
 - [Draw for a presenter](agents/draw-for-a-presenter.md)
 - [Change the code between steps](agents/moves-and-steps.md)
+- [Drive a talk](agents/drive-a-talk.md)
 - [Supervised mode](agents/supervised-mode.md)
 - [Supervise an agent](guides/supervise-an-agent.md)
 - [MCP tools](reference/mcp-tools.md)

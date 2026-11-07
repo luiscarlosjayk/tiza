@@ -639,6 +639,39 @@ pub struct GotoStepParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct GotoSceneParams {
+    #[schemars(description = "Its position in the talk (from 1) or its name")]
+    pub scene: tiza_core::protocol::SceneRef,
+    #[schemars(description = "A step number or step id; step 0 if omitted")]
+    pub step: Option<tiza_core::protocol::StepRef>,
+    #[schemars(description = "Lose the unsaved changes of the scene on screen")]
+    #[serde(default)]
+    pub force: bool,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct SetTalkScenesParams {
+    #[schemars(description = "Each a path or {file, name?, skip?}, as `entry` of talk_status")]
+    pub scenes: Vec<Value>,
+    #[schemars(description = "Write over a master changed on disk")]
+    #[serde(default)]
+    pub force: bool,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct InsertSceneParams {
+    #[schemars(description = "A .tiza path relative to the master")]
+    pub file: String,
+    #[schemars(description = "Its position, from 1")]
+    pub at: u32,
+    #[schemars(description = "A document to write to `file`, a new file")]
+    pub scene: Option<Value>,
+    pub name: Option<String>,
+    #[serde(default)]
+    pub force: bool,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct FocusParams {
     #[schemars(description = "First focused line; omit both to clear the focus")]
     pub from_line: Option<u32>,
@@ -1265,13 +1298,66 @@ impl TizaServer {
     }
 
     #[tool(
-        description = "Advances one step in the presentation (past the last one, back to step 0 when the document has `loop: true`)."
+        description = "Advances one step in the presentation (past the last one, back to step 0 when the document has `loop: true`; in a talk, the next scene)."
     )]
     async fn next_step(
         &self,
         Parameters(_p): Parameters<Empty>,
     ) -> Result<CallToolResult, McpError> {
         Ok(text(pretty(&self.call("step.next", json!({})).await?)))
+    }
+
+    #[tool(
+        description = "In a talk (a master .tiza of .tiza scenes): the master, the scene on screen and each entry."
+    )]
+    async fn talk_status(
+        &self,
+        Parameters(_p): Parameters<Empty>,
+    ) -> Result<CallToolResult, McpError> {
+        Ok(text(pretty(&self.call("talk.get", json!({})).await?)))
+    }
+
+    #[tool(description = "In a talk: opens a scene by position or name, at a step.")]
+    async fn goto_scene(
+        &self,
+        Parameters(p): Parameters<GotoSceneParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let mut params = json!({"scene": p.scene, "force": p.force});
+        if let Some(step) = p.step {
+            params["step"] = json!(step);
+        }
+        Ok(text(pretty(&self.call("talk.goto", params).await?)))
+    }
+
+    #[tool(
+        description = "In a talk: replaces the whole list of scenes in the master; an entry left out is in `removed`."
+    )]
+    async fn set_talk_scenes(
+        &self,
+        Parameters(p): Parameters<SetTalkScenesParams>,
+    ) -> Result<CallToolResult, McpError> {
+        Ok(text(pretty(
+            &self
+                .call("talk.put", json!({"scenes": p.scenes, "force": p.force}))
+                .await?,
+        )))
+    }
+
+    #[tool(
+        description = "In a talk: adds a scene at a position. With `scene`, writes its new file first."
+    )]
+    async fn insert_scene(
+        &self,
+        Parameters(p): Parameters<InsertSceneParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let mut params = json!({"file": p.file, "at": p.at, "force": p.force});
+        if let Some(scene) = p.scene {
+            params["scene"] = scene;
+        }
+        if let Some(name) = p.name {
+            params["name"] = json!(name);
+        }
+        Ok(text(pretty(&self.call("talk.insert", params).await?)))
     }
 
     #[tool(description = "Goes back one step in the presentation.")]
@@ -2025,6 +2111,7 @@ impl ServerHandler for TizaServer {
                  Annotating at step N creates step N (goto_step goes no further than the last). \
                  A `find_end` of `}` takes the first brace after find_start, often an inner block's. \
                  Keep labels short (~100 columns). \
+                 In a talk, tools act on the scene on screen (`goto_scene`). \
                  Same views without a call: `tiza://scene`, `tiza://code`, `tiza://render`, `tiza://render.md`.",
             )
     }

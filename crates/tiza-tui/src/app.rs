@@ -17,12 +17,13 @@ use tiza_core::moves::{self, Move};
 use tiza_core::protocol::{
     AddParams, AnnotationMutated, IdParams, METHODS, MoveIndexParams, MoveList, MoveListed,
     MoveMutated, Mutated, PatchParams, PutParams, Request, Response, Scene, SceneChanged, Status,
-    StepGotoParams, StepParams, StepReply, UpdateParams, Where,
+    StepGotoParams, StepParams, UpdateParams, Where,
 };
 use tiza_core::theme::Theme;
 use tiza_core::{Error, fs};
 
 mod talk;
+mod talk_api;
 pub use talk::{Landing, TalkState, scene_label};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -274,6 +275,9 @@ pub struct Proposal {
     pub since: std::time::Instant,
     /// Human description shown in the review overlay.
     pub summary: String,
+    /// A `talk.goto`: the file of the scene it went to when it waited. At
+    /// accept, another scene at that place is a `conflict`.
+    pub talk_target: Option<PathBuf>,
 }
 
 /// Agent changes the view does not show that arrive within this long of
@@ -624,6 +628,7 @@ pub const READ_ONLY_METHODS: &[&str] = &[
     "check",
     "follow.status",
     "move.list",
+    "talk.get",
 ];
 
 /// The files a `scene.put` sent different code for ([`App::keep_references`]).
@@ -8786,7 +8791,10 @@ impl App {
         // cannot read, and a `scene.put` with a newer schema, are refused
         // now, not parked as a change that would not happen. Other bad
         // parameters still fail when the presenter accepts the change.
-        if parked && let Some(e) = refused_before_review(&req) {
+        if parked
+            && let Some(e) =
+                refused_before_review(&req).or_else(|| self.talk_refused_before_review(&req))
+        {
             let _ = reply.send(Response::err(req.id, e.code(), e.to_string()));
             return;
         }
@@ -8807,7 +8815,10 @@ impl App {
         }
         // The review list, the y/n/expiry messages and
         // `supervise.status` all show this summary.
-        let summary = proposal_summary(&req);
+        let (summary, talk_target) = match self.talk_proposal(&req) {
+            Some((s, target)) => (s, target),
+            None => (proposal_summary(&req), None),
+        };
         let id = self.next_proposal;
         self.next_proposal += 1;
         self.proposals.push(Proposal {
@@ -8816,6 +8827,7 @@ impl App {
             reply,
             since: now,
             summary,
+            talk_target,
         });
         // It waits as a chip on the bar: nothing opens over the code while
         // the presenter types (crates/tiza-tui/UI-GUIDELINES.md, section 11).
@@ -9007,7 +9019,14 @@ impl App {
         let mutates_annotation = annotation_verb(&p.req.method).is_some();
         let turns_off = turns_supervision_off(&p.req);
         let rejected_before = self.decided.1;
-        let resp = self.handle_request(p.req);
+        let moved = p
+            .talk_target
+            .as_ref()
+            .and_then(|t| self.talk_target_moved(&p.req, t));
+        let resp = match moved {
+            Some(e) => Response::err(p.req.id.clone(), e.code(), e.to_string()),
+            None => self.handle_request(p.req),
+        };
         let ok = resp.error.is_none();
         // Accepted but not on screen: the acceptance says where.
         let tail = match (&resp.result, mutates_annotation) {
@@ -9452,21 +9471,27 @@ impl App {
             "step.set" => {
                 let p: StepParams = parse(params)?;
                 self.step_to_asked(p.step);
-                serde_json::to_value(StepReply::of(&self.doc, self.revision))?
+                serde_json::to_value(self.step_reply())?
             }
+            "talk.get" => serde_json::to_value(self.talk_reply(Vec::new(), None)?)?,
+            "talk.goto" => serde_json::to_value(self.talk_goto(params)?)?,
+            "talk.put" => serde_json::to_value(self.talk_put(params)?)?,
+            "talk.insert" => serde_json::to_value(self.talk_insert(params)?)?,
             "step.next" => {
-                self.step_by_socket(true)?;
-                serde_json::to_value(StepReply::of(&self.doc, self.revision))?
+                self.step_by_socket(true)
+                    .map_err(|e| talk_api::unsaved_hint(e, "talk.goto with force: true"))?;
+                serde_json::to_value(self.step_reply())?
             }
             "step.prev" => {
-                self.step_by_socket(false)?;
-                serde_json::to_value(StepReply::of(&self.doc, self.revision))?
+                self.step_by_socket(false)
+                    .map_err(|e| talk_api::unsaved_hint(e, "talk.goto with force: true"))?;
+                serde_json::to_value(self.step_reply())?
             }
             "step.goto" => {
                 let p: StepGotoParams = parse(params)?;
                 let to = p.id.resolve(&self.doc)?;
                 self.goto_step(&to.to_string())?;
-                serde_json::to_value(StepReply::of(&self.doc, self.revision))?
+                serde_json::to_value(self.step_reply())?
             }
             "check" => {
                 // The event loop sends `check` to [`App::ask_check`]; this
@@ -9642,6 +9667,7 @@ impl App {
                     hash: self.follow.as_ref().and_then(|f| f.hash.clone()),
                 }),
             effect: self.effect.is_some(),
+            talk: self.talk_status(),
         }
     }
 

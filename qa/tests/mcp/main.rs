@@ -10,6 +10,7 @@ mod invisible_code;
 mod real_client;
 mod refusal_codes;
 mod resources;
+mod talk_tools;
 mod update_annotation_effect;
 mod update_annotation_file;
 mod update_annotation_until;

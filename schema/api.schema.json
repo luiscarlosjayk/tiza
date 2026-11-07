@@ -101,6 +101,55 @@
               "agent"
             ],
             "type": "string"
+          },
+          "TalkStatus": {
+            "description": "`status.talk`: where the talk is.",
+            "properties": {
+              "master": {
+                "description": "The master, as an absolute path.",
+                "type": "string"
+              },
+              "name": {
+                "description": "Its name: the `name` of its entry, else its file name up to the\nfirst dot. Absent when that is all digits.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "position": {
+                "description": "The scene on screen: its position in `scenes` of the master, from 1.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "shown": {
+                "description": "Its number among the scenes that show, from 1: the `4` of `4/18`.\n`null` when the scene on screen has `skip` (a `talk.put` gave it).",
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "shown_count": {
+                "description": "How many scenes show: the entries without `skip`.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "title": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "master",
+              "position",
+              "shown_count"
+            ],
+            "type": "object"
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -282,6 +331,17 @@
           "supervised": {
             "description": "Supervised mode: mutations wait for the presenter's approval.",
             "type": "boolean"
+          },
+          "talk": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TalkStatus"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The talk, when the instance plays a master (`talk.get` gives its\nlist of scenes). Absent for a document alone."
           },
           "version": {
             "type": "string"
@@ -6150,6 +6210,30 @@
         "type": "object"
       },
       "result": {
+        "$defs": {
+          "SceneAt": {
+            "description": "The scene of a [`StepReply`] in a talk.",
+            "properties": {
+              "name": {
+                "description": "Its name; absent when its file name is all digits.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "position": {
+                "description": "Its position in `scenes` of the master, from 1.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "position"
+            ],
+            "type": "object"
+          }
+        },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "description": "Result of `step.set`, `step.next`, `step.prev` and `step.goto`.",
         "properties": {
@@ -6173,6 +6257,17 @@
             "format": "uint64",
             "minimum": 0,
             "type": "integer"
+          },
+          "scene": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/SceneAt"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "In a talk, the scene of the step reached: `step.next` at the last\nstep goes on to the next scene. Absent outside a talk."
           },
           "step": {
             "format": "uint32",
@@ -6198,7 +6293,7 @@
       }
     },
     {
-      "description": "Advances one step (past the last one, back to step 0 when the document has `loop: true`)",
+      "description": "Advances one step (past the last one, back to step 0 when the document has `loop: true`; in a talk, on to the next scene)",
       "method": "step.next",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -6207,6 +6302,30 @@
         "type": "object"
       },
       "result": {
+        "$defs": {
+          "SceneAt": {
+            "description": "The scene of a [`StepReply`] in a talk.",
+            "properties": {
+              "name": {
+                "description": "Its name; absent when its file name is all digits.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "position": {
+                "description": "Its position in `scenes` of the master, from 1.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "position"
+            ],
+            "type": "object"
+          }
+        },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "description": "Result of `step.set`, `step.next`, `step.prev` and `step.goto`.",
         "properties": {
@@ -6230,6 +6349,17 @@
             "format": "uint64",
             "minimum": 0,
             "type": "integer"
+          },
+          "scene": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/SceneAt"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "In a talk, the scene of the step reached: `step.next` at the last\nstep goes on to the next scene. Absent outside a talk."
           },
           "step": {
             "format": "uint32",
@@ -6255,7 +6385,7 @@
       }
     },
     {
-      "description": "Goes back one step",
+      "description": "Goes back one step (in a talk, from step 0 back to the scene before)",
       "method": "step.prev",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -6264,6 +6394,30 @@
         "type": "object"
       },
       "result": {
+        "$defs": {
+          "SceneAt": {
+            "description": "The scene of a [`StepReply`] in a talk.",
+            "properties": {
+              "name": {
+                "description": "Its name; absent when its file name is all digits.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "position": {
+                "description": "Its position in `scenes` of the master, from 1.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "position"
+            ],
+            "type": "object"
+          }
+        },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "description": "Result of `step.set`, `step.next`, `step.prev` and `step.goto`.",
         "properties": {
@@ -6287,6 +6441,17 @@
             "format": "uint64",
             "minimum": 0,
             "type": "integer"
+          },
+          "scene": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/SceneAt"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "In a talk, the scene of the step reached: `step.next` at the last\nstep goes on to the next scene. Absent outside a talk."
           },
           "step": {
             "format": "uint32",
@@ -6334,6 +6499,30 @@
         "type": "object"
       },
       "result": {
+        "$defs": {
+          "SceneAt": {
+            "description": "The scene of a [`StepReply`] in a talk.",
+            "properties": {
+              "name": {
+                "description": "Its name; absent when its file name is all digits.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "position": {
+                "description": "Its position in `scenes` of the master, from 1.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "position"
+            ],
+            "type": "object"
+          }
+        },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "description": "Result of `step.set`, `step.next`, `step.prev` and `step.goto`.",
         "properties": {
@@ -6358,6 +6547,17 @@
             "minimum": 0,
             "type": "integer"
           },
+          "scene": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/SceneAt"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "In a talk, the scene of the step reached: `step.next` at the last\nstep goes on to the next scene. Absent outside a talk."
+          },
           "step": {
             "format": "uint32",
             "minimum": 0,
@@ -6378,6 +6578,557 @@
           "label"
         ],
         "title": "StepReply",
+        "type": "object"
+      }
+    },
+    {
+      "description": "The talk: the master, the scene on screen and every entry of its list",
+      "method": "talk.get",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Parameters of `code.get` (none).",
+        "title": "NoParams",
+        "type": "object"
+      },
+      "result": {
+        "$defs": {
+          "TalkEntryInfo": {
+            "description": "One entry of the list of a talk, in `talk.get`.",
+            "properties": {
+              "entry": {
+                "description": "The entry as Tiza writes it in the master: a path, or {file, name?,\nskip?}. A list of these goes back to `talk.put` as it is."
+              },
+              "name": {
+                "description": "Its name, as `status.talk` gives it.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "position": {
+                "description": "Its position, from 1.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "skip": {
+                "type": "boolean"
+              },
+              "steps": {
+                "description": "The last step of the scene; `null` for a skipped entry, which Tiza\ndoes not read.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "entry",
+              "position",
+              "skip"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of `talk.get`, `talk.put` and `talk.insert`.",
+        "properties": {
+          "created": {
+            "description": "`talk.insert` with `scene`: the scene file that Tiza wrote,\nrelative to the master.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "master": {
+            "description": "The master, as an absolute path.",
+            "type": "string"
+          },
+          "name": {
+            "description": "Its name: the `name` of its entry, else its file name up to the\nfirst dot. Absent when that is all digits.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "position": {
+            "description": "The scene on screen: its position in `scenes` of the master, from 1.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "removed": {
+            "description": "`talk.put` and `talk.insert`: the files of the entries that the new\nlist does not have.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "revision": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scenes": {
+            "items": {
+              "$ref": "#/$defs/TalkEntryInfo"
+            },
+            "type": "array"
+          },
+          "shown": {
+            "description": "Its number among the scenes that show, from 1: the `4` of `4/18`.\n`null` when the scene on screen has `skip` (a `talk.put` gave it).",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "shown_count": {
+            "description": "How many scenes show: the entries without `skip`.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "master",
+          "position",
+          "shown_count",
+          "scenes",
+          "revision"
+        ],
+        "title": "TalkReply",
+        "type": "object"
+      }
+    },
+    {
+      "description": "Goes to a scene of the talk, by its position or its name, at a step",
+      "method": "talk.goto",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Params of `talk.goto`.",
+        "properties": {
+          "force": {
+            "description": "Go on without the changes of the scene on screen that could not be\nsaved, as `:scene!` does. Without it they stop the change with\n`unsaved_changes`.",
+            "type": "boolean"
+          },
+          "scene": {
+            "description": "A scene of the talk: its position (from 1) or its name",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "step": {
+            "description": "A step number or a step `id` of that scene; step 0 without it.",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "scene"
+        ],
+        "title": "TalkGotoParams",
+        "type": "object"
+      },
+      "result": {
+        "$defs": {
+          "SceneAt": {
+            "description": "The scene of a [`StepReply`] in a talk.",
+            "properties": {
+              "name": {
+                "description": "Its name; absent when its file name is all digits.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "position": {
+                "description": "Its position in `scenes` of the master, from 1.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "position"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of `step.set`, `step.next`, `step.prev` and `step.goto`.",
+        "properties": {
+          "id": {
+            "description": "The `id` of the step reached, when `steps` names it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "label": {
+            "description": "What the status line says: `step 3/7 · Shared borrow`.",
+            "type": "string"
+          },
+          "max_step": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "revision": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scene": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/SceneAt"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "In a talk, the scene of the step reached: `step.next` at the last\nstep goes on to the next scene. Absent outside a talk."
+          },
+          "step": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "title": {
+            "description": "Its title, when it has one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "step",
+          "max_step",
+          "revision",
+          "label"
+        ],
+        "title": "StepReply",
+        "type": "object"
+      }
+    },
+    {
+      "description": "Replaces the list of scenes of the talk (their order, `skip` and names), in the master too",
+      "method": "talk.put",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Params of `talk.put`: the whole new list.",
+        "properties": {
+          "force": {
+            "description": "Write the list also when the list of the master changed on disk\n(`conflict` without it). The other keys of the master stay.",
+            "type": "boolean"
+          },
+          "scenes": {
+            "description": "Every entry, as the master writes it: a path relative to the\nmaster, or {file, name?, skip?}. An entry that the list leaves out\nleaves the talk. The `entry` values of `talk.get` have this form.",
+            "items": true,
+            "type": "array"
+          }
+        },
+        "required": [
+          "scenes"
+        ],
+        "title": "TalkPutParams",
+        "type": "object"
+      },
+      "result": {
+        "$defs": {
+          "TalkEntryInfo": {
+            "description": "One entry of the list of a talk, in `talk.get`.",
+            "properties": {
+              "entry": {
+                "description": "The entry as Tiza writes it in the master: a path, or {file, name?,\nskip?}. A list of these goes back to `talk.put` as it is."
+              },
+              "name": {
+                "description": "Its name, as `status.talk` gives it.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "position": {
+                "description": "Its position, from 1.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "skip": {
+                "type": "boolean"
+              },
+              "steps": {
+                "description": "The last step of the scene; `null` for a skipped entry, which Tiza\ndoes not read.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "entry",
+              "position",
+              "skip"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of `talk.get`, `talk.put` and `talk.insert`.",
+        "properties": {
+          "created": {
+            "description": "`talk.insert` with `scene`: the scene file that Tiza wrote,\nrelative to the master.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "master": {
+            "description": "The master, as an absolute path.",
+            "type": "string"
+          },
+          "name": {
+            "description": "Its name: the `name` of its entry, else its file name up to the\nfirst dot. Absent when that is all digits.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "position": {
+            "description": "The scene on screen: its position in `scenes` of the master, from 1.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "removed": {
+            "description": "`talk.put` and `talk.insert`: the files of the entries that the new\nlist does not have.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "revision": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scenes": {
+            "items": {
+              "$ref": "#/$defs/TalkEntryInfo"
+            },
+            "type": "array"
+          },
+          "shown": {
+            "description": "Its number among the scenes that show, from 1: the `4` of `4/18`.\n`null` when the scene on screen has `skip` (a `talk.put` gave it).",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "shown_count": {
+            "description": "How many scenes show: the entries without `skip`.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "master",
+          "position",
+          "shown_count",
+          "scenes",
+          "revision"
+        ],
+        "title": "TalkReply",
+        "type": "object"
+      }
+    },
+    {
+      "description": "Adds a scene to the talk at a position; with `scene`, writes its file first",
+      "method": "talk.insert",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Params of `talk.insert`.",
+        "properties": {
+          "at": {
+            "description": "Its position in the new list, from 1 to the count of entries + 1.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "file": {
+            "description": "The `.tiza` file of the scene, relative to the folder of the master\nand inside it.",
+            "type": "string"
+          },
+          "force": {
+            "description": "Write the list also when the list of the master changed on disk.",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "The `name` of the entry, with the rules of a step `id`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scene": {
+            "description": "A whole document, as `scene.put` takes it: Tiza writes `file`,\nwhich must not exist. Without it, `file` must be a `.tiza` that\nopens."
+          }
+        },
+        "required": [
+          "file",
+          "at"
+        ],
+        "title": "TalkInsertParams",
+        "type": "object"
+      },
+      "result": {
+        "$defs": {
+          "TalkEntryInfo": {
+            "description": "One entry of the list of a talk, in `talk.get`.",
+            "properties": {
+              "entry": {
+                "description": "The entry as Tiza writes it in the master: a path, or {file, name?,\nskip?}. A list of these goes back to `talk.put` as it is."
+              },
+              "name": {
+                "description": "Its name, as `status.talk` gives it.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "position": {
+                "description": "Its position, from 1.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "skip": {
+                "type": "boolean"
+              },
+              "steps": {
+                "description": "The last step of the scene; `null` for a skipped entry, which Tiza\ndoes not read.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "entry",
+              "position",
+              "skip"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of `talk.get`, `talk.put` and `talk.insert`.",
+        "properties": {
+          "created": {
+            "description": "`talk.insert` with `scene`: the scene file that Tiza wrote,\nrelative to the master.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "master": {
+            "description": "The master, as an absolute path.",
+            "type": "string"
+          },
+          "name": {
+            "description": "Its name: the `name` of its entry, else its file name up to the\nfirst dot. Absent when that is all digits.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "position": {
+            "description": "The scene on screen: its position in `scenes` of the master, from 1.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "removed": {
+            "description": "`talk.put` and `talk.insert`: the files of the entries that the new\nlist does not have.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "revision": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scenes": {
+            "items": {
+              "$ref": "#/$defs/TalkEntryInfo"
+            },
+            "type": "array"
+          },
+          "shown": {
+            "description": "Its number among the scenes that show, from 1: the `4` of `4/18`.\n`null` when the scene on screen has `skip` (a `talk.put` gave it).",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "shown_count": {
+            "description": "How many scenes show: the entries without `skip`.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "master",
+          "position",
+          "shown_count",
+          "scenes",
+          "revision"
+        ],
+        "title": "TalkReply",
         "type": "object"
       }
     },

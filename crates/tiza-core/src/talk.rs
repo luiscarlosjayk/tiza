@@ -135,18 +135,7 @@ impl Talk {
                 "talk: `scenes` must be a list of .tiza files".into(),
             ));
         };
-        let scenes = list
-            .iter()
-            .enumerate()
-            .map(|(i, v)| SceneEntry::from_value(v, i + 1))
-            .collect::<Result<Vec<_>, _>>()?;
-        if scenes.iter().all(|s| s.skip) {
-            return Err(Error::Invalid(if scenes.is_empty() {
-                "talk: `scenes` is empty; give at least one .tiza file".into()
-            } else {
-                "talk: every scene has `skip`; at least one scene must show".into()
-            }));
-        }
+        let scenes = entries_from(list)?;
         let at = match talk.get("at") {
             None | Some(Value::Null) => None,
             Some(v) => {
@@ -157,7 +146,44 @@ impl Talk {
     }
 }
 
+/// The entries of a `scenes` list (of a master, or of `talk.put`), with
+/// the rules of a master: each entry is a path or {file, name?, skip?},
+/// and at least one scene shows.
+pub fn entries_from(list: &[Value]) -> Result<Vec<SceneEntry>, Error> {
+    let scenes = list
+        .iter()
+        .enumerate()
+        .map(|(i, v)| SceneEntry::from_value(v, i + 1))
+        .collect::<Result<Vec<_>, _>>()?;
+    if scenes.iter().all(|s| s.skip) {
+        return Err(Error::Invalid(if scenes.is_empty() {
+            "talk: `scenes` is empty; give at least one .tiza file".into()
+        } else {
+            "talk: every scene has `skip`; at least one scene must show".into()
+        }));
+    }
+    Ok(scenes)
+}
+
 impl SceneEntry {
+    /// The entry as Tiza writes it: the path alone when it has no `name`
+    /// and no `skip`, else an object with only what is set.
+    /// [`entries_from`] reads it back as the same entry.
+    pub fn to_value(&self) -> Value {
+        if self.name.is_none() && !self.skip {
+            return Value::String(self.file.clone());
+        }
+        let mut o = serde_json::Map::new();
+        o.insert("file".into(), Value::String(self.file.clone()));
+        if let Some(n) = &self.name {
+            o.insert("name".into(), Value::String(n.clone()));
+        }
+        if self.skip {
+            o.insert("skip".into(), Value::Bool(true));
+        }
+        Value::Object(o)
+    }
+
     fn from_value(v: &Value, position: usize) -> Result<SceneEntry, Error> {
         let what = format!("talk: scene {position}");
         let (file, name, skip) = match v {
@@ -354,10 +380,21 @@ pub fn load_talk(path: &Path) -> Result<LoadedTalk, Error> {
     let mut raw: Value = serde_json::from_str(text)?;
     crate::fs::migrate_document_value(&mut raw)?;
     let talk = Talk::from_value(&raw)?;
-    let base = crate::fs::document_dir(path);
-    let mut scenes: Vec<TalkScene> = Vec::with_capacity(talk.scenes.len());
-    for (i, entry) in talk.scenes.iter().enumerate() {
-        let scene = load_entry(&base, entry, i + 1)?;
+    let scenes = load_scenes(&crate::fs::document_dir(path), &talk.scenes)?;
+    Ok(LoadedTalk {
+        path: path.to_path_buf(),
+        talk,
+        scenes,
+    })
+}
+
+/// Reads every entry of a list with [`load_entry`], relative to `base`
+/// (the folder of the master), and refuses a file that two scenes that
+/// show both name.
+pub fn load_scenes(base: &Path, entries: &[SceneEntry]) -> Result<Vec<TalkScene>, Error> {
+    let mut scenes: Vec<TalkScene> = Vec::with_capacity(entries.len());
+    for (i, entry) in entries.iter().enumerate() {
+        let scene = load_entry(base, entry, i + 1)?;
         if !scene.skip
             && let Some(other) = scenes
                 .iter()
@@ -371,11 +408,7 @@ pub fn load_talk(path: &Path) -> Result<LoadedTalk, Error> {
         }
         scenes.push(scene);
     }
-    Ok(LoadedTalk {
-        path: path.to_path_buf(),
-        talk,
-        scenes,
-    })
+    Ok(scenes)
 }
 
 /// `scene 3 (borrow, borrow.tiza)`: how an error names an entry.
@@ -437,7 +470,7 @@ pub fn same_file(a: &Path, b: &Path) -> bool {
 /// Writes `at` into the master on disk and nothing else: see
 /// [`update_talk`].
 pub fn save_at(path: &Path, scenes: &[SceneEntry], at: &At) -> Result<(), Error> {
-    update_talk(path, scenes, "at", serde_json::to_value(at)?)
+    update_talk(path, Some(scenes), "at", serde_json::to_value(at)?)
 }
 
 /// The one writer of a master: the file is read again, and only `key` of
@@ -446,21 +479,17 @@ pub fn save_at(path: &Path, scenes: &[SceneEntry], at: &At) -> Result<(), Error>
 /// stay; the file is written in the layout of Tiza: `schema`, then `talk`
 /// (`title`, `scenes`, `at`), then the other keys. When the `scenes` on
 /// disk are not `scenes` any more (the master was edited while the talk
-/// ran), nothing is written: the error says so.
+/// ran), nothing is written: the error ([`Error::Conflict`]) says so.
+/// With `scenes` `None` (`force: true` of `talk.put`), there is no compare.
 pub fn update_talk(
     path: &Path,
-    scenes: &[SceneEntry],
+    scenes: Option<&[SceneEntry]>,
     key: &str,
     value: Value,
 ) -> Result<(), Error> {
-    let text = std::fs::read_to_string(path)?;
-    let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
-    let raw: Value = serde_json::from_str(text)?;
-    let on_disk = Talk::from_value(&raw)?;
-    if on_disk.scenes != scenes {
-        return Err(Error::Invalid(
-            "its list of scenes changed while the talk ran".into(),
-        ));
+    let raw = read_master(path)?;
+    if let Some(scenes) = scenes {
+        same_list(&raw, scenes)?;
     }
     let Value::Object(mut top) = raw else {
         return Err(Error::Invalid("a master must be a JSON object".into()));
@@ -490,6 +519,105 @@ pub fn update_talk(
     };
     let out = serde_json::to_string_pretty(&out)?;
     crate::fs::write_atomically(path, out.as_bytes())
+}
+
+/// The JSON of the master on disk, as it is (not migrated).
+fn read_master(path: &Path) -> Result<Value, Error> {
+    let text = std::fs::read_to_string(path)?;
+    let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
+    Ok(serde_json::from_str(text)?)
+}
+
+/// [`Error::Conflict`] when the list of scenes of `raw` is not `scenes`.
+fn same_list(raw: &Value, scenes: &[SceneEntry]) -> Result<(), Error> {
+    if Talk::from_value(raw)?.scenes != scenes {
+        return Err(Error::Conflict(
+            "its list of scenes changed while the talk ran".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// [`Error::Conflict`] when the list of scenes of the master on disk is
+/// not `scenes` any more: what [`update_talk`] checks, before a change
+/// that writes another file first (`talk.insert` with a new scene).
+pub fn check_list_on_disk(path: &Path, scenes: &[SceneEntry]) -> Result<(), Error> {
+    same_list(&read_master(path)?, scenes)
+}
+
+/// The path of a new scene file `file` (relative to `base`, the folder of
+/// a master): inside `base`, with a folder that exists. An absolute path,
+/// a `..` and a folder that goes out of `base` through a link are refused.
+pub fn new_scene_path(base: &Path, file: &str) -> Result<PathBuf, Error> {
+    let rel = Path::new(file);
+    let out = |why: &str| {
+        Error::Invalid(format!(
+            "{file}: {why}; a new scene goes in the folder of the master or in a folder under it"
+        ))
+    };
+    if rel.is_absolute() {
+        return Err(out("the path is absolute"));
+    }
+    if rel
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err(out("the path has `..`"));
+    }
+    let joined = base.join(rel);
+    let parent = joined.parent().unwrap_or(base);
+    let parent = std::fs::canonicalize(parent).map_err(|e| {
+        Error::Invalid(format!(
+            "{file}: its folder does not exist ({e}); Tiza makes no folder"
+        ))
+    })?;
+    let base = std::fs::canonicalize(base)?;
+    if !parent.starts_with(&base) {
+        return Err(out("its folder is a link out of that folder"));
+    }
+    Ok(parent.join(
+        joined
+            .file_name()
+            .ok_or_else(|| out("it has no file name"))?,
+    ))
+}
+
+/// Writes `raw`, a whole document as `scene.put` takes it, to `path`, a
+/// file that must not exist (`create_new`: no race, and no link is
+/// followed). The schema of `raw` is migrated, a key of a move that this
+/// version does not know is an error, and a master is refused.
+pub fn create_scene_file(path: &Path, mut raw: Value) -> Result<(), Error> {
+    use std::io::Write;
+    if is_talk(&raw) {
+        return Err(Error::Invalid(
+            "`scene` is a talk: a scene of a talk is a document with `code`".into(),
+        ));
+    }
+    crate::fs::migrate_document_value(&mut raw)?;
+    let moves = raw.get("moves").and_then(Value::as_array);
+    for (i, m) in moves.into_iter().flatten().enumerate() {
+        crate::moves::refuse_unknown_keys(m, &format!("move #{}: ", i + 1))?;
+    }
+    let mut doc: Document = serde_json::from_value(raw)?;
+    doc.schema = crate::model::SCHEMA_VERSION;
+    let json = crate::fs::document_json(&doc)?;
+    let mut f = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|e| match e.kind() {
+            std::io::ErrorKind::AlreadyExists => Error::Invalid(format!(
+                "{} already exists: give another file, or leave out `scene` to add that file",
+                path.display()
+            )),
+            _ => Error::Io(e),
+        })?;
+    if let Err(e) = f.write_all(json.as_bytes()).and_then(|()| f.sync_all()) {
+        drop(f);
+        let _ = std::fs::remove_file(path);
+        return Err(Error::Io(e));
+    }
+    Ok(())
 }
 
 /// The version of the format that Tiza writes for a master. Tiza 0.2.1

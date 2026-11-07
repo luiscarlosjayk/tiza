@@ -73,6 +73,15 @@ pub enum Error {
     /// are not saved, or the marks of stale moves.
     #[error("the instance has unsaved changes: tiza close --force closes it and loses them")]
     UnsavedChanges,
+    /// What the instance cannot do in its state (a `talk.*` method with no
+    /// talk open): `unavailable`.
+    #[error("{0}")]
+    Unavailable(String),
+    /// A change made on top of a state that changed in between: the
+    /// master of a talk edited on disk while the talk ran (`force: true`
+    /// writes over it). `conflict`.
+    #[error("{0}")]
+    Conflict(String),
     /// Another error, said of one thing (`annotation a2, step 1: range
     /// 9..9 does not fit…`); the API code is that of the error inside.
     #[error("{what}: {inner}")]
@@ -107,6 +116,8 @@ impl Error {
             Error::Invalid(_) | Error::InsideCharacter { .. } => "invalid_argument",
             Error::UnsupportedSchema { .. } => "unsupported_schema",
             Error::UnsavedChanges => "unsaved_changes",
+            Error::Unavailable(_) => "unavailable",
+            Error::Conflict(_) => "conflict",
             Error::Io(_) => "io",
             Error::Json(_) => "invalid_json",
             Error::Within { inner, .. } | Error::Because { inner, .. } => inner.code(),

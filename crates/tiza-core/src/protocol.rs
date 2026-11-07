@@ -758,6 +758,10 @@ pub struct StepReply {
     pub title: Option<String>,
     /// What the status line says: `step 3/7 · Shared borrow`.
     pub label: String,
+    /// In a talk, the scene of the step reached: `step.next` at the last
+    /// step goes on to the next scene. Absent outside a talk.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scene: Option<SceneAt>,
 }
 
 impl StepReply {
@@ -770,6 +774,7 @@ impl StepReply {
             id: named.and_then(|n| n.id.clone()),
             title: named.and_then(|n| n.title.clone()),
             label: doc.step_label(doc.step),
+            scene: None,
         }
     }
 }
@@ -998,6 +1003,188 @@ pub struct Status {
     /// leaves it out when no effect plays.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub effect: bool,
+    /// The talk, when the instance plays a master (`talk.get` gives its
+    /// list of scenes). Absent for a document alone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub talk: Option<TalkStatus>,
+}
+
+/// A scene of a talk named by its position (from 1, the skipped entries
+/// count too) or by its name. A string of digits is a position, as with
+/// `--scene 7`.
+///
+/// Deserializing never fails on the value itself, as with [`StepRef`]:
+/// [`SceneRef::Other`] keeps what was sent, so the error can quote it.
+/// Its schema is inline and flat, `{"type": ["integer", "string"]}`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+pub enum SceneRef {
+    Position(u32),
+    Name(String),
+    /// A value that names no scene (`-1`, `4.5`, `null`, an object…).
+    Other(serde_json::Value),
+}
+
+impl<'de> Deserialize<'de> for SceneRef {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        Ok(match v {
+            serde_json::Value::String(s) => SceneRef::Name(s),
+            serde_json::Value::Number(ref n) => {
+                match n.as_u64().and_then(|n| u32::try_from(n).ok()) {
+                    Some(n) => SceneRef::Position(n),
+                    None => SceneRef::Other(v),
+                }
+            }
+            other => SceneRef::Other(other),
+        })
+    }
+}
+
+impl schemars::JsonSchema for SceneRef {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "SceneRef".into()
+    }
+
+    fn inline_schema() -> bool {
+        true
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": ["integer", "string"],
+            "description": "A scene of the talk: its position (from 1) or its name"
+        })
+    }
+}
+
+impl SceneRef {
+    /// The text that [`crate::talk::LoadedTalk::resolve`] reads: digits
+    /// for a position, else the name.
+    pub fn spec(&self) -> Result<String, crate::Error> {
+        match self {
+            SceneRef::Position(n) => Ok(n.to_string()),
+            SceneRef::Name(s) => Ok(s.clone()),
+            SceneRef::Other(v) => Err(crate::Error::Invalid(format!(
+                "`scene` must be a position from 1 or a scene name, not {v}"
+            ))),
+        }
+    }
+}
+
+/// The scene of a [`StepReply`] in a talk.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SceneAt {
+    /// Its position in `scenes` of the master, from 1.
+    pub position: u32,
+    /// Its name; absent when its file name is all digits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
+/// `status.talk`: where the talk is.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct TalkStatus {
+    /// The master, as an absolute path.
+    pub master: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// The scene on screen: its position in `scenes` of the master, from 1.
+    pub position: u32,
+    /// Its name: the `name` of its entry, else its file name up to the
+    /// first dot. Absent when that is all digits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Its number among the scenes that show, from 1: the `4` of `4/18`.
+    /// `null` when the scene on screen has `skip` (a `talk.put` gave it).
+    pub shown: Option<u32>,
+    /// How many scenes show: the entries without `skip`.
+    pub shown_count: u32,
+}
+
+/// One entry of the list of a talk, in `talk.get`.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct TalkEntryInfo {
+    /// The entry as Tiza writes it in the master: a path, or {file, name?,
+    /// skip?}. A list of these goes back to `talk.put` as it is.
+    pub entry: serde_json::Value,
+    /// Its position, from 1.
+    pub position: u32,
+    /// Its name, as `status.talk` gives it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    pub skip: bool,
+    /// The last step of the scene; `null` for a skipped entry, which Tiza
+    /// does not read.
+    pub steps: Option<u32>,
+}
+
+/// Result of `talk.get`, `talk.put` and `talk.insert`.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct TalkReply {
+    #[serde(flatten)]
+    pub status: TalkStatus,
+    pub scenes: Vec<TalkEntryInfo>,
+    pub revision: u64,
+    /// `talk.put` and `talk.insert`: the files of the entries that the new
+    /// list does not have.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub removed: Vec<String>,
+    /// `talk.insert` with `scene`: the scene file that Tiza wrote,
+    /// relative to the master.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created: Option<String>,
+}
+
+/// Params of `talk.goto`.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TalkGotoParams {
+    pub scene: SceneRef,
+    /// A step number or a step `id` of that scene; step 0 without it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step: Option<StepRef>,
+    /// Go on without the changes of the scene on screen that could not be
+    /// saved, as `:scene!` does. Without it they stop the change with
+    /// `unsaved_changes`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub force: bool,
+}
+
+/// Params of `talk.put`: the whole new list.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TalkPutParams {
+    /// Every entry, as the master writes it: a path relative to the
+    /// master, or {file, name?, skip?}. An entry that the list leaves out
+    /// leaves the talk. The `entry` values of `talk.get` have this form.
+    pub scenes: Vec<serde_json::Value>,
+    /// Write the list also when the list of the master changed on disk
+    /// (`conflict` without it). The other keys of the master stay.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub force: bool,
+}
+
+/// Params of `talk.insert`.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TalkInsertParams {
+    /// The `.tiza` file of the scene, relative to the folder of the master
+    /// and inside it.
+    pub file: String,
+    /// Its position in the new list, from 1 to the count of entries + 1.
+    pub at: u32,
+    /// A whole document, as `scene.put` takes it: Tiza writes `file`,
+    /// which must not exist. Without it, `file` must be a `.tiza` that
+    /// opens.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scene: Option<serde_json::Value>,
+    /// The `name` of the entry, with the rules of a step `id`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Write the list also when the list of the master changed on disk.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub force: bool,
 }
 
 impl Status {
@@ -1276,12 +1463,31 @@ pub const METHODS: &[(&str, &str)] = &[
     ("step.set", "Sets the current presentation step"),
     (
         "step.next",
-        "Advances one step (past the last one, back to step 0 when the document has `loop: true`)",
+        "Advances one step (past the last one, back to step 0 when the document has `loop: true`; in a talk, on to the next scene)",
     ),
-    ("step.prev", "Goes back one step"),
+    (
+        "step.prev",
+        "Goes back one step (in a talk, from step 0 back to the scene before)",
+    ),
     (
         "step.goto",
         "Jumps to a named step by `id` (or a step number), recomputed from step 0 as if walked there, its typing complete; an unknown id is `not_found`",
+    ),
+    (
+        "talk.get",
+        "The talk: the master, the scene on screen and every entry of its list",
+    ),
+    (
+        "talk.goto",
+        "Goes to a scene of the talk, by its position or its name, at a step",
+    ),
+    (
+        "talk.put",
+        "Replaces the list of scenes of the talk (their order, `skip` and names), in the master too",
+    ),
+    (
+        "talk.insert",
+        "Adds a scene to the talk at a position; with `scene`, writes its file first",
     ),
     (
         "focus.set",

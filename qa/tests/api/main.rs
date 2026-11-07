@@ -27,6 +27,7 @@ mod socket_and_runtime_folder;
 mod spotlight_until;
 mod stdin_and_schema;
 mod supervised_turn_off;
+mod talk;
 mod unknown_update_keys;
 mod update_keeps_step_and_file;
 mod visible_in_replies;

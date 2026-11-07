@@ -5,11 +5,11 @@
     "growth_pct": 10
   },
   "mcp_tools_list": {
-    "bytes": 47000,
-    "measured": 44448,
-    "commit": "92a76001",
-    "measured_on": "2026-11-05",
-    "reason": "the size of 0.2.1, with a margin of about 5 %"
+    "bytes": 50000,
+    "measured": 47729,
+    "commit": "d6849c71",
+    "measured_on": "2026-11-07",
+    "reason": "the 4 tools of a talk (talk_status, goto_scene, set_talk_scenes, insert_scene, about 1.8 KB after their texts were cut), with a margin of about 5 %"
   },
   "targets": {
     "aarch64-apple-darwin": {
