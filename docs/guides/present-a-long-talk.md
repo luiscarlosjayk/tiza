@@ -54,9 +54,29 @@ A master is a `.tiza` file with `talk` in place of `code`:
 
 Tiza writes `at` into the master when it closes: you do not write it. All the fields are in [Talk](../reference/document-format.md#talk).
 
-## 3. Check the scenes
+## 3. Check and export the talk
 
-Run `tiza check` on each scene, at the width of the terminal that you record in. `tiza check` refuses a master: give it a scene. See [Check before you record](check-before-you-record.md).
+Run `tiza check` on the master, at the width of the terminal that you record in:
+
+```sh
+tiza check talk.tiza --width 120
+```
+
+- Tiza checks each scene that shows as `tiza check SCENE` does, with the padding and the layout of that scene. Each finding starts with the file of its scene.
+- Tiza also gives each problem of the master: a scene file that is not there, a scene that is a master, a bad entry. The other scenes are checked all the same.
+- The last line gives the narrowest terminal at which every scene shows its labels whole.
+- `--scene X` checks one scene. See [Check before you record](check-before-you-record.md).
+
+To make one video of the whole talk, give the master to `tiza render`:
+
+```sh
+tiza render talk.tiza --out talk.mp4
+```
+
+- The scenes that show play in a row, each as its own export: its theme, its typing, its effects and its `auto_advance_ms`.
+- Every frame has the size of the widest scene and of the tallest scene. A smaller scene is at the top left. An export does not center a scene down, also with `center`.
+- The last step stays twice as long only at the end of the talk. In the talk, a scene goes on to the next one after `--interval`.
+- A GIF and a WebP work too. For an image, a text export or a `.cast` of one scene, give `--scene X`, and `--step N` for an image. See [Exports](../reference/exports.md#record-a-talk).
 
 ## 4. Present the talk
 
@@ -114,7 +134,7 @@ When Tiza closes, it writes the place in the talk into the master, as `talk.at`.
 
 - **`--theme-file` and `--lang`:** they do not work with a talk. Put the theme and the language in each scene.
 - **`:saveas`:** it does not work in a talk, because the master names the file of each scene. `:w PATH` writes a copy. With `--no-save`, the status bar and `:q` in normal mode tell you to use `:w PATH`. `:w` with no path writes the file of the scene on screen, as in a document.
-- **`tiza render` and `tiza check`:** they refuse a master. Give them a scene.
+- **`tiza render` of a whole talk:** it writes a GIF, a WebP, an MP4 or a WebM. A still image, a text export, `--all-steps` and a `.cast` need `--scene X`. A `.tape` needs the file of the scene: `tiza render SCENE.tiza --out demo.tape`.
 - **`tiza next`, `tiza prev` and `tiza goto ID`:** they act on the live talk as `n`, `p` and `:goto ID` do. Thus `tiza next` on the last step of a scene goes to the next scene. `tiza goto ID` stays in the scene on screen. When you type a `:` command or have a panel open, `tiza next` and `tiza prev` do not change the scene: they give an error, and the agent asks again later. Changes that are not saved also stop them, with the error `unsaved_changes`.
 - **A scene file is not there, or Tiza cannot read it:** `tiza talk.tiza` does not open, and the message names the scene. Tiza does not read the file of a skipped scene, so that file can be missing.
 - **A scene file breaks while the talk is open:** when you go to that scene, the status bar tells why, and the scene on screen stays.

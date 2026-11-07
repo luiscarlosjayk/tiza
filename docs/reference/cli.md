@@ -88,6 +88,8 @@ Checks a document before you record, and writes nothing.
 
 `FILE` can be `-` for standard input. It can also be a source file that has a `.tiza` document next to it.
 
+With a master `.tiza`, it checks each scene of the talk and the master. See [Check and export the talk](../guides/present-a-long-talk.md#3-check-and-export-the-talk).
+
 See [Check before you record](../guides/check-before-you-record.md).
 
 </dd>
@@ -220,6 +222,14 @@ Prints the findings as JSON.
 <dd>
 
 Exits with code 1 also for warnings.
+
+</dd>
+<dt><code>--scene X</code> of <code>tiza check</code></dt>
+<dd>
+
+With a master `.tiza`, checks only the scene `X`, as `tiza check SCENE` does. `X` is the position of the scene or its name. Without it, Tiza checks every scene of the talk.
+
+A skipped scene is refused: the message gives the command that checks its file.
 
 </dd>
 <dt><code>--width N</code> of <code>tiza scene text</code></dt>
@@ -553,6 +563,56 @@ The `code` of a finding is one of these:
 | `center` | Warning | The document has `center`, and its code is wider than the check. The code stays at the left. The warning gives the width from which Tiza centers it, or says that no width up to 400 centers it. |
 | `effect` | Warning | Experimental. An annotation has the enter effect `draw` but no stroke, or an effect that this version of Tiza does not know. It comes in with no effect. See [Enter effects](document-format.md#enter-effects-experimental). |
 
+### Check report of a talk
+
+With a master `.tiza`, `tiza check --json` prints this report.
+
+<dl>
+<dt><code>ok</code>, <code>errors</code>, <code>warnings</code></dt>
+<dd>
+
+As in the report of a document, for the master and all its scenes.
+
+</dd>
+<dt><code>clean_terminal_width</code></dt>
+<dd>
+
+The narrowest terminal at which every scene shows its labels whole: the widest of the scenes. Each scene has its own padding.
+
+It is `null` when a scene that shows was not checked, or when a scene cuts a label at each width up to 400.
+
+</dd>
+<dt><code>clean_code_width</code></dt>
+<dd>
+
+The same in columns of code, for `tiza render --width`. It can come from another scene than `clean_terminal_width`.
+
+</dd>
+<dt><code>findings</code></dt>
+<dd>
+
+All the findings: first those of the master, then those of each scene. A finding of a scene has `scene`, its position, and `scene_file`, its path as the master gives it. The other keys are those of a finding of a document.
+
+A problem of an entry of the master has the code `talk`.
+
+</dd>
+<dt><code>scenes</code></dt>
+<dd>
+
+One item for each entry of the master, in order: `position`, `name`, `file`, `status` and `report`.
+
+`status` is one of these:
+
+- `checked`: `report` is the report of `tiza check SCENE`.
+- `skipped`: the scene has `skip`. Tiza does not read it.
+- `missing`: Tiza cannot read the file.
+- `talk`: the file is a master.
+- `duplicate`: a scene before it shows the same file.
+- `invalid`: the entry is not valid.
+
+</dd>
+</dl>
+
 ## Close an instance
 
 `tiza close` closes the live instance of the session, as `:q` does. Use it when you lost the terminal of an instance, or to start a new one in the same session.
@@ -584,6 +644,9 @@ Tiza writes these messages on stderr:
 | `tiza: invalid range: R` | `--focus` got a value that is not a range. |
 | `tiza: width=N: use a number between 20 and 400` | `tiza check --width` got a number out of the range. |
 | `tiza: FILE is not a .tiza document and has no .tiza document next to it (DOCUMENT): nothing to check` | `tiza check` got a source file without a document next to it. |
+| `tiza: a talk on stdin has no folder for its scenes: give the path of the master .tiza` | `tiza check -` or `tiza render -` got a master. |
+| `tiza: --scene opens a scene of a talk: give a master .tiza that lists the scenes` | `--scene` came with a file that is not a master. |
+| `` tiza: scene N is skipped (`skip` in the talk); …; to check it anyway: `tiza check FILE` `` | `tiza check --scene` named a skipped scene. |
 | ``tiza: FILE is neither a .tiza document nor a `scene get` envelope; to show it as code, pass --as-code`` | `tiza scene put` got a file that is not a document. |
 | `tiza: FILE: … scene put sends a document as it is, so it refuses this one` | `tiza scene put` got a document with an effect, a move or a key that this version of Tiza does not know. The key can be a key of a move or a key inside a position. Open the file in Tiza and save it, or remove them. |
 | `tiza: could not read PATH` | `tiza check`, `tiza scene put` or `tiza scene patch @PATH` cannot read the file. |

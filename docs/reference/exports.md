@@ -109,6 +109,25 @@ An agent calls the MCP tool `export_image` with a `path`. The formats are in [Wh
 - `tiza render` and `export_image` write a WebP of one step when you give a step. Without a step, they write an animation, as a GIF.
 - `:export` writes a WebP of one step, as a PNG.
 
+## Record a talk
+
+With a master `.tiza`, a GIF, a WebP, an MP4 or a WebM holds the scenes that show, in a row:
+
+```sh
+tiza render talk.tiza --out talk.mp4
+tiza render talk.tiza --scene borrow --out borrow.gif
+tiza render talk.tiza --scene 3 --step 2 --out slide.png
+```
+
+- Each scene is as its own export: its theme, its gutter, its margin, its typing, its effects and its `auto_advance_ms`. The flags of the command apply to each scene.
+- Every frame has the size of the widest scene and of the tallest scene. A smaller scene is at the top left, on the background of its theme.
+- The last step stays twice as long only at the end of the talk. In the talk, a scene goes on to the next one after `--interval`, or after the `auto_advance_ms` of its last step.
+- A scene with `loop` plays one time.
+- `--scene X` exports one scene, as `tiza render SCENE` does. `X` is the position of the scene or its name.
+- A still image, a text export and `--all-steps` need `--scene X`. A `.cast` needs `--scene X` too. A `.tape` needs the file of the scene, because it opens its file in the TUI.
+- `--lang` and `--theme-file` do not work with a talk.
+- A warning of a scene starts with the scene, for example `tiza: scene 2 (borrow): …`.
+
 ## Options of `tiza render`
 
 | Flag | Type | Default | Meaning |
@@ -134,6 +153,7 @@ An agent calls the MCP tool `export_image` with a `path`. The formats are in [Wh
 | `--skip-zero` | None | Off | Tiza starts a recording or `--all-steps` at step 1. |
 | `--title` | A text | The title of the document, or `Tiza` in a `.cast` | The title of a `.cast` or a `.tape` file. |
 | `--loop` | 0 to 65535 | 0 | How many times a GIF or an animated WebP plays, where `0` plays it without end. |
+| `--scene` | A position or a name | Every scene that shows | With a master `.tiza`, the one scene to export. See [Record a talk](#record-a-talk). |
 
 - `--theme` takes `dark`, `light`, `terminal` or `auto`.
 - `terminal` has no colors outside the terminal. An export with `terminal` uses `dark`, and Tiza says so on stderr.
@@ -302,6 +322,13 @@ An animation is a GIF, or a WebP without `step`.
 | `N lines of code make an image at least H px high, over the limit (16384 px per side, 100000000 px in all): export fewer lines (FILE:A-B), or use a smaller scale, font size or margin` | The code of the document alone makes a PNG, a WebP, a GIF or a video too large. `tiza render` finds this before it draws anything. |
 | `N lines of code make an SVG at least H px high, over the limit (131072 px per side, 6400000000 px in all): export fewer lines (FILE:A-B), or use a smaller font size or margin` | The code of the document alone makes an SVG too large. `tiza render` finds this before it draws anything. |
 | `a W×H px SVG is over the limit (131072 px per side, 6400000000 px in all): use a smaller width, font size or margin, or export fewer lines (FILE:A-B)` | The SVG is too large. |
+| `a talk has steps in each scene: give --scene ID --step K, or export a .gif, .webp, .mp4 or .webm of the whole talk` | A still image or a text export got a master without `--scene`. |
+| `a .cast of a talk is not made yet: give --scene ID for one scene` | A `.cast` got a master without `--scene`. |
+| `a .tape of a talk is not made yet: give the file of one scene …` | A `.tape` got a master without `--scene`. |
+| `` scene N is skipped (`skip` in the talk); …; to export it anyway: `tiza render FILE` `` | `--scene` named a skipped scene. |
+| `a .tape opens the file that it is given in the TUI, and a master opens the whole talk: give the scene file …` | A `.tape` got a master with `--scene`. |
+| `--all-steps writes the steps of one document, and a talk has steps in each scene: give --scene ID` | `--all-steps` got a master without `--scene`. |
+| `a frame of the talk is W×H px (tallest: SCENE), over the limit …` | The frame of the talk, as high as its tallest scene, is too large. |
 
 These messages end with the error of the system or the reason: `could not open FILE`, `could not read the document from stdin`, the `no Tiza instance` message, the two `unexpected` messages, `the live document cannot be rendered` and `could not create FOLDER`.
 

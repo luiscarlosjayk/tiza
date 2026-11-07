@@ -1453,7 +1453,7 @@ Object. No default: the talk opens at step 0 of the first scene that shows.
 - When Tiza writes `at`, it changes only `talk.at`. The other keys and the form of each entry stay. Tiza writes the file in its own layout: `schema`, then `talk` with `title`, `scenes` and `at`, then the other keys. When the list of scenes in the file changed while the talk was open, Tiza does not write `at`.
 - Each scene keeps its own `step`. A change in a scene saves the step that its file has, not the step on screen.
 - A file shows once in a talk. Two entries that name the same file are an error, also with other paths to it.
-- `tiza render`, `tiza check` and `scene put` refuse a master: give them a scene.
+- `tiza check` and `tiza render` read a master: see [Check and export the talk](../guides/present-a-long-talk.md#3-check-and-export-the-talk). `scene put` refuses a master: give it a scene.
 - Tiza writes `"schema": 2` in a master. Tiza 0.2.1 and earlier versions do not know `talk`, so they refuse the file. Tiza opens a master with `"schema": 1` too.
 
 The errors of a master:
@@ -1467,6 +1467,7 @@ The errors of a master:
 | `talk: scene N: FILE is not a .tiza file` … | An entry names a file that does not end in `.tiza`. |
 | `talk: scene N: name "NAME"` … | A `name` does not follow the rules of a name. |
 | `scene N (NAME, FILE): the same file as scene M` … | Two entries name the same file. |
+| `scene N (NAME, FILE) is a talk: a talk plays documents, not other talks` | The file of a scene is a master. |
 | `scene N (NAME, FILE): ` … | The file of a scene does not open. The rest of the message tells why. |
 
 ## Rules the schema does not check
