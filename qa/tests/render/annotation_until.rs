@@ -20,9 +20,13 @@ fn code() -> Vec<String> {
 }
 
 fn open(name: &str, annotations: Value) -> Document {
+    open_with_moves(name, annotations, json!([]))
+}
+
+fn open_with_moves(name: &str, annotations: Value, moves: Value) -> Document {
     let path = scratch(name).join("doc.tiza");
     let doc = json!({"schema": 2, "source": {"language": "rs", "first_line": 1},
-        "code": code(), "annotations": annotations});
+        "code": code(), "annotations": annotations, "moves": moves});
     std::fs::write(&path, doc.to_string()).unwrap();
     tiza_core::fs::open(path.to_str().unwrap())
         .unwrap()
@@ -175,4 +179,19 @@ fn a_step_that_types_does_not_draw_one_that_went() {
         .collect();
     assert!(text.contains("kept note"), "{text}");
     assert!(!text.contains("gone note"), "{text}");
+}
+
+#[test]
+fn an_arrow_keeps_its_color_when_one_that_went_loses_its_anchor() {
+    // `one` goes after step 1, and at step 2 a move removes its first
+    // line: the projection leaves it out, but it keeps its place in the
+    // palette.
+    let doc = open_with_moves(
+        "until-color-anchor",
+        json!([arrow("one", 1, 2, 3, Some(1)), arrow("two", 1, 5, 7, None)]),
+        json!([{"at_step": 2, "action": "code.patch", "op": "delete", "find": "let v1 = 1;"}]),
+    );
+    let at_1 = color_of(&doc, 1, "two").expect("two at step 1");
+    let at_2 = color_of(&doc, 2, "two").expect("two at step 2");
+    assert_eq!(at_1, at_2);
 }

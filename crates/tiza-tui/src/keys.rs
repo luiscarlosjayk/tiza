@@ -365,10 +365,6 @@ pub const HELP: &[(Section, &[Row])] = &[
                 syntax: ":spot {A-B} [{ID}…]",
                 desc: "Add a spotlight. The rest of the step dims.",
             },
-            Command {
-                syntax: ":until {ID} {N|-}",
-                desc: "Show it until step N, or - to remove.",
-            },
             Sub("Change"),
             Command {
                 syntax: ":label {ID} {text}",
@@ -377,6 +373,10 @@ pub const HELP: &[(Section, &[Row])] = &[
             Command {
                 syntax: ":color {ID} {COLOR}",
                 desc: "Change the color. COLOR is a name, #rrggbb or auto.",
+            },
+            Command {
+                syntax: ":until {ID} {N|-}",
+                desc: "Show the annotation until step N. - removes the until.",
             },
             Command {
                 syntax: ":set {ID} {key}={value}…",

@@ -2030,7 +2030,7 @@
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "description": "A shape and its `until`. In `annotation.update`, a `shape` replaces\nthe shape and its `until` together.",
+        "description": "Parameters of `annotation.add`: a shape described in an agent-friendly\nway, with its `until`, its step and where it goes.",
         "oneOf": [
           {
             "properties": {

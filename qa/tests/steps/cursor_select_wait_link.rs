@@ -791,7 +791,10 @@ fn rebind_only_on_patches_and_bad_windows_name_the_move() {
     );
     let d = tiza_core::fs::load_document(&bad).unwrap();
     assert_eq!(d.annotations[0].file.as_deref(), Some("other.rs"));
-    assert_eq!(d.schema, 1);
+    // In memory a loaded document has the schema of this version; a save
+    // writes the one it needs, 1 here (nothing of schema 2).
+    assert_eq!(d.schema, tiza_core::model::SCHEMA_VERSION);
+    assert_eq!(d.schema_needed(), 1);
 }
 
 /// A point of a `select` whose `find` starts inside a character (a joiner

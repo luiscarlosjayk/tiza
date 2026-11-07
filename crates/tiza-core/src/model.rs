@@ -1113,6 +1113,10 @@ impl std::fmt::Display for Hidden {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Hidden::NoSuch(id) => write!(f, "no annotation {id}"),
+            // From a file only: the API refuses such an `until`.
+            Hidden::Past { from, end } if end < from => {
+                write!(f, "it never shows (until {end} is before step {from})")
+            }
             Hidden::Past { from, end } if from == end => {
                 write!(f, "it shows only at step {end}")
             }
@@ -1633,6 +1637,26 @@ impl Document {
             return Some(why.clone());
         }
         let id = s.annotation.as_deref()?;
+        // One that left at its `until` before the step of the move: the
+        // view would go to a place with nothing drawn. Only an `until` of
+        // schema 2 (not a spotlight's): a spotlight keeps its lines after
+        // its step, as before. A later step that holds the view keeps it.
+        if let Some(a) = self.find_annotation(id)
+            && !matches!(a.shape, Shape::Spotlight { .. })
+            && let Some(end) = a.until
+            && a.step <= m.at_step
+            && m.at_step > end
+        {
+            let at = if a.step == end {
+                format!("step {end}")
+            } else {
+                format!("steps {}-{end}", a.step)
+            };
+            return Some(format!(
+                "annotation «{id}» shows only at {at}, not at step {}",
+                m.at_step
+            ));
+        }
         let shapes = self.shapes_at(&proj, m.at_step);
         self.scroll_annotation_lines(&proj, m.at_step, id, &shapes)
             .err()
@@ -2017,17 +2041,6 @@ impl Document {
             let hi = r.iter().map(|(_, b)| *b).max()?;
             Some((lo, hi))
         };
-        // One that left: the view would go to a place with nothing drawn.
-        if let Some(end) = a.end().filter(|end| a.step <= step && step > *end) {
-            let at = if a.step == end {
-                format!("step {end}")
-            } else {
-                format!("steps {}-{end}", a.step)
-            };
-            return Err(format!(
-                "annotation «{id}» shows only at {at}, not at step {step}"
-            ));
-        }
         if a.step <= step {
             let shape = shapes
                 .get(k)

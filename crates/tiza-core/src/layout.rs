@@ -838,6 +838,8 @@ fn layout_core(
     // of later steps; those without an anchor are left out.
     let projected;
     let (mut cursor, mut selection) = (None, None);
+    let full = doc;
+    let mut shown_file = None;
     let doc = if doc.moves.is_empty() {
         doc
     } else {
@@ -845,9 +847,11 @@ fn layout_core(
         // stage puts them.
         let v = doc.view_at_stage(opts.step, paint.typed.and_then(|t| t.stage));
         (cursor, selection) = (v.cursor, v.selection);
+        shown_file = Some(v.view.file);
         projected = v.doc;
         &projected
     };
+    let arrow_slots = arrow_slots(full, theme, opts, shown_file.as_ref());
     // An empty label is no label: no lone `·`, no `warning:` with nothing
     // after it, no gap in a border, and it is not a second label of its line.
     let filled;
@@ -871,6 +875,7 @@ fn layout_core(
         trace,
         spot_step,
         pinned: pinned.ids.clone(),
+        arrow_slots,
     };
     // Whether a margin block fits, and which rows it covers, is only known
     // once the rows exist, so the rows are planned again while a plan finds
@@ -1056,6 +1061,38 @@ struct Shared {
     /// The annotations whose line puts its labels under itself at every
     /// step of the take ([`Pinned`]).
     pinned: std::collections::BTreeSet<String>,
+    /// The place in the automatic palette of each arrow without a color
+    /// ([`arrow_slots`]).
+    arrow_slots: std::collections::HashMap<String, usize>,
+}
+
+/// The place in the automatic palette of each arrow without a color: its
+/// order among the arrows of the shown file that have come at the step, in
+/// the order of the document. It comes from the document before the
+/// projection, which leaves out an arrow without an anchor: an arrow that
+/// left at its `until` and then lost its anchor still holds its place, so
+/// no later arrow changes color. `shown`: the file on screen, `None` with
+/// no moves (one file).
+fn arrow_slots(
+    doc: &Document,
+    theme: &Theme,
+    opts: &LayoutOptions,
+    shown: Option<&crate::moves::ViewKey>,
+) -> std::collections::HashMap<String, usize> {
+    doc.annotations
+        .iter()
+        .filter(|a| matches!(a.shape, Shape::Arrow { .. }))
+        .filter(|a| {
+            a.color
+                .as_deref()
+                .and_then(|c| theme.named_color(c))
+                .is_none()
+        })
+        .filter(|a| shown.is_none_or(|f| a.file == *f))
+        .filter(|a| a.came_at(opts.step, opts.typing))
+        .enumerate()
+        .map(|(i, a)| (a.id.clone(), i))
+        .collect()
 }
 
 /// What one run of [`layout_pass`] gives back.
@@ -1173,9 +1210,9 @@ fn layout_pass(
         let c = match (&a.shape, chosen) {
             (_, Some(c)) => c,
             (Shape::Arrow { .. }, None) => {
-                let c = auto[arrow_seq % auto.len().max(1)];
+                let slot = shared.arrow_slots.get(&a.id).copied().unwrap_or(arrow_seq);
                 arrow_seq += 1;
-                c
+                auto[slot % auto.len().max(1)]
             }
             (Shape::Box { .. }, None) => theme.box_line,
             (Shape::Note { .. }, None) => theme.note,

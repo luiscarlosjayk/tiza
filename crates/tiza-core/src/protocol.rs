@@ -416,6 +416,8 @@ fn m_is_some(m: &Option<RangeMarkers>) -> bool {
     m.is_some()
 }
 
+/// Parameters of `annotation.add`: a shape described in an agent-friendly
+/// way, with its `until`, its step and where it goes.
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct AddParams {
     #[serde(default)]

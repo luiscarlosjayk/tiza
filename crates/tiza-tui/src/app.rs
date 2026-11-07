@@ -3065,6 +3065,18 @@ impl App {
         };
         match self.doc.update(ann) {
             Ok(()) => {
+                // Selected, and its new `until` takes it off the screen at
+                // this step: the selection goes, as on a step change. A
+                // new step keeps it, so that `+` and `-` go on with it.
+                if (p.until.is_some() || p.shape.is_some())
+                    && self.selected.as_deref() == Some(p.id.as_str())
+                    && !self
+                        .doc
+                        .find_annotation(&p.id)
+                        .is_some_and(|a| a.shown_at(self.doc.step))
+                {
+                    self.selected = None;
+                }
                 self.camera_changed();
                 self.touch();
                 Ok(())
@@ -6779,7 +6791,7 @@ impl App {
                         "-" => None,
                         n => Some(n.parse::<u32>().map_err(|_| {
                             Error::Invalid(
-                                "usage: :until ID N  |  :until ID -   (the last step that shows it, or - to remove)"
+                                "usage: :until ID N  |  :until ID -   (the last step that shows the annotation; - removes the until)"
                                     .into(),
                             )
                         })?),
@@ -9476,7 +9488,13 @@ impl App {
             ));
         }
         // A fact for agents (keep labels short), not a loss: no badge.
-        if !l.labels_in_margin && self.doc.annotations.iter().any(|a| a.step <= self.doc.step) {
+        if !l.labels_in_margin
+            && self
+                .doc
+                .annotations
+                .iter()
+                .any(|a| a.shown_at(self.doc.step))
+        {
             out.push(format!("labels go under the lines at {cols} columns"));
         }
         out

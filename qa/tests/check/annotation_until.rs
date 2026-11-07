@@ -198,3 +198,18 @@ fn a_spotlight_that_went_gives_no_unanchored() {
         "{findings:?}"
     );
 }
+
+#[test]
+fn a_scroll_to_a_spotlight_after_its_step_is_taken() {
+    // A spotlight without `until` keeps its lines after its step: a
+    // `scroll` to it there is fine, as in Tiza 0.2.
+    let spot = json!({"id": "s1", "step": 1, "type": "spotlight",
+        "from_line": 12, "to_line": 13});
+    let file = document(
+        "until-scroll-spot",
+        json!([spot, note("n2", 3, 2)]),
+        json!([{"at_step": 3, "action": "scroll", "annotation": "s1"}]),
+    );
+    let (_, findings) = check_json(&file);
+    assert!(with_code(&findings, "move").is_empty(), "{findings:?}");
+}

@@ -221,7 +221,7 @@ A command with wrong arguments shows its usage:
 | `usage: :note L text  (L may be . for the cursor line)` | `:note` |
 | `usage: :callout A[-B] [@below\|@margin\|@auto] [title="…"] text   (or @'start'..@'end')   (ERROR)` | `:callout` |
 | `usage: :spot A-B [ID…]  \|  :spot ID…` | `:spot` |
-| `usage: :until ID N  \|  :until ID -   (the last step that shows it, or - to remove)` | `:until` |
+| `usage: :until ID N  \|  :until ID -   (the last step that shows the annotation; - removes the until)` | `:until` |
 | `usage: :style NAME glyph=G legend="text" color=C   (:style NAME removes it)` | `:style` |
 | `usage: :label ID text` | `:label` |
 | `usage: :color ID name\|#rrggbb\|auto   (names: NAMES)` | `:color` |

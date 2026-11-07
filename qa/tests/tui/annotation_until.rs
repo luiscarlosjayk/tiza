@@ -111,3 +111,18 @@ fn the_reply_says_why_it_is_not_on_the_screen() {
         "n3 shows until step 2 (not shown: it shows only at step 2)"
     );
 }
+
+#[test]
+fn an_until_that_hides_the_selection_takes_it_off() {
+    let live = live("until-select-update");
+    live.api_ok(
+        "annotation.add",
+        json!({"id": "n2", "type": "note", "line": 3, "text": "two", "step": 1}),
+    );
+    live.api_ok("step.set", json!({"step": 2}));
+    live.keys(&[KeyCode::Tab]);
+    assert_eq!(live.with(|a| a.selected.clone()).as_deref(), Some("n2"));
+    // No step change: the `until` alone hides it.
+    live.command("until n2 1");
+    assert_eq!(live.with(|a| a.selected.clone()), None);
+}
