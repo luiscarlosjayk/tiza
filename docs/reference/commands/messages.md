@@ -145,7 +145,7 @@ In `is not in the code shown`, `FILE` can end with the lines on screen, for exam
 - The other messages of `:goto` are in [Messages](../document-format.md#messages). They are for an unknown id and a step after the last step.
 - In `<id>` and in `usage: :lang ID`, the id is a language id, `LANG`.
 - In the `padding` messages, `V H` is the padding in use, and `CV CH` is the padding that fits on the screen.
-- `HOW` is `file extension`, `file name`, `shebang`, `modeline` or `default: plain text`.
+- `HOW` is `file extension`, `file name`, `shebang`, `diff header`, `modeline` or `default: plain text`.
 - In the `move #N added` message, `FILE` ends with `:A-B` when you gave lines. A warning about the move can come before it.
 - In `already references FILE`, `FILE` ends with `:A-B` when the document references lines. The `now references` messages give the path alone.
 - A `references` message can end with `; following NAME` when follow mode watches the file.
