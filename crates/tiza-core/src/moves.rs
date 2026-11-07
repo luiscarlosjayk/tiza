@@ -1426,19 +1426,26 @@ impl DiffMarks {
     /// The groups of removed lines that a view of lines `first..=last`
     /// shows, each with the line that owns it and whether it goes under
     /// that line: a group goes before the line under it, and the group
-    /// after the last line of the code goes under that line. A group at an
-    /// edge of a window (between a line of the window and a line out of
-    /// it), or with no line, does not show.
+    /// after the last line of the code goes under that line. A group with
+    /// no line in the view, or with a line that was out of the window at the
+    /// start of the step (above its first line), does not show.
     pub fn groups_in(
         &self,
         first: u32,
         last: u32,
     ) -> impl Iterator<Item = ((u32, bool), &RemovedLines)> + '_ {
+        // A window is lines of the file: the same lines at the start of the
+        // step. A removed line out of them was not on screen.
+        let seen = move |g: &RemovedLines| {
+            g.origins
+                .iter()
+                .all(|&o| self.first_line as usize + o >= first as usize)
+        };
         self.removed.iter().filter_map(move |g| {
             let key = match g.after {
-                _ if g.lines.is_empty() => return None,
+                _ if g.lines.is_empty() || !seen(g) => return None,
                 None if self.first_line == first => (first, false),
-                Some(a) if a >= first && a < last => (a + 1, false),
+                Some(a) if a + 1 >= first && a < last.min(self.last_line) => (a + 1, false),
                 Some(a) if a == last && a == self.last_line => (a, true),
                 _ => return None,
             };
@@ -3775,5 +3782,44 @@ mod tests {
         };
         assert_eq!(keys(1, 2), [(2, true)]);
         assert_eq!(keys(1, 1), []);
+        // A replace of the first line of a window: the removed line was in
+        // the window, and goes over its new line. A delete of the line over
+        // the window: it was not in the window, and does not show.
+        let d = typed_doc(
+            "a\nb\nc\nd\n",
+            &[
+                serde_json::json!({"at_step": 1, "action": "code.patch", "op": "replace", "find": "b", "content": "B", "diff": true}),
+            ],
+        );
+        let m = marks(&d, 1).unwrap();
+        assert_eq!(
+            m.groups_in(2, 3).map(|(k, _)| k).collect::<Vec<_>>(),
+            [(2, false)]
+        );
+        let d = typed_doc(
+            "a\nb\nc\nd\n",
+            &[
+                serde_json::json!({"at_step": 1, "action": "code.patch", "op": "delete", "find": "a", "diff": true}),
+            ],
+        );
+        let m = marks(&d, 1).unwrap();
+        assert_eq!(m.groups_in(2, 3).count(), 0);
+        // A line that the step writes above the window moves the window's
+        // lines down: `c`, line 3, goes over `d`, now line 4, the first
+        // line of the window 4-5. `c` was not in the window: no group.
+        let d = typed_doc(
+            "a\nb\nc\nd\ne\n",
+            &[
+                serde_json::json!({"at_step": 1, "action": "code.patch", "op": "insert", "after": "a", "content": "x", "diff": true}),
+                serde_json::json!({"at_step": 1, "action": "code.patch", "op": "delete", "find": "c", "diff": true}),
+            ],
+        );
+        let m = marks(&d, 1).unwrap();
+        assert_eq!(m.removed, vec![removed(Some(3), &[("c", 2)])]);
+        assert_eq!(m.groups_in(4, 5).count(), 0);
+        assert_eq!(
+            m.groups_in(3, 5).map(|(k, _)| k).collect::<Vec<_>>(),
+            [(4, false)]
+        );
     }
 }

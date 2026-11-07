@@ -258,3 +258,20 @@ fn the_cursor_that_goes_up_to_a_line_shows_its_box_title_and_removed_lines() {
     assert_eq!(screen_row(&live, "let v80 = 80;"), Some(1));
     assert_eq!(screen_row(&live, "let v81 = 81;"), Some(2));
 }
+
+#[test]
+fn a_view_on_the_first_row_shows_the_removed_lines_that_come_over_line_1() {
+    // A delete with diff of line 1 at step 1, and a box on lines 1-2 from
+    // step 0: at step 0 the view starts on the title of the box.
+    let boxed = json!([{"id": "bx", "step": 0, "type": "box", "from_line": 1, "to_line": 2, "label": "top"}]);
+    let moves = json!([{"at_step": 1, "action": "code.patch", "op": "delete", "find": "let v1 = 1;", "diff": true}]);
+    let live = open_with("diff-tui-at-top", boxed, moves, 0, true);
+    assert_eq!(screen_row(&live, "top"), Some(0));
+    live.with(|a| key(a, KeyCode::Char('n')));
+    assert_eq!(live.with(|a| a.doc.step), 1);
+    // The view stays on the first row: the title, the removed line, then
+    // the new line 1.
+    assert_eq!(screen_row(&live, "top"), Some(0));
+    assert_eq!(screen_row(&live, "let v1 = 1;"), Some(1));
+    assert_eq!(screen_row(&live, "let v2 = 2;"), Some(2));
+}

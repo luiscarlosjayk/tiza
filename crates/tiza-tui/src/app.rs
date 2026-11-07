@@ -2331,6 +2331,9 @@ impl App {
             self.typing.is_some(),
             self.history.newest(),
             self.present || self.layout_stable,
+            // The lines that a typed step holds change while it types
+            // ([`App::ghosts_to_come`]).
+            self.doc.code.len(),
         )
     }
 
@@ -11412,9 +11415,9 @@ pub struct ScrollHeld {
 type DrawnLines = (String, Option<u32>, Vec<(u32, u32)>);
 
 /// What [`App::rows_to_come`] depends on: the step, the width, a typing or
-/// a `wait` of the step, the newest edit of the document, and the stable
-/// geometry of presentation mode.
-pub type ToComeKey = (u32, usize, bool, u64, bool);
+/// a `wait` of the step, the newest edit of the document, the stable
+/// geometry of presentation mode, and the number of lines of the code now.
+pub type ToComeKey = (u32, usize, bool, u64, bool, usize);
 
 /// The rows that the target and the reveal of a held view do not have yet,
 /// above and under each ([`App::rows_to_come`]).
@@ -11549,7 +11552,9 @@ pub enum ViewEdge {
 /// negative offset. A removed line of a diff over its owner is counted
 /// from its owner, with a negative offset: when the step after takes it
 /// away, the view starts with the owner, and the code does not go up.
-/// `None` with no code.
+/// A view on the first row stays there ([`AT_TOP`]): the rows that come
+/// over the first line (the removed lines of a diff, the title of a box)
+/// show. `None` with no code.
 pub(crate) fn view_anchor_of(
     layout: &tiza_core::layout::Layout,
     top: usize,
@@ -11559,6 +11564,11 @@ pub(crate) fn view_anchor_of(
         Row::Code(l) => Some((l, top as isize - i as isize)),
         _ => None,
     };
+    if top == 0 {
+        return (0..layout.rows.len())
+            .find_map(line)
+            .map(|(l, _)| (l, AT_TOP));
+    }
     let last = top.min(layout.rows.len().checked_sub(1)?);
     if let Row::Ghost {
         owner,
@@ -11575,6 +11585,10 @@ pub(crate) fn view_anchor_of(
         .or_else(|| (0..layout.rows.len()).find_map(line))
 }
 
+/// The offset of an anchor of [`view_anchor_of`] for a view on the first
+/// row of the take: [`view_row_of`] gives the first row again.
+pub(crate) const AT_TOP: isize = isize::MIN;
+
 /// The first row that puts `anchor` back where [`view_anchor_of`] found it,
 /// on `layout`; `None` when its line is not on the layout. A negative
 /// offset goes no higher than the first row of its line ([`span_rows`]):
@@ -11584,6 +11598,9 @@ pub(crate) fn view_row_of(
     anchor: (u32, isize),
 ) -> Option<usize> {
     let row = *layout.row_of_line.get(&anchor.0)? as isize;
+    if anchor.1 == AT_TOP {
+        return Some(0);
+    }
     let at = row + anchor.1;
     let at = match layout.span_of_line(anchor.0) {
         Some(span) if anchor.1 < 0 => at.max(span.start as isize),

@@ -155,3 +155,35 @@ fn a_removed_line_that_is_cut_is_a_warning_of_its_step() {
     // The line itself is cut at step 0, where it is code.
     assert_eq!(cut.len(), 2, "{findings:?}");
 }
+
+#[test]
+fn a_removed_line_of_a_file_that_its_step_links_is_in_the_take() {
+    // Step 1 links long.rs and removes its long line: the line is never
+    // code on screen, only a removed line. The take makes room for it.
+    let dir = tiza_qa::scratch("diff-link-removed");
+    let long = format!("let s = \"{}\";", "x".repeat(70));
+    std::fs::write(
+        dir.join("long.rs"),
+        format!("fn a() {{}}\nlet c = 3;\n{long}\nlet f = 6;\n"),
+    )
+    .unwrap();
+    let doc = json!({
+        "schema": 2, "source": {"language": "rs", "first_line": 1},
+        "code": ["x();", "y();"],
+        "annotations": [{"id": "n1", "step": 1, "type": "note", "line": 2,
+            "file": "long.rs", "text": "a note"}],
+        "moves": [
+            {"at_step": 1, "action": "code.link", "file": "long.rs"},
+            {"at_step": 1, "action": "code.patch", "op": "replace",
+                "find": "let s", "content": "short();", "diff": true}
+        ]
+    });
+    let file = dir.join("doc.tiza");
+    std::fs::write(&file, doc.to_string()).unwrap();
+    let (code, findings) = check_json(&file);
+    assert_eq!(code, 0, "{findings:?}");
+    assert!(
+        with_code(&findings, "clipped_code").is_empty(),
+        "{findings:?}"
+    );
+}

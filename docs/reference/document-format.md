@@ -878,13 +878,13 @@ With `"diff": true` on a `code.patch` move, the step of the move shows which lin
 - A `+` in the `diff_add` color shows next to the line number of each line that the move writes. In `dark` and `light`, the cell of the `+` also has a tint of that color. The `terminal` theme gives only the color of the `+`.
 - Each line that the move removes comes back on a row of its own, with a `−` in the `diff_del` color and no line number. Its text has the colors of its language. The line numbers are the numbers of the code at the end of the step.
 - The removed lines go above the lines that the move wrote in their place. When the move wrote no line there, they go above the line that is now under them. The removed lines after the last line go under it.
-- A removed line goes dim with the line under it. A box that starts on that line holds them. The `−` never goes dim.
-- A removed line is not a line of the code. A click on it puts the cursor on the line under it. A `find` does not match it, and `get_code` lists it after the code.
+- A removed line goes dim with its line: the line under it, or the last line for the removed lines under it. A box that starts on the line under them holds them, and a box that ends on the last line holds the removed lines under it. The `−` never goes dim.
+- A removed line is not a line of the code. A click on it puts the cursor on its line. A `find` does not match it, and `get_code` lists it after the code.
 - The `+` and the removed lines show only at the step of the move. At the step after it, they go away, and the lines under them move up. `tiza check` thus does not report that step as empty.
 - A `replace` often writes again the lines around the change. Tiza does not mark the lines at the start and at the end of a `replace` that are the same as before.
 - When a later move of the same step removes a line that the move wrote, that line has no `+`.
 - While the step types, the `+` and the removed lines do not show. They show when the typing ends.
-- In normal mode, the removed lines that come above the first line of the view stay above the view. Scroll up to see them. In presentation mode, a `scroll` move to their line shows them.
+- In normal mode, the removed lines that come above the first line of the view stay above the view. Scroll up, or move the cursor to their line, to see them. In presentation mode, a view at the top of the code shows them, and a `scroll` move to their line shows them.
 - When a move of the document has `diff`, Tiza keeps a column of two cells for the `+` and the `−` at every step. Without line numbers, Tiza also keeps the column of the `▸` that marks the selected annotation, next to the sign. Thus the code does not move when a sign shows.
 - `tiza check` gives the warning `move` when a move with `diff` shows no `+` and no `−`. For example, the move writes the same lines again, or the lines that it writes or removes are outside the lines that its step shows.
 - `tiza check` gives the warning `clipped_code` when a removed line is too wide for the take.

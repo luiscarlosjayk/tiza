@@ -1901,9 +1901,9 @@ impl Document {
     }
 
     /// How many code lines [`Document::view_at`] shows at `step`, without
-    /// a copy of the document: the layout of that step has a row for each
-    /// of them, so an export can refuse a take that is too large before it
-    /// lays it out.
+    /// a copy of the document: the layout of that step has at least a row
+    /// for each of them (the removed lines of a diff add more), so an
+    /// export can refuse a take that is too large before it lays it out.
     pub fn lines_at(&self, step: u32) -> usize {
         if self.moves.is_empty() || step == self.step {
             return self.code.len();

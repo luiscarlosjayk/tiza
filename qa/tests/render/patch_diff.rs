@@ -362,3 +362,37 @@ fn a_margin_label_goes_on_beside_a_removed_line_as_beside_code() {
     let removed = f.lines().nth(row_of(&f, "let c = 3;")).unwrap();
     assert!(removed.contains("that it goes on"), "{f}");
 }
+
+#[test]
+fn a_replace_of_the_first_line_of_a_window_shows_its_removed_line() {
+    // The window 2-3 of other.rs: its first line changes. The old line was
+    // in the window, so the step shows a `−` over the `+` of its new line.
+    let dir = scratch("diff-window-first");
+    std::fs::write(
+        dir.join("other.rs"),
+        "fn other() {\n    let o1 = 1;\n    let o2 = 2;\n}\n",
+    )
+    .unwrap();
+    let doc = json!({
+        "schema": 2, "source": {"language": "rs", "first_line": 1},
+        "code": ["fn main() {}"], "annotations": [],
+        "moves": [
+            {"at_step": 1, "action": "code.link", "file": "other.rs", "lines": "2-3"},
+            {"at_step": 1, "action": "code.patch", "op": "replace",
+                "find": "let o1 = 1;", "content": "    let o1 = 10;", "diff": true}
+        ]
+    });
+    let file = dir.join("doc.tiza");
+    std::fs::write(&file, doc.to_string()).unwrap();
+    let text = render_doc(&file, 1, &[]);
+    let rows: Vec<&str> = text.lines().filter(|l| l.contains("let o")).collect();
+    assert_eq!(rows.len(), 3, "{text}");
+    assert!(
+        rows[0].contains("let o1 = 1;") && rows[0].contains('−'),
+        "{text}"
+    );
+    assert!(
+        rows[1].contains("let o1 = 10;") && rows[1].contains('+'),
+        "{text}"
+    );
+}

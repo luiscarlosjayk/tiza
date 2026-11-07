@@ -128,9 +128,8 @@ pub fn ghost_groups(doc: &Document) -> BTreeMap<(u32, bool), &crate::moves::Remo
 }
 
 /// The widest removed line of the diff that `doc` shows, in cells: the
-/// code column of a layout with no geometry of the whole take (normal mode)
-/// makes room for it. A take already has it: a removed line is code at the
-/// step before.
+/// code column makes room for it, in normal mode and in the geometry of the
+/// whole take ([`stable_geometry`]).
 fn ghost_width(doc: &Document, tab_width: usize) -> usize {
     ghost_groups(doc)
         .values()
@@ -567,12 +566,15 @@ pub fn stable_geometry(doc: &Document, opts: &LayoutOptions) -> StableGeometry {
             projected = doc.view_at(step).doc;
             &projected
         };
+        // The removed lines of a diff too: a removed line is not always code
+        // at the step before (a `code.link` of the same step shows it first).
         g.code_full_w = g.code_full_w.max(
             d.code
                 .iter()
                 .map(|l| code_width(l, opts.tab_width))
                 .max()
-                .unwrap_or(0),
+                .unwrap_or(0)
+                .max(ghost_width(d, opts.tab_width)),
         );
         // While the step types, its code is half typed: the code column is
         // as wide as at the end of the step too, so a box does not grow with
