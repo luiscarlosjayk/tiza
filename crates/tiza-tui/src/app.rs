@@ -1475,7 +1475,8 @@ impl App {
     }
 
     /// Where the code goes in a terminal of `area`: inside the padding, and
-    /// with `center`, `dy` rows lower ([`App::center_rows_down`]). The one
+    /// with `center`, `dy` rows lower ([`App::center_rows_down`], with the
+    /// same padding). The one
     /// count of the height of the code: `ui::draw` draws into it, and
     /// [`App::screen_height`] is its height.
     pub fn code_area(&self, area: ratatui::layout::Rect) -> ratatui::layout::Rect {
@@ -1494,25 +1495,24 @@ impl App {
                 .saturating_sub(status_h)
                 .saturating_sub(pad_v * 2),
         };
-        let dy = self.center_rows_down(area, rect.width);
+        let dy = self.center_rows_down(area, rect.width, pad_v);
         rect.y += dy;
         rect.height = rect.height.saturating_sub(dy);
         rect
     }
 
     /// The rows a document with `center` goes down in a terminal of `area`
-    /// whose code is `width` columns: half of what the rows of the take
+    /// whose code is `width` columns, inside a padding of `pad_v` rows at
+    /// the top and at the bottom (as [`App::code_area`] clamps it): half of what the rows of the take
     /// leave of a fixed height, which keeps the row at the bottom (the
     /// status bar, or the step counter and the chip of presentation mode)
     /// also when nothing shows there, so the code does not move when the
     /// counter comes or goes. 0 without `center`, or when the take is
     /// taller.
-    fn center_rows_down(&self, area: ratatui::layout::Rect, width: u16) -> u16 {
+    fn center_rows_down(&self, area: ratatui::layout::Rect, width: u16, pad_v: u16) -> u16 {
         if !self.doc.center || area.width == 0 || area.height == 0 {
             return 0;
         }
-        let (pad_v, _) =
-            crate::ui::clamp_padding(self.effective_padding(), (area.width, area.height), 1);
         // The row at the bottom: the bar in normal mode; in presentation
         // mode, the counter's row, which a padding at the bottom holds.
         let bottom = if self.present {

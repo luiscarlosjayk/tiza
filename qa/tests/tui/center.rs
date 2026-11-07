@@ -114,6 +114,25 @@ fn a_box_at_a_later_step_does_not_move_the_take_down() {
 }
 
 #[test]
+fn a_take_that_fills_a_clamped_padding_shows_all_its_rows() {
+    // A padding of 10 rows on 23 rows of presentation mode is clamped to
+    // what leaves 3 rows of code: the 3 rows of the take fit, with no
+    // offset, and the last line shows.
+    let mut a = app(
+        "center-tui-clamped",
+        &FN,
+        json!({"numbers": false, "padding": [10, 2]}),
+    );
+    a.set_present(true);
+    let b = draw(&mut a, 80, 23);
+    let top = find(&b, "fn main() {").map(|p| p.1).expect("line 1");
+    assert_eq!(find(&b, "let x = 1;").map(|p| p.1), Some(top + 1));
+    let last: String = (0..80).map(|x| b[(x, top + 2)].symbol()).collect();
+    assert_eq!(last.trim(), "}", "line 3 is not on the screen");
+    assert_eq!(a.screen_height(), 3);
+}
+
+#[test]
 fn a_resize_takes_the_rows_of_the_new_width() {
     // At 80 columns the note of line 2 is in the margin; at 40 the margin
     // is too narrow and it goes under its line: the take has one row more.
