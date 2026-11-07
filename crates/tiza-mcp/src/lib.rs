@@ -613,6 +613,10 @@ pub struct AddMoveParams {
     )]
     pub speed_ms: Option<u64>,
     #[schemars(
+        description = "code.patch: true shows the lines that the patch writes with `+` beside the line numbers, at its step only (default false)"
+    )]
+    pub diff: Option<bool>,
+    #[schemars(
         description = "Where annotations the patch replaces or deletes go afterwards, by id: `{\"a3\": {\"at\": {\"find\": \"text\", \"occurrence\": 2}}}`, `{\"a4\": {\"from_line\": 7, \"to_line\": 9}}` (same fields as update_annotation's move), resolved on the code after the patch; a find must match exactly once there or carry occurrence. Needed for column anchors (highlights, marks, arrow ends) on a replaced line: those go (unanchored) otherwise"
     )]
     pub rebind: Option<serde_json::Map<String, Value>>,
@@ -1245,6 +1249,7 @@ impl TizaServer {
         put("content", p.content.map(Value::from));
         put("typing", p.typing.map(Value::from));
         put("speed_ms", p.speed_ms.map(Value::from));
+        put("diff", p.diff.map(Value::from));
         put("annotation", p.annotation.map(Value::from));
         put("align", p.align.map(Value::from));
         put("rebind", p.rebind.map(Value::Object));

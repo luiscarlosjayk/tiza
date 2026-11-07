@@ -7,6 +7,7 @@ mod enter_effects;
 mod gif_and_video;
 mod huge_exports;
 mod live_export;
+mod patch_diff;
 mod render_help_formats;
 mod scroll_moves;
 mod step_past_the_last;

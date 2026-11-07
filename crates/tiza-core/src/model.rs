@@ -209,6 +209,16 @@ pub struct Document {
     /// ([`crate::fs::take_newer_moves`]). Never serialized.
     #[serde(skip)]
     pub newer_moves: NewerMoves,
+    /// In a document as shown at a step ([`Document::view_at`]), which has
+    /// no moves: whether a patch of the document has `diff`, so that the
+    /// layout keeps the column of the diff at every step. Never serialized.
+    #[serde(skip)]
+    pub diff_channel: bool,
+    /// In a document as shown at a step: the marks of the diff of that
+    /// step, only when the code is the code of the end of the step (not a
+    /// frame while it types). Never serialized.
+    #[serde(skip)]
+    pub diff_marks: Option<moves::DiffMarks>,
 }
 
 /// What the moves of a file held that this version of Tiza does not know,
@@ -1187,6 +1197,8 @@ impl Document {
             steps: Vec::new(),
             looping: false,
             center: false,
+            diff_channel: false,
+            diff_marks: None,
             unknown_effects: UnknownEffects::default(),
             newer_moves: NewerMoves::default(),
         }
@@ -1291,7 +1303,13 @@ impl Document {
             .annotations
             .iter()
             .any(|a| a.until.is_some() && !matches!(a.shape, Shape::Spotlight { .. }));
-        if until || self.center { 2 } else { 1 }
+        // Tiza 0.2.1 warns about `diff` on a patch, but a save there drops
+        // it: schema 2 makes it refuse the file instead.
+        if until || self.center || moves::has_diff(self) {
+            2
+        } else {
+            1
+        }
     }
 
     // ---- moves (ADR 0007) and views ----
@@ -1936,6 +1954,18 @@ impl Document {
         doc.moves.clear();
         doc.base_code.clear();
         let live = step == self.step;
+        doc.diff_channel = moves::has_diff(self);
+        // The marks of the diff go with the code of the end of the step
+        // only: not with a stage of the step, and not while the code on
+        // screen is typed.
+        let end_stage = self
+            .moves
+            .iter()
+            .enumerate()
+            .all(|(i, m)| m.at_step != step || i < upto);
+        if doc.diff_channel && end_stage && (!live || self.code == code) {
+            doc.diff_marks = moves::diff_marks(self, &proj, step);
+        }
         doc.code = if live { self.code.clone() } else { code };
         doc.source.first_line = if live { self.source.first_line } else { first };
         doc.step = step;
@@ -2258,7 +2288,11 @@ impl Document {
                 let end = a.until.map(|until| until.saturating_add(1));
                 [a.step, a.step.saturating_add(1)].into_iter().chain(end)
             }))
-            .chain(self.moves.iter().map(|m| m.at_step))
+            .chain(self.moves.iter().flat_map(|m| {
+                // The `+` of a diff goes away at the step after.
+                let diff = matches!(&m.action, moves::MoveAction::CodePatch(p) if p.diff);
+                std::iter::once(m.at_step).chain(diff.then(|| m.at_step.saturating_add(1)))
+            }))
             .filter(|s| *s <= last)
             .collect();
         out.sort_unstable();

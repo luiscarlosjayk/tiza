@@ -1157,6 +1157,57 @@ fn tidy(mut doc: Document, missing: &BTreeSet<String>, out: &mut Vec<Finding>) -
             );
         }
     }
+    // ---- a patch with `diff` that shows no `+` ----
+    {
+        let mut d = doc.clone();
+        d.moves = trial.clone();
+        for (i, m) in trial.iter().enumerate() {
+            if broken[i] || !matches!(&m.action, MoveAction::CodePatch(p) if p.diff) {
+                continue;
+            }
+            // Only this patch keeps its `diff`, so that another patch of the
+            // step does not hide that this one changes nothing.
+            let mut only = trial.clone();
+            for (j, o) in only.iter_mut().enumerate() {
+                if let MoveAction::CodePatch(p) = &mut o.action {
+                    p.diff = j == i;
+                }
+            }
+            let mut probe = d.clone();
+            probe.moves = only.clone();
+            let Ok(proj) = moves::project(&probe, &only, m.at_step) else {
+                continue;
+            };
+            let (shown, first) = proj.shown_code(&probe);
+            let window = first..first + shown.len() as u32;
+            let why = match moves::diff_marks(&probe, &proj, m.at_step) {
+                Some(marks) if marks.added.iter().any(|l| window.contains(l)) => continue,
+                Some(marks) if !marks.added.is_empty() => format!(
+                    "the lines that it writes are outside the lines that its step shows ({}-{})",
+                    window.start,
+                    window.end.saturating_sub(1)
+                ),
+                // Only the lines that a move writes show.
+                Some(_) => {
+                    "it only removes lines, and a diff shows only the lines that a move writes"
+                        .to_string()
+                }
+                None => "it writes the same lines again, or a later move of its step removes them"
+                    .to_string(),
+            };
+            let file = d.shown_view_at(m.at_step).file;
+            out.push(
+                Finding::new(
+                    Level::Warning,
+                    "move",
+                    format!("code.patch: diff shows no +, because {why}. Remove diff, or change the move"),
+                )
+                .id(format!("move #{}", doc.move_number(i)))
+                .step(m.at_step)
+                .file(file),
+            );
+        }
+    }
     // ---- rebind finds, one move at a time ----
     for i in 0..trial.len() {
         let m = trial[i].clone();
@@ -1890,6 +1941,12 @@ fn check_loaded(
         // take.
         let has = doc.annotations.iter().any(|a| a.step == step)
             || doc.moves.iter().any(|m| m.at_step == step)
+            // The `+` of a diff of the step before goes away, and the take
+            // shows it.
+            || (doc.moves.iter().any(|m| {
+                m.at_step.saturating_add(1) == step
+                    && matches!(&m.action, MoveAction::CodePatch(p) if p.diff)
+            }) && !same_as_before(take, theme, width, step))
             || doc
                 .newer_moves
                 .skipped
@@ -2349,8 +2406,12 @@ fn take_saturation(take: &Take) -> usize {
         .iter()
         .filter(|a| matches!(a.shape, Shape::Arrow { .. }))
         .count();
-    let margin_x =
-        g.num_w + 2 * arrows.max(g.lane_count) + 2 * g.box_depth + 2 + g.code_full_w.max(10) + 2;
+    let margin_x = g.gutter_w()
+        + 2 * arrows.max(g.lane_count)
+        + 2 * g.box_depth
+        + 2
+        + g.code_full_w.max(10)
+        + 2;
     // A margin callout's block: its inner width at most (`width`, 34 by
     // default, at least 8, its title with the `─ ` before and ` ─` after, and
     // a character wider than the text column, which is a line of its own and

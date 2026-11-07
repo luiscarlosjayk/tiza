@@ -364,22 +364,33 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
             }
             // The cursor line: its number in the accent color, bold, with no
             // glyph of its own so the gutter keeps every digit.
-            // With `center`, the gutter starts `left` columns in.
-            let left = (layout.left as u16).min(canvas_area.width);
-            let gutter_w = (layout.code_x as u16)
-                .min(canvas_area.width)
-                .saturating_sub(left);
-            frame.buffer_mut().set_style(
-                Rect {
-                    x: canvas_area.x + left,
-                    y,
-                    width: gutter_w,
-                    height: 1,
-                },
-                Style::default()
-                    .fg(rgb(th.accent))
-                    .add_modifier(Modifier::BOLD),
-            );
+            // With `center`, the gutter starts `left` columns in. The sign
+            // of a diff keeps its own color: the style skips its column.
+            let accent = Style::default()
+                .fg(rgb(th.accent))
+                .add_modifier(Modifier::BOLD);
+            let spans = match layout.channel_x {
+                Some(c) => [
+                    (layout.left, c),
+                    (c + tiza_core::layout::CHANNEL_W, layout.code_x),
+                ],
+                None => [(layout.left, layout.code_x), (0, 0)],
+            };
+            for (from, to) in spans {
+                let from = (from as u16).min(canvas_area.width);
+                let to = (to as u16).min(canvas_area.width);
+                if to > from {
+                    frame.buffer_mut().set_style(
+                        Rect {
+                            x: canvas_area.x + from,
+                            y,
+                            width: to - from,
+                            height: 1,
+                        },
+                        accent,
+                    );
+                }
+            }
             let text = app.doc.line_text(app.cursor_line).unwrap_or("");
             if let Some(Selection::Span(sp)) = sel {
                 let x0 = layout.code_x + tiza_core::layout::col_to_x(text, sp.start, 4);

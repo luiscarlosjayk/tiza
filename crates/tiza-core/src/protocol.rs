@@ -1450,7 +1450,7 @@ pub const METHODS: &[(&str, &str)] = &[
     ),
     (
         "move.add",
-        "Adds a move: `{at_step, action: \"code.patch\", op: insert|replace|delete, position|after|before|find|find_start/find_end, content, typing, speed_ms, rebind}`, `{action: \"code.link\", file, lines?}` (show another file; `lines` is only a window), `{action: \"cursor\", line, col?}`, `{action: \"select\", from: {find|line,col}, to: {…}}`, `{action: \"wait\", ms}` or `{action: \"scroll\", line|find|annotation, occurrence?, align?}` (move the view of the TUI); validated against the file shown at that step. A patch carries the annotations of its file at its step and later, and the line numbers of later moves, so they stay on the same text; one it would leave without its text is refused, naming it. A key that the action does not know is refused (invalid_argument), except the keys that `move.list` adds (`index`, `summary`, `stale`, `stale_reason`)",
+        "Adds a move: `{at_step, action: \"code.patch\", op: insert|replace|delete, position|after|before|find|find_start/find_end, content, typing, speed_ms, diff, rebind}`, `{action: \"code.link\", file, lines?}` (show another file; `lines` is only a window), `{action: \"cursor\", line, col?}`, `{action: \"select\", from: {find|line,col}, to: {…}}`, `{action: \"wait\", ms}` or `{action: \"scroll\", line|find|annotation, occurrence?, align?}` (move the view of the TUI); validated against the file shown at that step. A patch carries the annotations of its file at its step and later, and the line numbers of later moves, so they stay on the same text; one it would leave without its text is refused, naming it. A key that the action does not know is refused (invalid_argument), except the keys that `move.list` adds (`index`, `summary`, `stale`, `stale_reason`)",
     ),
     (
         "move.delete",
@@ -1685,8 +1685,9 @@ fn describe_move_fields(index: usize, m: &crate::moves::Move) -> String {
         )
     };
     format!(
-        "#{index} [step {}] code.patch {op} {target}{content}{typing}{rebind}",
-        m.at_step
+        "#{index} [step {}] code.patch {op} {target}{content}{typing}{}{rebind}",
+        m.at_step,
+        if p.diff { " diff" } else { "" }
     )
 }
 

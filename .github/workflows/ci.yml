@@ -120,6 +120,10 @@ jobs:
         run: python3 scripts/legibility.py examples/ownership.rs.tiza --step "$LAST" --theme dark --json legibility-dark.json --keep frames-dark
       - name: light theme, last step
         run: python3 scripts/legibility.py examples/ownership.rs.tiza --step "$LAST" --theme light --json legibility-light.json --keep frames-light
+      - name: the plus sign of a diff, dark theme
+        run: python3 scripts/legibility.py examples/borrow-diff.rs.tiza --step 2 --theme dark --json legibility-diff-dark.json --keep frames-diff-dark
+      - name: the plus sign of a diff, light theme
+        run: python3 scripts/legibility.py examples/borrow-diff.rs.tiza --step 2 --theme light --json legibility-diff-light.json --keep frames-diff-light
       - uses: actions/upload-artifact@v7
         if: always()
         with:

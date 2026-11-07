@@ -1,0 +1,22 @@
+{
+  "schema": 2,
+  "source": {"language": "rust", "first_line": 1},
+  "code": [
+    "fn main() {",
+    "    let s = String::from(\"hi\");",
+    "    take(s);",
+    "    println!(\"{s}\");",
+    "}"
+  ],
+  "annotations": [
+    {"id": "n3", "step": 3, "type": "note", "line": 1, "text": "the end"}
+  ],
+  "moves": [
+    {"at_step": 1, "action": "code.patch", "op": "replace",
+     "find_start": "fn main", "find_end": "println",
+     "content": "fn main() {\n    let s = String::from(\"hi\");\n    show(&s);\n    println!(\"{s}\");",
+     "diff": true},
+    {"at_step": 2, "action": "code.patch", "op": "insert", "after": "show(&s);",
+     "content": "    show(&s);", "diff": true}
+  ]
+}

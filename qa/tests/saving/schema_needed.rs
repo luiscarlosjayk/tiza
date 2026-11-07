@@ -1,8 +1,9 @@
 //! A save writes the schema that the document needs: 1 while it uses
 //! only fields of schema 1, so that Tiza 0.2 opens it, and 2 with an
-//! `until` on an annotation that is not a spotlight, or with `center`.
-//! When that `until` or `center` goes, the next save writes 1 again. A schema past the one this version
-//! reads is refused, also one that is past `u32::MAX`.
+//! `until` on an annotation that is not a spotlight, with `center`, or
+//! with `diff` on a patch. When that `until`, `center` or `diff` goes,
+//! the next save writes 1 again. A schema past the one this version reads
+//! is refused, also one that is past `u32::MAX`.
 
 use serde_json::{Value, json};
 use tiza_qa::{Live, scratch, tiza};
@@ -36,6 +37,15 @@ fn a_save_writes_the_schema_that_the_document_needs() {
     live.api_ok("scene.patch", json!({"center": true}));
     assert_eq!(saved_schema(&live), json!(2));
     live.api_ok("scene.patch", json!({"center": false}));
+    assert_eq!(saved_schema(&live), json!(1));
+    // And `diff` on a patch: Tiza 0.2.1 would drop it on a save.
+    live.api_ok(
+        "move.add",
+        json!({"at_step": 1, "action": "code.patch", "op": "replace", "find": "let a",
+               "content": "    let a = 2;", "diff": true}),
+    );
+    assert_eq!(saved_schema(&live), json!(2));
+    live.api_ok("move.delete", json!({"index": 1}));
     assert_eq!(saved_schema(&live), json!(1));
 }
 

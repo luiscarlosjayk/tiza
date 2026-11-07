@@ -17,7 +17,7 @@ At step 2, type the fix with a move, and explain it in a note.
 When the lesson adds or changes code between steps, add a move. Do not open a second document.
 
 1. Call `add_move` with `at_step`, `op` (`insert`, `replace` or `delete`), one target and `content`. A `delete` takes no `content`.
-2. To type the content on the screen, add `"typing": "line"` or `"typing": "char"`.
+2. To type the content on the screen, add `"typing": "line"` or `"typing": "char"`. To show a `+` next to each line that the move writes, at its step, add `"diff": true`. See [A diff](../reference/document-format.md#a-diff).
 3. Add the annotations of the new code with the same `step` as the `at_step` of the move.
 4. Call `check`.
 

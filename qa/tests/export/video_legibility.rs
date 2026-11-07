@@ -33,6 +33,11 @@ fn roles(t: &Theme) -> Vec<(&'static str, Rgb, Rgb)> {
         ("note", t.note, t.bg),
         ("error", t.error, t.bg),
         ("status fg", t.status_fg, t.status_bg),
+        (
+            "diff add (on its cell)",
+            t.diff_add,
+            t.diff_cell_bg(t.diff_add).unwrap_or(t.bg),
+        ),
     ]
 }
 

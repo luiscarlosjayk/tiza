@@ -812,6 +812,10 @@
             "null"
           ]
         },
+        "diff": {
+          "description": "At its step, show the lines that the patch wrote with `+` in a\ncolumn beside the line numbers. The column is kept at every step of\na document that has a patch with `diff`. Default `false`.",
+          "type": "boolean"
+        },
         "end_occurrence": {
           "description": "The same for `find_end`.",
           "format": "uint32",
@@ -1149,7 +1153,7 @@
       "additionalProperties": {
         "$ref": "#/$defs/OverrideValue"
       },
-      "description": "The `[theme]` table of `~/.config/tiza/config.toml`, a `--theme-file`,\nor a document's `theme_overrides`: Tiza's roles by name (`bg`, `fg`,\n`muted`, `dimmed`, `accent`, `rail`, `box_line`, `box_bg`, `arrow`,\n`note`, `highlight_bg`, `status_bg`, `status_fg`, `cmd_bg`, `error`),\nthe named annotation palette (`orange`, `blue`, `green`, `purple`,\n`pink`, `cyan`, `yellow`, `red`, `gray`), and `dark`, `light` and\n`terminal` subtables with the same keys. The subtable of the theme in\nuse wins over the flat tokens.",
+      "description": "The `[theme]` table of `~/.config/tiza/config.toml`, a `--theme-file`,\nor a document's `theme_overrides`: Tiza's roles by name (`bg`, `fg`,\n`muted`, `dimmed`, `accent`, `rail`, `box_line`, `box_bg`, `arrow`,\n`note`, `highlight_bg`, `status_bg`, `status_fg`, `cmd_bg`, `error`,\n`diff_add`),\nthe named annotation palette (`orange`, `blue`, `green`, `purple`,\n`pink`, `cyan`, `yellow`, `red`, `gray`), and `dark`, `light` and\n`terminal` subtables with the same keys. The subtable of the theme in\nuse wins over the flat tokens.",
       "type": "object"
     },
     "Typing": {

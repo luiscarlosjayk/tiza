@@ -39,7 +39,7 @@ Two examples show moves and views:
 
 The version of the format, `1` or `2`.
 
-- Tiza writes `2` only when the file uses a field of version 2: an `until` on an annotation that is not a spotlight, `center`, or `talk` (a [master](#talk)). A version that reads only `1` then says that the file is of a newer version.
+- Tiza writes `2` only when the file uses a field of version 2: an `until` on an annotation that is not a spotlight, `center`, `diff` on a `code.patch` move, or `talk` (a [master](#talk)). A version that reads only `1` then says that the file is of a newer version.
 - Else Tiza writes `1`, so that Tiza 0.2.1 and earlier versions can open the file.
 - A version that reads only `1` does not open a file with `2`. Thus it does not show such a file wrong, for example a box after its `until`, or centered code at the left.
 
@@ -630,7 +630,7 @@ The `stroke` and `heads` fields change the look of an arrow. For example, `examp
 | A color name, from the list under this table | A color value |
 | `dark`, `light` or `terminal` | An object with the same keys, which applies only with that theme |
 
-- Roles: `bg`, `fg`, `muted`, `dimmed`, `accent`, `rail`, `box_line`, `box_bg`, `arrow`, `note`, `highlight_bg`, `status_bg`, `status_fg`, `cmd_bg`, `error`.
+- Roles: `bg`, `fg`, `muted`, `dimmed`, `accent`, `rail`, `box_line`, `box_bg`, `arrow`, `note`, `highlight_bg`, `status_bg`, `status_fg`, `cmd_bg`, `error`, `diff_add`.
 - Color names: `orange`, `blue`, `green`, `purple`, `pink`, `cyan`, `yellow`, `red`, `gray`.
 
 A color value is one of these:
@@ -799,6 +799,14 @@ The milliseconds for each line or each character, at most 3,600,000.
 Integer. Default: `120` for `line`, `25` for `char`.
 
 </dd>
+<dt><code>diff</code></dt>
+<dd>
+
+With `true`, the step of the move shows a `+` next to each line that the move writes. See [A diff](#a-diff).
+
+Boolean. Default: `false`.
+
+</dd>
 </dl>
 
 Give exactly one target: `position`, `after`, `before`, `find`, or `find_start` with `find_end`.
@@ -862,6 +870,39 @@ Tiza finds a target on the code as it is at the step of the move. The target mus
 - A text target matches part of a line. A line that holds the text two times counts as two matches.
 - When the text occurs more than once, add `"occurrence": N` to name the match. `N` starts at 1.
 - Tiza counts the matches in reading order over the whole code at that step. `end_occurrence` does the same for `find_end`.
+
+### A diff
+
+With `"diff": true` on a `code.patch` move, the step of the move shows which lines the move wrote.
+
+- A `+` in the `diff_add` color shows next to the line number of each line that the move writes. In `dark` and `light`, the cell of the `+` also has a tint of that color. The `terminal` theme gives only the color of the `+`.
+- The `+` shows only at the step of the move. At the step after it, the `+` goes away. `tiza check` thus does not report that step as empty.
+- A `replace` often writes again the lines around the change. Tiza does not mark the lines at the start and at the end of a `replace` that are the same as before.
+- When a later move of the same step removes a line that the move wrote, that line has no `+`.
+- While the step types, the `+` does not show. It shows when the typing ends.
+- When a move of the document has `diff`, Tiza keeps a column of two cells for the `+` at every step. With no line numbers, Tiza also keeps the cell of the cursor next to it. Thus the code does not move when the `+` shows.
+- A `diff` shows only the lines that a move writes. It does not show the lines that a move removes.
+- `tiza check` gives the warning `move` when a move with `diff` shows no `+`. For example, the move writes the same lines again, it only removes lines, or the lines that it writes are outside the lines that its step shows.
+- A document with `diff` has the schema `2`. Tiza 0.2.1 and earlier versions do not open it.
+
+This `replace` writes lines 7 and 8 again, and it changes only line 8. The image is a real `tiza render` export of this document at step 1:
+
+<!-- frame id=patch-diff doc=docs/frames/patch-diff.tiza step=1 -->
+```json
+{
+  "schema": 2,
+  "source": {},
+  "code": {"file": "ownership.rs", "lines": "6-8"},
+  "moves": [
+    {"at_step": 1, "action": "code.patch", "op": "replace",
+     "find_start": "let n", "find_end": "println!",
+     "content": "    let n = len(&t);\n    println!(\"{n} letters in {t}\");",
+     "diff": true}
+  ]
+}
+```
+
+<img src="../images/format/patch-diff.webp" width="380" alt="Lines 6 to 8 at step 1. Line 8 prints {n} letters in {t}, and a green plus sign is next to its line number. Lines 6 and 7 have no sign.">
 
 ### Typing
 

@@ -12,6 +12,7 @@ mod fuzzing;
 mod help_and_error_texts;
 mod move_an_annotation;
 mod newer_moves;
+mod patch_diff;
 mod personal_defaults;
 mod personal_styles;
 mod ping;

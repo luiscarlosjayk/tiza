@@ -1,0 +1,11 @@
+{
+  "schema": 2,
+  "source": {},
+  "code": {"file": "ownership.rs", "lines": "6-8"},
+  "moves": [
+    {"at_step": 1, "action": "code.patch", "op": "replace",
+     "find_start": "let n", "find_end": "println!",
+     "content": "    let n = len(&t);\n    println!(\"{n} letters in {t}\");",
+     "diff": true}
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "schema": 2,
+  "title": "Borrow in place of a move",
+  "source": {},
+  "code": {"file": "ownership.rs", "lines": "1-4"},
+  "annotations": [
+    {"id": "h1", "step": 1, "until": 1, "type": "highlight",
+     "span": {"line": 3, "start": 4, "end": 12}, "label": "s moves into takes"},
+    {"id": "n1", "step": 2, "type": "note", "line": 3, "text": "a borrow: main keeps s"},
+    {"id": "n2", "step": 3, "type": "note", "line": 4, "text": "s is still valid here"}
+  ],
+  "moves": [
+    {"at_step": 2, "action": "code.patch", "op": "replace",
+     "find_start": "takes(s);", "find_end": "// println!",
+     "content": "    let n = len(&s);\n    println!(\"{s} has {n} letters\");",
+     "diff": true}
+  ]
+}

@@ -29,6 +29,7 @@ mod narrow_arrow_labels;
 mod open_notice;
 mod padding;
 mod padding_override;
+mod patch_diff;
 mod presentation_geometry;
 mod right_margin;
 mod spotlight_dimming;

@@ -113,6 +113,10 @@ pub struct Layout {
     /// The blank columns on the left of a document with `center`
     /// ([`center_left`]): the gutter starts here. 0 without `center`.
     pub left: usize,
+    /// The column of the sign of a diff (`+`), right of the line numbers,
+    /// when the document has the column ([`CHANNEL_W`]). The style of the
+    /// cursor row skips it.
+    pub channel_x: Option<usize>,
     pub code_x: usize,
     /// When a code line is clipped: the layout width from which every code
     /// line fits, from the sum that decides the clip (line numbers, arrow
@@ -267,6 +271,9 @@ pub struct StableGeometry {
     pub box_depth: usize,
     pub code_full_w: usize,
     pub num_w: usize,
+    /// The column of a diff ([`CHANNEL_W`]) when a patch of the document
+    /// has `diff`, else 0.
+    pub chan_w: usize,
     /// The take, to find the labels that go under their line at some step
     /// ([`Pinned`]); `None` when it has no label. With moves, it shows no
     /// step live, so the code being typed does not count.
@@ -292,6 +299,7 @@ impl PartialEq for StableGeometry {
             && self.box_depth == other.box_depth
             && self.code_full_w == other.code_full_w
             && self.num_w == other.num_w
+            && self.chan_w == other.chan_w
             && self.take_hash == other.take_hash
     }
 }
@@ -511,11 +519,14 @@ pub fn stable_geometry(doc: &Document, opts: &LayoutOptions) -> StableGeometry {
             // not move.
             if opts.line_numbers && doc.center {
                 let last = d.source.first_line + (full.len() as u32).saturating_sub(1);
-                g.num_w = g.num_w.max(last.max(1).to_string().len() + 2);
+                g.num_w = g.num_w.max(num_width(last, true, d.diff_channel));
             }
         }
-        if opts.line_numbers {
-            g.num_w = g.num_w.max(d.last_line().to_string().len() + 2);
+        g.num_w = g
+            .num_w
+            .max(num_width(d.last_line(), opts.line_numbers, d.diff_channel));
+        if d.diff_channel {
+            g.chan_w = CHANNEL_W;
         }
         let vis = d.annotations.iter().filter(|a| {
             a.shown_at(step)
@@ -593,7 +604,7 @@ pub fn stable_geometry(doc: &Document, opts: &LayoutOptions) -> StableGeometry {
 /// `width` gets 0: it stays at the left, as without `center`.
 pub fn center_left(g: &StableGeometry, width: usize) -> usize {
     let width = width.max(MIN_WIDTH);
-    let sides = g.num_w + 2 * g.lane_count + g.box_depth + 2 + 1 + g.box_depth + 1;
+    let sides = g.gutter_w() + 2 * g.lane_count + g.box_depth + 2 + 1 + g.box_depth + 1;
     let block = sides + g.code_full_w;
     let rails = sides + g.code_full_w.max(10);
     match width.checked_sub(rails) {
@@ -605,7 +616,30 @@ pub fn center_left(g: &StableGeometry, width: usize) -> usize {
 /// The columns from which [`center_left`] centers the block of the take
 /// (it is 0 below them): the block with the rails of its boxes.
 pub fn center_columns(g: &StableGeometry) -> usize {
-    g.num_w + 2 * g.lane_count + 2 * g.box_depth + 4 + g.code_full_w.max(10)
+    g.gutter_w() + 2 * g.lane_count + 2 * g.box_depth + 4 + g.code_full_w.max(10)
+}
+
+/// The cells of the column of a diff: the sign (`+`) and a blank.
+pub const CHANNEL_W: usize = 2;
+
+/// The cells of the line numbers: one for the cursor or selection marker,
+/// the digits of `last`, and one blank. Without numbers, only the marker
+/// cell when the document has the column of a diff, so that the marker
+/// never covers a sign; else nothing.
+fn num_width(last: u32, numbers: bool, channel: bool) -> usize {
+    if numbers {
+        last.max(1).to_string().len() + 2
+    } else {
+        usize::from(channel)
+    }
+}
+
+impl StableGeometry {
+    /// The cells left of the arrow lanes: the line numbers and the column
+    /// of a diff.
+    pub fn gutter_w(&self) -> usize {
+        self.num_w + self.chan_w
+    }
 }
 
 /// Glyph of the underline emphasis, on the virtual row under the code:
@@ -1473,13 +1507,12 @@ fn layout_pass(
         .max(stable.as_ref().map_or(0, |g| g.box_depth));
 
     // ---- column widths ----
-    // One cell for the cursor/selection marker, the digits, one blank.
-    let num_w = if opts.line_numbers {
-        doc.last_line().to_string().len() + 2
-    } else {
-        0
-    }
-    .max(stable.as_ref().map_or(0, |g| g.num_w));
+    let num_w = num_width(doc.last_line(), opts.line_numbers, doc.diff_channel)
+        .max(stable.as_ref().map_or(0, |g| g.num_w));
+    let chan_w =
+        if doc.diff_channel { CHANNEL_W } else { 0 }.max(stable.as_ref().map_or(0, |g| g.chan_w));
+    // The line numbers, then the column of a diff.
+    let gutter_w = num_w + chan_w;
     let code_full_w = shared
         .code_w
         .max(stable.as_ref().map_or(0, |g| g.code_full_w));
@@ -1519,7 +1552,7 @@ fn layout_pass(
     }
     .max(stable.as_ref().map_or(0, |g| g.lane_count));
     let arrow_w = lane_bound * 2;
-    let code_x_est = shared.left + num_w + arrow_w + box_depth + 2;
+    let code_x_est = shared.left + gutter_w + arrow_w + box_depth + 2;
     let code_w = code_full_w
         .min(width.saturating_sub(code_x_est + box_depth + 1))
         .max(10);
@@ -1947,7 +1980,7 @@ fn layout_pass(
     let arrow_w = lane_count * 2;
 
     // ---- final positions ----
-    let arrow_x0 = shared.left + num_w;
+    let arrow_x0 = shared.left + gutter_w;
     let box_x0 = arrow_x0 + arrow_w;
     let code_x = box_x0 + box_depth + 2;
     let code_w = code_full_w
@@ -2410,6 +2443,19 @@ fn layout_pass(
             if opts.line_numbers {
                 let n = format!("{:>w$}", line, w = num_w - 1);
                 canvas.put_str(shared.left, y, &n, base.fg(theme.muted));
+            }
+            // The sign of a diff, never dimmed, like the line number.
+            if chan_w > 0
+                && doc
+                    .diff_marks
+                    .as_ref()
+                    .is_some_and(|m| m.added.contains(line))
+            {
+                let mut sign = base.fg(theme.diff_add);
+                if let Some(bg) = theme.diff_cell_bg(theme.diff_add) {
+                    sign = sign.bg(bg);
+                }
+                canvas.put_str(shared.left + num_w, y, "+", sign);
             }
             // A view with no loaded lines (a linked file a caller did not load)
             // draws an empty row, never an index out of bounds.
@@ -3190,6 +3236,7 @@ fn layout_pass(
             code_w,
             row_of_line,
             left: shared.left,
+            channel_x: (chan_w > 0).then_some(shared.left + num_w),
             code_x,
             code_needs: (code_full_w > code_w).then_some(code_x + code_full_w + box_depth + 1),
             labels_in_margin,

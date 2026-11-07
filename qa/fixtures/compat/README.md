@@ -14,4 +14,6 @@ One file per **producer**, named `v<schema>-<app version>-<what>.tiza`, written 
 
 - `v2-0.3.0-center.tiza` — written by hand as Tiza 0.3.0 saves it: `"center": true`, a box with a label, a note in the margin, a note that goes under its line, and a `replace` at step 2 that makes line 3 the widest line, so the step that sets the offset is not the first step. The file has `"schema": 2`, and a save keeps it.
 
+- `v2-0.3.0-diff.tiza` — written by hand as Tiza 0.3.0 saves it: a `replace` with `diff` at step 1 that writes again its first two lines and its last line, so only line 3 has a `+`, and a typed `insert` with `diff` at step 2. A note on the changed line. The file has `"schema": 2`, and a save keeps it.
+
 A fixture named `v1-newer-*.tiza` is a file of a newer Tiza. It does not follow the schema of this version, so `scripts/check-schema.py` expects it to fail the validation, and fails when it validates.

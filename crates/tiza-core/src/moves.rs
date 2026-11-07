@@ -112,6 +112,7 @@ pub const ACTION_KEYS: [(&str, &[&str]); 6] = [
             "content",
             "typing",
             "speed_ms",
+            "diff",
         ],
     ),
     ("code.link", &["file", "lines"]),
@@ -495,6 +496,11 @@ pub struct Patch {
     /// Milliseconds per line (`typing: line`, default 120) or per character (`char`, default 25).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub speed_ms: Option<u64>,
+    /// At its step, show the lines that the patch wrote with `+` in a
+    /// column beside the line numbers. The column is kept at every step of
+    /// a document that has a patch with `diff`. Default `false`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub diff: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -1386,6 +1392,169 @@ pub fn written_lines(doc: &Document, step: u32) -> Option<(u32, u32)> {
         }
     }
     span
+}
+
+/// Whether a patch of the document has `diff`: then every step keeps the
+/// column of the diff, so that the code does not move.
+pub fn has_diff(doc: &Document) -> bool {
+    doc.moves
+        .iter()
+        .any(|m| matches!(&m.action, MoveAction::CodePatch(p) if p.diff))
+}
+
+/// What a step shows of the patches with `diff` that it applies to the
+/// file on screen ([`diff_marks`]).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DiffMarks {
+    /// The lines that such a patch wrote, as they are at the end of the
+    /// step (absolute line numbers).
+    pub added: std::collections::BTreeSet<u32>,
+    /// The lines that such a patch took away, in groups, each with the
+    /// line of the end of the step that it goes after (`first_line - 1`
+    /// for the top).
+    pub removed: Vec<RemovedLines>,
+}
+
+/// One group of [`DiffMarks::removed`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemovedLines {
+    pub after: u32,
+    pub lines: Vec<String>,
+}
+
+/// Where a line of the code came from, through the patches of one step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Origin {
+    /// The line with this number at the start of the step.
+    Old(u32),
+    /// A line that a patch of the step wrote; `diff` is the patch's.
+    New { diff: bool },
+}
+
+/// The marks of the diff at `step`, from its projection `proj`: `None`
+/// when no patch of the step with `diff` changes the file on screen.
+///
+/// Each line keeps its origin through the patches of the step, so a line
+/// that the step both writes and takes away shows nothing, and a `−` only
+/// shows text that the step before had. Inside each changed part (the
+/// lines between two lines that stay), the lines that are the same at its
+/// start and at its end are not marked: a patch often writes again the
+/// lines around the change.
+pub fn diff_marks(doc: &Document, proj: &Projection, step: u32) -> Option<DiffMarks> {
+    let key = &proj.shown.file;
+    let own_at = |p: &&AppliedPatch| p.at_step == step && &p.file == key;
+    let first = proj.patches.iter().position(|p| own_at(&p))?;
+    let own: Vec<(&AppliedPatch, bool)> = proj.patches[first..]
+        .iter()
+        .filter(own_at)
+        .map(|p| {
+            let diff = matches!(
+                doc.moves.get(p.index).map(|m| &m.action),
+                Some(MoveAction::CodePatch(q)) if q.diff
+            );
+            (p, diff)
+        })
+        .collect();
+    if !own.iter().any(|(_, diff)| *diff) {
+        return None;
+    }
+    let base;
+    let start: &[String] = match proj.patches[..first].iter().rev().find(|p| &p.file == key) {
+        Some(prev) => &prev.after,
+        None => {
+            base = doc.view_base_code(key).unwrap_or_default();
+            &base
+        }
+    };
+    let fl = own[0].0.map.first_line;
+    let mut origin: Vec<Origin> = (0..start.len() as u32)
+        .map(|i| Origin::Old(fl + i))
+        .collect();
+    let mut gone = std::collections::BTreeSet::new();
+    for (p, diff) in &own {
+        let m = &p.map;
+        if origin.len() != m.old_len as usize || m.first_line != fl {
+            return None;
+        }
+        let mut next = vec![Origin::New { diff: false }; m.new_len as usize];
+        for (i, o) in origin.iter().enumerate() {
+            let old = fl + i as u32;
+            match m.get(old) {
+                Some(n) if !m.replaced.contains(&old) => {
+                    if let Some(slot) = next.get_mut((n - fl) as usize) {
+                        *slot = *o;
+                    }
+                }
+                _ => {
+                    if let (true, Origin::Old(k)) = (*diff, o) {
+                        gone.insert(*k);
+                    }
+                }
+            }
+        }
+        for n in m.inserted.clone() {
+            if let Some(slot) = next.get_mut((n - fl) as usize) {
+                *slot = Origin::New { diff: *diff };
+            }
+        }
+        origin = next;
+    }
+    let end = &own.last()?.0.after;
+    let old_text = |k: u32| start.get((k - fl) as usize).map_or("", String::as_str);
+    let mut marks = DiffMarks::default();
+    // One changed part: the lines that left and the lines that came, then
+    // the same lines at its start and at its end are not marked.
+    let mut part = |olds: &[u32], news: &[usize], after: u32| {
+        let same = |a: usize, b: usize| old_text(olds[a]) == end[news[b]];
+        let mut head = 0;
+        while head < olds.len() && head < news.len() && same(head, head) {
+            head += 1;
+        }
+        let mut tail = 0;
+        while tail < olds.len() - head
+            && tail < news.len() - head
+            && same(olds.len() - 1 - tail, news.len() - 1 - tail)
+        {
+            tail += 1;
+        }
+        // The lines that left go after the same lines at the start.
+        let after = if head > 0 {
+            fl + news[head - 1] as u32
+        } else {
+            after
+        };
+        let news = &news[head..news.len() - tail];
+        marks.added.extend(news.iter().map(|&j| fl + j as u32));
+        let olds = &olds[head..olds.len() - tail];
+        if !olds.is_empty() {
+            marks.removed.push(RemovedLines {
+                after,
+                lines: olds.iter().map(|&k| old_text(k).to_string()).collect(),
+            });
+        }
+    };
+    let gone: Vec<u32> = gone.into_iter().collect();
+    let mut taken = 0;
+    let mut news: Vec<usize> = Vec::new();
+    let mut after = fl.saturating_sub(1);
+    for (j, o) in origin.iter().enumerate() {
+        match o {
+            Origin::Old(k) => {
+                let olds_end = taken + gone[taken..].iter().take_while(|g| *g < k).count();
+                part(&gone[taken..olds_end], &news, after);
+                taken = olds_end;
+                news.clear();
+                after = fl + j as u32;
+            }
+            Origin::New { diff: true } => news.push(j),
+            Origin::New { diff: false } => {}
+        }
+    }
+    part(&gone[taken..], &news, after);
+    if marks.added.is_empty() && marks.removed.is_empty() {
+        return None;
+    }
+    Some(marks)
 }
 
 /// [`carry_line`] for places in the view (its top line, the hidden
@@ -2478,6 +2647,7 @@ mod tests {
             content: None,
             typing: Typing::Instant,
             speed_ms: None,
+            diff: false,
             occurrence: None,
             end_occurrence: None,
         }
@@ -3378,5 +3548,133 @@ mod tests {
         // line 9 when it starts.
         assert_eq!(cue.camera.lines, Some((9, 9)));
         assert_eq!(plan.code_at(d.source.first_line, 1, 0)[8], "    &s");
+    }
+
+    fn marks(d: &Document, step: u32) -> Option<DiffMarks> {
+        d.view_at(step).doc.diff_marks
+    }
+
+    fn removed(after: u32, lines: &[&str]) -> RemovedLines {
+        RemovedLines {
+            after,
+            lines: lines.iter().map(|l| l.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn a_diff_marks_only_the_lines_that_change_inside_a_replace() {
+        // The patch writes again the first and the last line: they are
+        // context, not a change.
+        let d = typed_doc(
+            "fn f() {\n    a();\n}\n",
+            &[serde_json::json!({
+                "at_step": 1, "action": "code.patch", "op": "replace", "position": "1-3",
+                "content": "fn f() {\n    b();\n    c();\n}", "diff": true
+            })],
+        );
+        let m = marks(&d, 1).expect("marks at the step of the patch");
+        assert_eq!(m.added, [2, 3].into_iter().collect());
+        assert_eq!(m.removed, vec![removed(1, &["    a();"])]);
+        assert_eq!(marks(&d, 2), None, "the marks go at the step after");
+        assert_eq!(marks(&d, 0), None);
+        assert!(
+            d.view_at(0).doc.diff_channel,
+            "the column stays at every step"
+        );
+        assert!(d.view_at(2).doc.diff_channel);
+    }
+
+    #[test]
+    fn a_diff_follows_each_line_through_the_patches_of_its_step() {
+        let d = typed_doc(
+            "a\nb\nc\n",
+            &[
+                // Writes x after a, then a second patch takes x away again
+                // and a patch without diff writes y.
+                serde_json::json!({
+                    "at_step": 1, "action": "code.patch", "op": "insert", "after": "a",
+                    "content": "x\nz", "diff": true
+                }),
+                serde_json::json!({
+                    "at_step": 1, "action": "code.patch", "op": "delete", "find": "x", "diff": true
+                }),
+                serde_json::json!({
+                    "at_step": 1, "action": "code.patch", "op": "insert", "after": "c",
+                    "content": "y"
+                }),
+                serde_json::json!({
+                    "at_step": 1, "action": "code.patch", "op": "delete", "find": "b", "diff": true
+                }),
+            ],
+        );
+        assert_eq!(d.view_at(1).doc.code, ["a", "z", "c", "y"]);
+        let m = marks(&d, 1).unwrap();
+        assert_eq!(
+            m.added,
+            [2].into_iter().collect(),
+            "z only: x went, y has no diff"
+        );
+        // As in a unified diff, the line that left goes before the lines
+        // that came in its part: after a, then z.
+        assert_eq!(m.removed, vec![removed(1, &["b"])]);
+    }
+
+    #[test]
+    fn a_diff_shows_when_the_typing_of_its_step_ends() {
+        let d = typed_doc(
+            "a\nb\n",
+            &[
+                serde_json::json!({
+                    "at_step": 1, "action": "code.patch", "op": "insert", "after": "a",
+                    "content": "x", "typing": "line", "diff": true
+                }),
+                serde_json::json!({
+                    "at_step": 1, "action": "code.patch", "op": "insert", "after": "b",
+                    "content": "y", "typing": "line"
+                }),
+            ],
+        );
+        // A stage of step 1 (before the first or the second move) is a
+        // frame of the typing: no marks.
+        for upto in [0, 1] {
+            assert_eq!(
+                d.view_at_stage(1, Some(upto)).doc.diff_marks,
+                None,
+                "stage {upto}"
+            );
+        }
+        assert_eq!(
+            d.view_at_stage(1, Some(2)).doc.diff_marks.map(|m| m.added),
+            Some([2].into_iter().collect())
+        );
+        assert!(d.view_at_stage(1, Some(0)).doc.diff_channel);
+    }
+
+    #[test]
+    fn a_diff_from_line_zero_marks_its_lines() {
+        let mut d = typed_doc("a\nb\n", &[]);
+        d.source.first_line = 0;
+        d.add_move(
+            serde_json::from_value(serde_json::json!({
+                "at_step": 1, "action": "code.patch", "op": "replace", "find": "a",
+                "content": "x", "diff": true
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(marks(&d, 1).unwrap().added, [0].into_iter().collect());
+    }
+
+    #[test]
+    fn a_diff_with_no_change_marks_nothing() {
+        let d = typed_doc(
+            "a\nb\n",
+            &[serde_json::json!({
+                "at_step": 1, "action": "code.patch", "op": "replace", "find": "b",
+                "content": "b", "diff": true
+            })],
+        );
+        assert_eq!(marks(&d, 1), None);
+        assert_eq!(d.change_steps(3), vec![0, 1, 2]);
     }
 }

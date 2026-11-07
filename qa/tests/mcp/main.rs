@@ -7,6 +7,7 @@ mod context_budget;
 mod discovery;
 mod export_image_config;
 mod invisible_code;
+mod patch_diff;
 mod real_client;
 mod refusal_codes;
 mod resources;

@@ -6,6 +6,7 @@ mod clean_width;
 mod clipped_code;
 mod config_width;
 mod live_check;
+mod patch_diff;
 mod preflight;
 mod scroll_targets;
 mod spotlight_end;

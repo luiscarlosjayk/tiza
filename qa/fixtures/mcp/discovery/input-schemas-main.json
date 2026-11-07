@@ -760,6 +760,13 @@
           "string",
           "null"
         ]
+      },
+      "diff": {
+        "description": "code.patch: true shows the lines that the patch writes with `+` beside the line numbers, at its step only (default false)",
+        "type": [
+          "boolean",
+          "null"
+        ]
       }
     },
     "required": [
