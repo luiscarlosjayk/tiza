@@ -71,6 +71,8 @@ pub struct Theme {
     pub error: Rgb,
     /// The `+` of a line that a patch with `diff` wrote.
     pub diff_add: Rgb,
+    /// The `−` of a line that a patch with `diff` removed.
+    pub diff_del: Rgb,
     /// Matching two-face syntax theme.
     pub syntax: two_face::theme::EmbeddedThemeName,
     /// Named annotation colours (`orange`, `blue`…) when an override or the
@@ -102,6 +104,7 @@ impl Theme {
             cmd_bg: Rgb::hex(0x1D2026),
             error: Rgb::hex(0xF47C6F),
             diff_add: Rgb::hex(0x3FB950),
+            diff_del: Rgb::hex(0xFF7B72),
             syntax: T::OneHalfDark,
             palette: BTreeMap::new(),
             host_dark: true,
@@ -128,6 +131,7 @@ impl Theme {
             cmd_bg: Rgb::hex(0xFBFAF7),
             error: Rgb::hex(0xB42318),
             diff_add: Rgb::hex(0x116329),
+            diff_del: Rgb::hex(0xA40E26),
             syntax: T::OneHalfLight,
             palette: BTreeMap::new(),
             host_dark: false,
@@ -174,6 +178,7 @@ impl Theme {
             cmd_bg: terminal_default(),
             error: ansi(1),
             diff_add: ansi(2),
+            diff_del: ansi(1),
             syntax: T::Ansi,
             palette,
             host_dark,
@@ -221,7 +226,7 @@ impl Theme {
     }
 
     /// The background of the cell of a sign of a diff (`sign` is its
-    /// colour, [`Theme::diff_add`]): the sign at 22 % over the background.
+    /// colour, [`Theme::diff_add`] or [`Theme::diff_del`]): the sign at 22 % over the background.
     /// `None` with the host's colours (the `terminal` theme): there a tint
     /// would be a grey, so only the sign has a colour.
     pub fn diff_cell_bg(&self, sign: Rgb) -> Option<Rgb> {
@@ -283,6 +288,7 @@ impl Theme {
             ("cmd_bg", &mut out.cmd_bg, base.cmd_bg),
             ("error", &mut out.error, base.error),
             ("diff_add", &mut out.diff_add, base.diff_add),
+            ("diff_del", &mut out.diff_del, base.diff_del),
         ] {
             if host_color(*slot).is_some() {
                 *slot = fallback;
@@ -504,7 +510,7 @@ impl<'de> Deserialize<'de> for ColorString {
 /// or a document's `theme_overrides`: Tiza's roles by name (`bg`, `fg`,
 /// `muted`, `dimmed`, `accent`, `rail`, `box_line`, `box_bg`, `arrow`,
 /// `note`, `highlight_bg`, `status_bg`, `status_fg`, `cmd_bg`, `error`,
-/// `diff_add`),
+/// `diff_add`, `diff_del`),
 /// the named annotation palette (`orange`, `blue`, `green`, `purple`,
 /// `pink`, `cyan`, `yellow`, `red`, `gray`), and `dark`, `light` and
 /// `terminal` subtables with the same keys. The subtable of the theme in
@@ -533,6 +539,7 @@ pub const ROLES: &[&str] = &[
     "cmd_bg",
     "error",
     "diff_add",
+    "diff_del",
 ];
 
 /// Parses a colour written by a person: `#rrggbb`, `#rgb`, `rgb(r, g, b)`,
@@ -625,9 +632,13 @@ impl Theme {
         // After the flat tokens, whatever the key order (the map is
         // sorted: `bg` comes before `dark`, `note` after it).
         flat.extend(sub);
-        // A theme that sets its own `bg` and not `diff_add` gets the sign
-        // pushed with no note: the theme did not ask for that token.
-        let own_diff_add = flat.iter().any(|(k, _)| *k == "diff_add");
+        // A theme that sets its own `bg` and not the sign of a diff gets
+        // the sign pushed with no note: the theme did not ask for that token.
+        let own: Vec<&str> = flat
+            .iter()
+            .map(|(k, _)| *k)
+            .filter(|k| matches!(*k, "diff_add" | "diff_del"))
+            .collect();
         for (k, v) in flat {
             let color = match parse_color(v) {
                 Ok(c) => c,
@@ -653,6 +664,7 @@ impl Theme {
                 "cmd_bg" => &mut self.cmd_bg,
                 "error" => &mut self.error,
                 "diff_add" => &mut self.diff_add,
+                "diff_del" => &mut self.diff_del,
                 name if PALETTE.contains(&name) => {
                     self.palette.insert(name.to_string(), color);
                     continue;
@@ -678,13 +690,14 @@ impl Theme {
                 ("note", &mut self.note),
                 ("error", &mut self.error),
                 ("diff_add", &mut self.diff_add),
+                ("diff_del", &mut self.diff_del),
             ] {
                 if host_color(*slot).is_some() {
                     continue;
                 }
                 let bg = self.bg;
                 // The sign of a diff is drawn on its own tinted cell.
-                let cell = name == "diff_add";
+                let cell = matches!(name, "diff_add" | "diff_del");
                 let reads = |c: Rgb| {
                     let under = if cell {
                         blend(c, bg, DIFF_CELL_TINT)
@@ -706,7 +719,7 @@ impl Theme {
                         }
                     }
                     *slot = fixed;
-                    if cell && !own_diff_add {
+                    if cell && !own.contains(&name) {
                         continue;
                     }
                     notes.push(format!(
@@ -892,23 +905,25 @@ pub fn load_theme_file(path: &std::path::Path) -> Result<(ThemeOverrides, Vec<St
 mod tests {
     use super::*;
 
-    /// The `+` of a diff reads at 4.5:1 on its own cell, in the dark and
-    /// the light theme (the `terminal` theme gives the cell no colour: the
-    /// sign is on the terminal's background).
+    /// The `+` and the `−` of a diff read at 4.5:1 on their own cell, in
+    /// the dark and the light theme (the `terminal` theme gives the cell no
+    /// colour: the sign is on the terminal's background).
     #[test]
-    fn the_sign_of_a_diff_reads_on_its_cell() {
+    fn the_signs_of_a_diff_read_on_their_cell() {
         for theme in [Theme::dark(), Theme::light()] {
-            let sign = theme.diff_add;
-            let cell = theme.diff_cell_bg(sign).expect("a tinted cell");
-            let c = contrast(sign, cell);
-            assert!(
-                c >= MIN_CODE_CONTRAST,
-                "{:?}: {sign:?} on {cell:?} is {c}",
-                theme.name
-            );
+            for sign in [theme.diff_add, theme.diff_del] {
+                let cell = theme.diff_cell_bg(sign).expect("a tinted cell");
+                let c = contrast(sign, cell);
+                assert!(
+                    c >= MIN_CODE_CONTRAST,
+                    "{:?}: {sign:?} on {cell:?} is {c}",
+                    theme.name
+                );
+            }
         }
         let t = Theme::terminal(true);
         assert_eq!(t.diff_cell_bg(t.diff_add), None);
+        assert_eq!(t.diff_cell_bg(t.diff_del), None);
     }
 
     /// A theme that sets only its background still gets a sign that reads
@@ -920,8 +935,10 @@ mod tests {
         o.insert("bg".to_string(), OverrideValue::Color("#1e1e2e".into()));
         let notes = t.apply(&ThemeOverrides(o));
         assert!(notes.is_empty(), "{notes:?}");
-        let cell = t.diff_cell_bg(t.diff_add).unwrap();
-        assert!(contrast(t.diff_add, cell) >= MIN_CODE_CONTRAST);
+        for sign in [t.diff_add, t.diff_del] {
+            let cell = t.diff_cell_bg(sign).unwrap();
+            assert!(contrast(sign, cell) >= MIN_CODE_CONTRAST);
+        }
     }
 
     /// An override of `diff_add` that reads at 4.5:1 on the background

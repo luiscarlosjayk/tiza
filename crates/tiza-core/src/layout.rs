@@ -103,6 +103,41 @@ pub enum Row {
     /// One row of a callout drawn below its range: (its index in the
     /// layout's callouts, not in the visible annotations; row within the block).
     Callout(usize, usize),
+    /// A line that a patch with `diff` removed, at the end of its step:
+    /// line `k` of the group of `owner` ([`ghost_groups`]). A group goes
+    /// right before the code of its owner, the line under it; the group
+    /// after the last line goes under the rows of that line (`below`).
+    Ghost {
+        owner: u32,
+        k: usize,
+        below: bool,
+    },
+}
+
+/// The groups of removed lines of the diff that `doc` shows, by the line
+/// that owns them and whether they go under it (see [`Row::Ghost`]). A
+/// group that goes with no line of the view does not show.
+pub fn ghost_groups(doc: &Document) -> BTreeMap<(u32, bool), &crate::moves::RemovedLines> {
+    let mut groups = BTreeMap::new();
+    if let Some(marks) = &doc.diff_marks {
+        for (key, g) in marks.groups_in(doc.source.first_line, doc.last_line()) {
+            groups.entry(key).or_insert(g);
+        }
+    }
+    groups
+}
+
+/// The widest removed line of the diff that `doc` shows, in cells: the
+/// code column of a layout with no geometry of the whole take (normal mode)
+/// makes room for it. A take already has it: a removed line is code at the
+/// step before.
+fn ghost_width(doc: &Document, tab_width: usize) -> usize {
+    ghost_groups(doc)
+        .values()
+        .flat_map(|g| &g.lines)
+        .map(|l| code_width(l, tab_width))
+        .max()
+        .unwrap_or(0)
 }
 
 #[derive(Debug, Clone)]
@@ -110,6 +145,13 @@ pub struct Layout {
     pub canvas: Canvas,
     pub rows: Vec<Row>,
     pub row_of_line: BTreeMap<u32, usize>,
+    /// The rows of each line: the titles of the boxes that start on it, the
+    /// removed lines of a diff that go with it ([`Row::Ghost`]), its code
+    /// and the rows under it. See [`Layout::owner_of_row`] and
+    /// [`Layout::span_of_line`].
+    pub line_span: BTreeMap<u32, std::ops::Range<usize>>,
+    /// The line of each row, from `line_span`.
+    row_owner: Vec<Option<u32>>,
     /// The blank columns on the left of a document with `center`
     /// ([`center_left`]): the gutter starts here. 0 without `center`.
     pub left: usize,
@@ -172,11 +214,43 @@ impl Layout {
             .collect()
     }
 
+    /// The removed lines of a diff ([`Row::Ghost`]) that this layout draws
+    /// cut with `…`: the owner of each, and whether it goes under it, in the
+    /// order of their rows. `doc` and `tab_width` are the ones the layout
+    /// was made with.
+    pub fn cut_ghosts(&self, doc: &Document, tab_width: usize) -> Vec<(u32, bool)> {
+        if self.code_needs.is_none() {
+            return Vec::new();
+        }
+        let groups = ghost_groups(doc);
+        self.rows
+            .iter()
+            .filter_map(|r| match r {
+                Row::Ghost { owner, k, below } => {
+                    let text = groups.get(&(*owner, *below))?.lines.get(*k)?;
+                    is_cut(text, tab_width, self.code_w).then_some((*owner, *below))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
     pub fn line_at_row(&self, row: usize) -> Option<u32> {
         match self.rows.get(row)? {
             Row::Code(l) => Some(*l),
             _ => None,
         }
+    }
+
+    /// The line that row `row` belongs to (see [`Layout::line_span`]): a
+    /// removed line of a diff belongs to its owner.
+    pub fn owner_of_row(&self, row: usize) -> Option<u32> {
+        self.row_owner.get(row).copied().flatten()
+    }
+
+    /// The rows of `line` (see [`Layout::line_span`]).
+    pub fn span_of_line(&self, line: u32) -> Option<std::ops::Range<usize>> {
+        self.line_span.get(&line).cloned()
     }
 }
 
@@ -1040,6 +1114,7 @@ fn layout_core(
             .map(|l| code_width(l, opts.tab_width))
             .max()
             .unwrap_or(0)
+            .max(ghost_width(doc, opts.tab_width))
             .max(1),
         trace,
         spot_step,
@@ -1165,7 +1240,7 @@ fn layout_core(
         };
         let (l, more) = match layout_pass(doc, theme, opts, geometry, &under, &shared, Some(paint))
         {
-            Pass::Drawn(l, more) => (l, more),
+            Pass::Drawn(l, more) => (*l, more),
             Pass::Planned(..) => unreachable!("a drawing pass returns its layout"),
         };
         let before = under.size();
@@ -1280,7 +1355,7 @@ enum Pass {
     /// The layout, drawn, and what the next plan must change so that no
     /// label is cut while it has a row of its own to take (see
     /// [`layout_with`]).
-    Drawn(Layout, Under),
+    Drawn(Box<Layout>, Under),
 }
 
 /// What a run of the layout moves under its line (see [`layout_with`]).
@@ -1727,6 +1802,12 @@ fn layout_pass(
     // ---- rows ----
     let mut rows: Vec<Row> = Vec::new();
     let mut row_of_line = BTreeMap::new();
+    let mut line_span = BTreeMap::new();
+    let ghosts = ghost_groups(doc);
+    let ghost_rows = |owner: u32, below: bool| {
+        let n = ghosts.get(&(owner, below)).map_or(0, |g| g.lines.len());
+        (0..n).map(move |k| Row::Ghost { owner, k, below })
+    };
     // "Under" texts: index into `unders` referenced by Row::Under
     let mut unders: Vec<(Label, bool)> = Vec::new(); // (label, is_note)
     // The `unders` that are a piece of a label under its line on several
@@ -1779,6 +1860,7 @@ fn layout_pass(
         }
     }
     for (line, (own, below)) in (first_line..=doc.last_line()).zip(at_line.iter().zip(&below_at)) {
+        let span_start = rows.len();
         let mut tops: Vec<usize> = (0..boxes.len())
             .filter(|&i| boxes[i].from == line)
             .collect();
@@ -1793,6 +1875,8 @@ fn layout_pass(
             tops.clear();
         }
         rows.extend(tops.into_iter().map(Row::BoxTop));
+        // The lines that a diff removed go inside a box that starts here.
+        rows.extend(ghost_rows(line, false));
 
         row_of_line.insert(line, rows.len());
         rows.push(Row::Code(line));
@@ -1936,7 +2020,13 @@ fn layout_pass(
         // here follow the same rule one by one (innermost first).
         let mut bottoms: Vec<usize> = (0..boxes.len()).filter(|&i| boxes[i].to == line).collect();
         bottoms.sort_by_key(|&i| std::cmp::Reverse(boxes[i].depth));
-        if bottoms.len() == 1 && below.is_empty() && free_line(line + 1) {
+        // A border on the blank line under it would hold the removed lines
+        // of that line inside the box.
+        if bottoms.len() == 1
+            && below.is_empty()
+            && free_line(line + 1)
+            && !ghosts.contains_key(&(line + 1, false))
+        {
             bottoms_next.push(bottoms[0]);
             bottoms.clear();
         }
@@ -1944,8 +2034,12 @@ fn layout_pass(
         // Narrowest range first: it sits inside more boxes.
         here.sort_by_key(|&(from, _)| std::cmp::Reverse(from));
         let mut emitted = 0;
+        // The removed lines after the last line go under its rows, before
+        // the bottom border of a box that ends on it.
+        let mut tail = Some(ghost_rows(line, true));
         for (from, ci) in here {
             while emitted < bottoms.len() && boxes[bottoms[emitted]].from > from {
+                rows.extend(tail.take().into_iter().flatten());
                 rows.push(Row::BoxBottom(bottoms[emitted]));
                 emitted += 1;
             }
@@ -1953,7 +2047,15 @@ fn layout_pass(
                 rows.push(Row::Callout(ci, k));
             }
         }
+        rows.extend(tail.take().into_iter().flatten());
         rows.extend(bottoms[emitted..].iter().map(|&i| Row::BoxBottom(i)));
+        line_span.insert(line, span_start..rows.len());
+    }
+    let mut row_owner = vec![None; rows.len()];
+    for (line, span) in &line_span {
+        for o in &mut row_owner[span.clone()] {
+            *o = Some(*line);
+        }
     }
 
     // ---- arrow lanes (in row space) ----
@@ -2445,16 +2547,62 @@ fn layout_pass(
         let highlighted = || {
             whole.get_or_init(|| highlight_cached(&doc.code, &doc.source.language, theme.syntax))
         };
+        // The removed lines of a diff take the colours of the code that
+        // they came from.
+        let old_whole = std::cell::OnceCell::new();
+        let old_highlighted = || {
+            old_whole.get_or_init(|| {
+                let old = doc
+                    .diff_marks
+                    .as_ref()
+                    .map(|m| m.old.as_slice())
+                    .unwrap_or(&[]);
+                highlight_cached(old, &doc.source.language, theme.syntax)
+            })
+        };
+        let focused = |line: u32| match opts.pointer {
+            // The pointer wins over the focus and the spotlights.
+            Some((a, b)) => line >= a && line <= b,
+            None => opts.focus.is_none_or(|(a, b)| line >= a && line <= b) && line_in_spot(line),
+        };
         for (y, row) in rows.iter().enumerate() {
+            if let Row::Ghost { owner, k, below } = row {
+                let Some(g) = ghosts.get(&(*owner, *below)) else {
+                    continue;
+                };
+                // No number: the numbers are the ones of the code at the
+                // end of the step. The `−` is never dimmed, as the `+`.
+                if chan_w > 0 {
+                    let mut sign = base.fg(theme.diff_del);
+                    if let Some(bg) = theme.diff_cell_bg(theme.diff_del) {
+                        sign = sign.bg(bg);
+                    }
+                    canvas.put_str(shared.left + num_w, y, "\u{2212}", sign);
+                }
+                let text = g.lines.get(*k).map_or("", String::as_str);
+                let segs = g
+                    .origins
+                    .get(*k)
+                    .and_then(|&i| old_highlighted().get(i))
+                    .map_or(&[][..], Vec::as_slice);
+                let drawn = paint_code(
+                    &mut canvas,
+                    code_x,
+                    y,
+                    code_w,
+                    text,
+                    segs,
+                    opts.tab_width,
+                    base,
+                    theme,
+                    focused(*owner),
+                );
+                marks.extend(drawn.into_iter().map(|x| (x, y)));
+                continue;
+            }
             let Row::Code(line) = row else { continue };
             let text = doc.line_text(*line).unwrap_or("");
-            let in_focus = match opts.pointer {
-                // The pointer wins over the focus and the spotlights.
-                Some((a, b)) => *line >= a && *line <= b,
-                None => {
-                    opts.focus.is_none_or(|(a, b)| *line >= a && *line <= b) && line_in_spot(*line)
-                }
-            };
+            let in_focus = focused(*line);
             if opts.line_numbers {
                 let n = format!("{:>w$}", line, w = num_w - 1);
                 canvas.put_str(shared.left, y, &n, base.fg(theme.muted));
@@ -3245,11 +3393,13 @@ fn layout_pass(
     }
 
     Pass::Drawn(
-        Layout {
+        Box::new(Layout {
             canvas,
             rows,
             code_w,
             row_of_line,
+            line_span,
+            row_owner,
             left: shared.left,
             channel_x: (chan_w > 0).then_some(shared.left + num_w),
             code_x,
@@ -3266,7 +3416,7 @@ fn layout_pass(
             },
             top_border_rows: top_on.iter().flatten().copied().collect(),
             bottom_border_rows: bottom_on.iter().flatten().copied().collect(),
-        },
+        }),
         more,
     )
 }

@@ -556,7 +556,7 @@ The `code` of a finding is one of these:
 | `steps` | Error | An entry of `steps` is not valid. |
 | `steps` | Warning | An entry of `steps` names a step past the last one, or has a key that Tiza does not know. |
 | `move` | Error | A move is not valid, or it does not apply at its step. |
-| `move` | Warning | The target of a `scroll` move does not match at its step, or its `find` matches more than one time. Or a move has an action, a value or a key that this version of Tiza does not know, also a key inside a `select` point or a `rebind` entry. See [Moves from a newer version](document-format.md#moves-from-a-newer-version). Or a `code.patch` move with `diff` shows no `+`: it writes the same lines again, it only removes lines, or the lines that it writes are outside the lines that its step shows. See [A diff](document-format.md#a-diff). |
+| `move` | Warning | The target of a `scroll` move does not match at its step, or its `find` matches more than one time. Or a move has an action, a value or a key that this version of Tiza does not know, also a key inside a `select` point or a `rebind` entry. See [Moves from a newer version](document-format.md#moves-from-a-newer-version). Or a `code.patch` move with `diff` shows no `+` and no `−`: it writes the same lines again, or the lines that it writes or removes are outside the lines that its step shows. See [A diff](document-format.md#a-diff). |
 | `rebind` | Error | The `rebind` of a move is not valid, or its target does not match after the patch. |
 | `stale` | Error | In a live instance, a move does not match the code after a reload or a paste. |
 | `unknown_id` | Error | The `ids` of a spotlight name an annotation that does not exist. |
@@ -571,9 +571,9 @@ The `code` of a finding is one of these:
 | `unanchored` | Warning | A move removes the code that an annotation is on. |
 | `outside_window` | Warning | An annotation is outside the `code.link` window of its step, or a later patch pushes it out. |
 | `not_shown` | Warning | An annotation belongs to a file that its own step does not show. |
-| `empty_step` | Warning | A step changes nothing. A step where something goes, because a spotlight stops, an `until` passes or the `+` of a diff goes away, gets this warning only when its take is the same as the take of the step before. |
+| `empty_step` | Warning | A step changes nothing. A step where something goes, because a spotlight stops, an `until` passes or the signs of a diff go away, gets this warning only when its take is the same as the take of the step before. |
 | `clipped_label` | Warning | A label is cut, or is not drawn, at the width of the check. |
-| `clipped_code` | Warning | A code line is cut with `…` at the width of the check. There is one warning for each file with a cut line, and one more when a move changes which lines are cut. The warning gives the first five lines, the steps, and the width from which every code line of the take fits, or that no width up to 400 shows them whole. When a move gives the cut lines other numbers, the warning gives their numbers at its first step. |
+| `clipped_code` | Warning | A code line is cut with `…` at the width of the check. There is one warning for each file with a cut line, and one more when a move changes which lines are cut. The warning gives the first five lines, the steps, and the width from which every code line of the take fits, or that no width up to 400 shows them whole. When a move gives the cut lines other numbers, the warning gives their numbers at its first step. A line that a diff removed and that is cut gets a warning of its own, for its step. |
 | `center` | Warning | The document has `center`, and its code is wider than the check. The code stays at the left. The warning gives the width from which Tiza centers it, or says that no width up to 400 centers it. |
 | `effect` | Warning | Experimental. An annotation has the enter effect `draw` but no stroke, or an effect that this version of Tiza does not know. It comes in with no effect. See [Enter effects](document-format.md#enter-effects-experimental). |
 

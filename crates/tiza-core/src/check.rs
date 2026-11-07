@@ -1180,18 +1180,23 @@ fn tidy(mut doc: Document, missing: &BTreeSet<String>, out: &mut Vec<Finding>) -
             };
             let (shown, first) = proj.shown_code(&probe);
             let window = first..first + shown.len() as u32;
+            let last = window.end.saturating_sub(1);
             let why = match moves::diff_marks(&probe, &proj, m.at_step) {
-                Some(marks) if marks.added.iter().any(|l| window.contains(l)) => continue,
-                Some(marks) if !marks.added.is_empty() => format!(
-                    "the lines that it writes are outside the lines that its step shows ({}-{})",
-                    window.start,
-                    window.end.saturating_sub(1)
-                ),
-                // Only the lines that a move writes show.
-                Some(_) => {
-                    "it only removes lines, and a diff shows only the lines that a move writes"
-                        .to_string()
+                Some(marks)
+                    if marks.added.iter().any(|l| window.contains(l))
+                        || marks.groups_in(window.start, last).next().is_some() =>
+                {
+                    continue;
                 }
+                Some(marks) => format!(
+                    "the lines that it {} are outside the lines that its step shows ({}-{last})",
+                    if marks.added.is_empty() {
+                        "removes"
+                    } else {
+                        "writes"
+                    },
+                    window.start,
+                ),
                 None => "it writes the same lines again, or a later move of its step removes them"
                     .to_string(),
             };
@@ -1200,7 +1205,9 @@ fn tidy(mut doc: Document, missing: &BTreeSet<String>, out: &mut Vec<Finding>) -
                 Finding::new(
                     Level::Warning,
                     "move",
-                    format!("code.patch: diff shows no +, because {why}. Remove diff, or change the move"),
+                    format!(
+                        "code.patch: diff shows no + and no \u{2212}, because {why}. Remove diff, or change the move"
+                    ),
                 )
                 .id(format!("move #{}", doc.move_number(i)))
                 .step(m.at_step)
@@ -1424,6 +1431,9 @@ struct AtWidth {
     /// The code lines cut with `…`: one entry for each file and set of cut
     /// lines.
     cut: Vec<CutCode>,
+    /// The removed lines of a diff cut with `…`: the step, and the line
+    /// that each goes with and whether under it.
+    cut_ghosts: Vec<(u32, u32, bool)>,
     /// The width from which every code line fits, when one is cut. The
     /// geometry is the one of the whole take, so it is the same at every
     /// step.
@@ -1436,6 +1446,7 @@ fn at_width(take: &Take, theme: &Theme, width: usize) -> AtWidth {
     let mut out = AtWidth {
         clipped: Vec::new(),
         cut: Vec::new(),
+        cut_ghosts: Vec::new(),
         code_fits: None,
     };
     let mut spare = None;
@@ -1451,6 +1462,12 @@ fn at_width(take: &Take, theme: &Theme, width: usize) -> AtWidth {
             }
         }
         let tab_width = take_options(take.doc, width, step.step).tab_width;
+        let ghosts = l.cut_ghosts(&step.shown, tab_width);
+        if !ghosts.is_empty() {
+            out.code_fits = out.code_fits.max(l.code_needs);
+            out.cut_ghosts
+                .extend(ghosts.into_iter().map(|(o, b)| (step.step, o, b)));
+        }
         let lines = l.cut_lines(&step.shown, tab_width);
         if !lines.is_empty() {
             out.code_fits = out.code_fits.max(l.code_needs);
@@ -2049,6 +2066,33 @@ fn check_loaded(
             .step(steps[0])
             .file(file)
             .line(lines.first().copied()),
+        );
+    }
+    // A removed line of a diff shows only at the step of its move: one
+    // finding for each step, which names where its lines go.
+    let mut ghost_steps: Vec<u32> = at.cut_ghosts.iter().map(|g| g.0).collect();
+    ghost_steps.dedup();
+    for s in ghost_steps {
+        let mut places: Vec<String> = Vec::new();
+        for (_, owner, below) in at.cut_ghosts.iter().filter(|g| g.0 == s) {
+            let place = format!("{} L{owner}", if *below { "after" } else { "before" });
+            if !places.contains(&place) {
+                places.push(place);
+            }
+        }
+        let first = at.cut_ghosts.iter().find(|g| g.0 == s).map(|g| g.1);
+        out.push(
+            Finding::new(
+                Level::Warning,
+                "clipped_code",
+                format!(
+                    "a removed line of the diff at step {s} is cut with «…»: {} ({fits})",
+                    places.join(", ")
+                ),
+            )
+            .step(s)
+            .file(take.doc.shown_view_at(s).file)
+            .line(first),
         );
     }
     // ---- a document with `center` that is too wide to be centered ----

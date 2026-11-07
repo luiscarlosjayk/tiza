@@ -47,12 +47,20 @@ fn style(s: CellStyle) -> Style {
 /// The geometry a mouse click needs: screen origin, the code line of each
 /// visible row and where the code text starts.
 fn tiza_tui_hitmap(area: Rect, layout: &Layout, scroll: usize, end: usize) -> crate::app::HitMap {
+    let shown = &layout.rows[scroll.min(end)..end];
     crate::app::HitMap {
         origin: (area.x, area.y),
-        rows: layout.rows[scroll.min(end)..end]
+        rows: shown
             .iter()
             .map(|r| match r {
                 tiza_core::layout::Row::Code(l) => Some(*l),
+                _ => None,
+            })
+            .collect(),
+        ghosts: shown
+            .iter()
+            .map(|r| match r {
+                tiza_core::layout::Row::Ghost { owner, .. } => Some(*owner),
                 _ => None,
             })
             .collect(),
@@ -199,19 +207,12 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         && follow
         && let Some(&row) = layout.row_of_line.get(&app.cursor_line)
     {
-        let mut top = row;
-        while top > 0
-            && (matches!(layout.rows[top - 1], tiza_core::layout::Row::BoxTop(_))
-                || layout.top_border_rows.contains(&(top - 1)))
-        {
-            top -= 1;
-        }
+        // The rows of its line (the removed lines of a diff over it too),
+        // and a border on the blank line over or under it.
+        let (top, end) = crate::app::span_rows(&layout, (app.cursor_line, app.cursor_line))
+            .map_or((row, row + 1), |(t, b)| (t, b + 1));
         let mut bottom = row;
-        while bottom + 1 < layout.rows.len()
-            && (!matches!(layout.rows[bottom + 1], tiza_core::layout::Row::Code(_))
-                || layout.bottom_border_rows.contains(&(bottom + 1)))
-            && bottom + 1 - top < visible
-        {
+        while bottom + 1 < end && bottom + 1 - top < visible {
             bottom += 1;
         }
         if top < app.scroll {
@@ -316,24 +317,30 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         let sel = app.selection();
         let sel_bg = rgb(th.tint(th.accent, 0.35));
         if let Some(Selection::Lines(a, b)) = sel {
-            for line in a..=b {
-                if let Some(&row) = layout.row_of_line.get(&line)
-                    && row >= app.scroll
-                    && row < end
-                {
-                    let y = canvas_area.y + (row - app.scroll) as u16;
-                    let x0 = canvas_area.x + layout.code_x as u16;
-                    let w = canvas_area.width.saturating_sub(layout.code_x as u16);
-                    frame.buffer_mut().set_style(
-                        Rect {
-                            x: x0,
-                            y,
-                            width: w,
-                            height: 1,
-                        },
-                        Style::default().bg(sel_bg),
-                    );
-                }
+            // The code rows of the lines, and the removed lines of a diff
+            // between them: those over the first line are not in it.
+            let rows = (app.scroll..end).filter(|&r| match layout.rows[r] {
+                tiza_core::layout::Row::Code(l) => (a..=b).contains(&l),
+                tiza_core::layout::Row::Ghost {
+                    owner,
+                    below: false,
+                    ..
+                } => owner > a && owner <= b,
+                _ => false,
+            });
+            for row in rows {
+                let y = canvas_area.y + (row - app.scroll) as u16;
+                let x0 = canvas_area.x + layout.code_x as u16;
+                let w = canvas_area.width.saturating_sub(layout.code_x as u16);
+                frame.buffer_mut().set_style(
+                    Rect {
+                        x: x0,
+                        y,
+                        width: w,
+                        height: 1,
+                    },
+                    Style::default().bg(sel_bg),
+                );
             }
         }
         if let Some(&row) = layout.row_of_line.get(&app.cursor_line)

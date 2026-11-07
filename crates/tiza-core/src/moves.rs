@@ -1410,16 +1410,52 @@ pub struct DiffMarks {
     /// step (absolute line numbers).
     pub added: std::collections::BTreeSet<u32>,
     /// The lines that such a patch took away, in groups, each with the
-    /// line of the end of the step that it goes after (`first_line - 1`
-    /// for the top).
+    /// line of the end of the step that it goes after.
     pub removed: Vec<RemovedLines>,
+    /// The code of the file at the start of the step, from the first line
+    /// of the patches: what [`RemovedLines::origins`] index, so that a
+    /// removed line gets the colours of the code that it came from.
+    pub old: std::sync::Arc<Vec<String>>,
+    /// The first line of the patches: the line of `old[0]`.
+    pub first_line: u32,
+    /// The last line of the code at the end of the step.
+    pub last_line: u32,
+}
+
+impl DiffMarks {
+    /// The groups of removed lines that a view of lines `first..=last`
+    /// shows, each with the line that owns it and whether it goes under
+    /// that line: a group goes before the line under it, and the group
+    /// after the last line of the code goes under that line. A group at an
+    /// edge of a window (between a line of the window and a line out of
+    /// it), or with no line, does not show.
+    pub fn groups_in(
+        &self,
+        first: u32,
+        last: u32,
+    ) -> impl Iterator<Item = ((u32, bool), &RemovedLines)> + '_ {
+        self.removed.iter().filter_map(move |g| {
+            let key = match g.after {
+                _ if g.lines.is_empty() => return None,
+                None if self.first_line == first => (first, false),
+                Some(a) if a >= first && a < last => (a + 1, false),
+                Some(a) if a == last && a == self.last_line => (a, true),
+                _ => return None,
+            };
+            Some((key, g))
+        })
+    }
 }
 
 /// One group of [`DiffMarks::removed`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RemovedLines {
-    pub after: u32,
+    /// The line of the end of the step that the group goes after; `None`
+    /// before the first line of the patches.
+    pub after: Option<u32>,
     pub lines: Vec<String>,
+    /// The index in [`DiffMarks::old`] of each line of `lines`.
+    pub origins: Vec<usize>,
 }
 
 /// Where a line of the code came from, through the patches of one step.
@@ -1501,10 +1537,15 @@ pub fn diff_marks(doc: &Document, proj: &Projection, step: u32) -> Option<DiffMa
     }
     let end = &own.last()?.0.after;
     let old_text = |k: u32| start.get((k - fl) as usize).map_or("", String::as_str);
-    let mut marks = DiffMarks::default();
+    let mut marks = DiffMarks {
+        old: std::sync::Arc::new(start.to_vec()),
+        first_line: fl,
+        last_line: fl + u32::try_from(end.len().saturating_sub(1)).unwrap_or(u32::MAX),
+        ..DiffMarks::default()
+    };
     // One changed part: the lines that left and the lines that came, then
     // the same lines at its start and at its end are not marked.
-    let mut part = |olds: &[u32], news: &[usize], after: u32| {
+    let mut part = |olds: &[u32], news: &[usize], after: Option<u32>| {
         let same = |a: usize, b: usize| old_text(olds[a]) == end[news[b]];
         let mut head = 0;
         while head < olds.len() && head < news.len() && same(head, head) {
@@ -1519,7 +1560,7 @@ pub fn diff_marks(doc: &Document, proj: &Projection, step: u32) -> Option<DiffMa
         }
         // The lines that left go after the same lines at the start.
         let after = if head > 0 {
-            fl + news[head - 1] as u32
+            Some(fl + news[head - 1] as u32)
         } else {
             after
         };
@@ -1530,13 +1571,14 @@ pub fn diff_marks(doc: &Document, proj: &Projection, step: u32) -> Option<DiffMa
             marks.removed.push(RemovedLines {
                 after,
                 lines: olds.iter().map(|&k| old_text(k).to_string()).collect(),
+                origins: olds.iter().map(|&k| (k - fl) as usize).collect(),
             });
         }
     };
     let gone: Vec<u32> = gone.into_iter().collect();
     let mut taken = 0;
     let mut news: Vec<usize> = Vec::new();
-    let mut after = fl.saturating_sub(1);
+    let mut after = None;
     for (j, o) in origin.iter().enumerate() {
         match o {
             Origin::Old(k) => {
@@ -1544,7 +1586,7 @@ pub fn diff_marks(doc: &Document, proj: &Projection, step: u32) -> Option<DiffMa
                 part(&gone[taken..olds_end], &news, after);
                 taken = olds_end;
                 news.clear();
-                after = fl + j as u32;
+                after = Some(fl + j as u32);
             }
             Origin::New { diff: true } => news.push(j),
             Origin::New { diff: false } => {}
@@ -3562,10 +3604,13 @@ mod tests {
         d.view_at(step).doc.diff_marks
     }
 
-    fn removed(after: u32, lines: &[&str]) -> RemovedLines {
+    /// A group after line `after`, with each removed line and its index
+    /// in the code at the start of the step.
+    fn removed(after: Option<u32>, lines: &[(&str, usize)]) -> RemovedLines {
         RemovedLines {
             after,
-            lines: lines.iter().map(|l| l.to_string()).collect(),
+            lines: lines.iter().map(|(l, _)| l.to_string()).collect(),
+            origins: lines.iter().map(|(_, k)| *k).collect(),
         }
     }
 
@@ -3582,7 +3627,7 @@ mod tests {
         );
         let m = marks(&d, 1).expect("marks at the step of the patch");
         assert_eq!(m.added, [2, 3].into_iter().collect());
-        assert_eq!(m.removed, vec![removed(1, &["    a();"])]);
+        assert_eq!(m.removed, vec![removed(Some(1), &[("    a();", 1)])]);
         assert_eq!(marks(&d, 2), None, "the marks go at the step after");
         assert_eq!(marks(&d, 0), None);
         assert!(
@@ -3624,7 +3669,7 @@ mod tests {
         );
         // As in a unified diff, the line that left goes before the lines
         // that came in its part: after a, then z.
-        assert_eq!(m.removed, vec![removed(1, &["b"])]);
+        assert_eq!(m.removed, vec![removed(Some(1), &[("b", 1)])]);
     }
 
     #[test]
@@ -3684,5 +3729,51 @@ mod tests {
         );
         assert_eq!(marks(&d, 1), None);
         assert_eq!(d.change_steps(3), vec![0, 1, 2]);
+    }
+
+    /// A removed group goes with the line under it, the group after the
+    /// last line goes under it, and a group that goes with no line of the
+    /// window does not show.
+    #[test]
+    fn a_removed_group_goes_with_a_line_of_the_window_only() {
+        let d = typed_doc(
+            "a\nb\nc\nd\n",
+            &[
+                serde_json::json!({"at_step": 1, "action": "code.patch", "op": "delete", "find": "a", "diff": true}),
+                serde_json::json!({"at_step": 1, "action": "code.patch", "op": "delete", "find": "c", "diff": true}),
+                serde_json::json!({"at_step": 1, "action": "code.patch", "op": "delete", "find": "d", "diff": true}),
+            ],
+        );
+        let m = marks(&d, 1).unwrap();
+        assert_eq!(
+            m.removed,
+            vec![
+                removed(None, &[("a", 0)]),
+                removed(Some(1), &[("c", 2), ("d", 3)])
+            ]
+        );
+        assert_eq!(&m.old[..], ["a", "b", "c", "d"]);
+        let keys = |first, last| -> Vec<(u32, bool)> {
+            m.groups_in(first, last).map(|(k, _)| k).collect()
+        };
+        // The code at the end is `b` alone, line 1: `a` goes over it and
+        // `c`, `d` under it.
+        assert_eq!(keys(1, 1), [(1, false), (1, true)]);
+        // A window from line 2 shows neither.
+        assert_eq!(keys(2, 2), []);
+        // Nor a window that ends before the last line of the code.
+        assert_eq!(m.last_line, 1);
+        let d = typed_doc(
+            "a\nb\nc\n",
+            &[
+                serde_json::json!({"at_step": 1, "action": "code.patch", "op": "delete", "find": "c", "diff": true}),
+            ],
+        );
+        let m = marks(&d, 1).unwrap();
+        let keys = |first, last| -> Vec<(u32, bool)> {
+            m.groups_in(first, last).map(|(k, _)| k).collect()
+        };
+        assert_eq!(keys(1, 2), [(2, true)]);
+        assert_eq!(keys(1, 1), []);
     }
 }

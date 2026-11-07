@@ -117,6 +117,7 @@ The table lists each token that you can set, with its main use.
 | `cmd_bg` | The background of the command line and of the panels. |
 | `error` | The error messages, and the `⬚` sign for an invisible character. |
 | `diff_add` | The `+` of a line that a `code.patch` move with `diff` writes, and the tint of its cell. See [A diff](document-format.md#a-diff). |
+| `diff_del` | The `−` of a line that a `code.patch` move with `diff` removes, and the tint of its cell. See [A diff](document-format.md#a-diff). |
 | `orange`, `blue`, `green`, `purple`, `pink`, `cyan`, `yellow`, `red`, `gray` | The annotation color with that name. |
 | `rail`, `box_bg`, `arrow` | Nothing: Tiza accepts these tokens and draws nothing with them. |
 
@@ -201,7 +202,7 @@ The `[theme]` table of the config file holds your own tokens for every session. 
 | `theme: unknown table [NAME] (dark, light, terminal)` | A table has a subtable that Tiza does not know. |
 | `theme KEY: VALUE: use #rrggbb, rgb(r, g, b), an ANSI name (red, bright-blue…), ansiN or reset` | A token has a value that Tiza cannot read. |
 | `theme KEY: OLD reads at R:1 on the background, pushed to NEW for 4.5:1` | A text token was too faint, and Tiza changed it. |
-| `theme diff_add: OLD reads at R:1 on its cell, pushed to NEW for 4.5:1` | The `diff_add` of the theme was too faint on the tinted cell of the `+`, and Tiza changed it. |
+| `theme diff_add: OLD reads at R:1 on its cell, pushed to NEW for 4.5:1` | The `diff_add` of the theme was too faint on the tinted cell of the `+`, and Tiza changed it. `diff_del` and the `−` get the same message. |
 | `the terminal theme has no palette outside the terminal: exported with NAME` | An export of the terminal theme used `dark` or `light`. |
 | `theme tokens set to a terminal color have no value in an export (KEYS): the NAME theme's are used` | An export replaced the ANSI and `reset` tokens. |
 | `theme= must be dark or light` | `:export` got `theme=terminal` or another name. |
@@ -292,7 +293,7 @@ The script needs Python with Pillow and numpy, and ffmpeg. It runs `target/debug
 Tiza also keeps text legible when it applies tokens:
 
 - It checks `fg`, `muted`, `accent`, `note` and `error` against `bg`. Tiza reports each token that it changes.
-- It checks `diff_add` against the tinted cell of the `+`. When the theme does not set `diff_add`, for example a theme file with its own `bg`, Tiza changes it and does not report it.
+- It checks `diff_add` against the tinted cell of the `+`, and `diff_del` against the tinted cell of the `−`. When the theme does not set the token, for example a theme file with its own `bg`, Tiza changes it and does not report it.
 - A token under 4.5:1 moves toward black or white, whichever contrasts more with `bg`.
 - This rule is not the dark rule of [How it works](#how-it-works). For example, `#7a7a7a` is a dark background by that rule, but a faint token on it moves toward black.
 - The move can go all the way to black or white. Thus the token always reaches 4.5:1, as the message says.

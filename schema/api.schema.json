@@ -519,6 +519,33 @@
           "last_line": {
             "type": "integer"
           },
+          "removed": {
+            "description": "The lines that a `code.patch` move with `diff` removed at the step on screen, in groups. The screen shows them with a `−` and no number. `text` does not hold them, and a `find` does not match them.",
+            "items": {
+              "properties": {
+                "line": {
+                  "description": "The line that the group goes with.",
+                  "type": "integer"
+                },
+                "lines": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "place": {
+                  "description": "`before` the line, or `after` it (the group after the last line).",
+                  "enum": [
+                    "before",
+                    "after"
+                  ],
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
           "text": {
             "type": "string"
           },
@@ -1778,7 +1805,7 @@
             "additionalProperties": {
               "$ref": "#/$defs/OverrideValue"
             },
-            "description": "The `[theme]` table of `~/.config/tiza/config.toml`, a `--theme-file`,\nor a document's `theme_overrides`: Tiza's roles by name (`bg`, `fg`,\n`muted`, `dimmed`, `accent`, `rail`, `box_line`, `box_bg`, `arrow`,\n`note`, `highlight_bg`, `status_bg`, `status_fg`, `cmd_bg`, `error`,\n`diff_add`),\nthe named annotation palette (`orange`, `blue`, `green`, `purple`,\n`pink`, `cyan`, `yellow`, `red`, `gray`), and `dark`, `light` and\n`terminal` subtables with the same keys. The subtable of the theme in\nuse wins over the flat tokens.",
+            "description": "The `[theme]` table of `~/.config/tiza/config.toml`, a `--theme-file`,\nor a document's `theme_overrides`: Tiza's roles by name (`bg`, `fg`,\n`muted`, `dimmed`, `accent`, `rail`, `box_line`, `box_bg`, `arrow`,\n`note`, `highlight_bg`, `status_bg`, `status_fg`, `cmd_bg`, `error`,\n`diff_add`, `diff_del`),\nthe named annotation palette (`orange`, `blue`, `green`, `purple`,\n`pink`, `cyan`, `yellow`, `red`, `gray`), and `dark`, `light` and\n`terminal` subtables with the same keys. The subtable of the theme in\nuse wins over the flat tokens.",
             "type": "object"
           },
           "Typing": {
@@ -4709,7 +4736,7 @@
             "additionalProperties": {
               "$ref": "#/$defs/OverrideValue"
             },
-            "description": "The `[theme]` table of `~/.config/tiza/config.toml`, a `--theme-file`,\nor a document's `theme_overrides`: Tiza's roles by name (`bg`, `fg`,\n`muted`, `dimmed`, `accent`, `rail`, `box_line`, `box_bg`, `arrow`,\n`note`, `highlight_bg`, `status_bg`, `status_fg`, `cmd_bg`, `error`,\n`diff_add`),\nthe named annotation palette (`orange`, `blue`, `green`, `purple`,\n`pink`, `cyan`, `yellow`, `red`, `gray`), and `dark`, `light` and\n`terminal` subtables with the same keys. The subtable of the theme in\nuse wins over the flat tokens.",
+            "description": "The `[theme]` table of `~/.config/tiza/config.toml`, a `--theme-file`,\nor a document's `theme_overrides`: Tiza's roles by name (`bg`, `fg`,\n`muted`, `dimmed`, `accent`, `rail`, `box_line`, `box_bg`, `arrow`,\n`note`, `highlight_bg`, `status_bg`, `status_fg`, `cmd_bg`, `error`,\n`diff_add`, `diff_del`),\nthe named annotation palette (`orange`, `blue`, `green`, `purple`,\n`pink`, `cyan`, `yellow`, `red`, `gray`), and `dark`, `light` and\n`terminal` subtables with the same keys. The subtable of the theme in\nuse wins over the flat tokens.",
             "type": "object"
           },
           "Typing": {

@@ -2238,8 +2238,10 @@ impl App {
                 .iter()
                 .position(|a| a.id == id && a.step > self.doc.step)
         });
+        // The removed lines of a diff come when the typing of the step ends.
+        let ghosts = self.ghosts_to_come(lines);
         if self.typing.is_none() && later.is_none() {
-            return (0, 0);
+            return ghosts;
         }
         let mut opts = self.layout_options(width);
         opts.typing = false;
@@ -2275,9 +2277,50 @@ impl App {
             Some((first - top, bottom - last))
         };
         match (measure(layout), measure(&then)) {
-            (Some(now), Some(then)) => (then.0.saturating_sub(now.0), then.1.saturating_sub(now.1)),
-            _ => (0, 0),
+            (Some(now), Some(then)) => (
+                then.0.saturating_sub(now.0) + ghosts.0,
+                then.1.saturating_sub(now.1) + ghosts.1,
+            ),
+            _ => ghosts,
         }
+    }
+
+    /// The removed lines of the diff of the step that the screen does not
+    /// show yet (they come when its typing or its `wait` ends): those over
+    /// the first line of `lines`, and those under its last line. Lines that
+    /// come inside the target make it taller and do not count. A removed
+    /// line that the code on screen still has (a `wait` before its patch)
+    /// gives its row to its removed line and does not count either: the
+    /// code on screen has more lines than the code of the end of the step.
+    fn ghosts_to_come(&self, lines: (u32, u32)) -> (usize, usize) {
+        let step = self.doc.step;
+        if !moves::has_diff(&self.doc) {
+            return (0, 0);
+        }
+        let Ok(proj) = moves::project(&self.doc, &self.doc.moves, step) else {
+            return (0, 0);
+        };
+        let (code, first) = proj.shown_code(&self.doc);
+        // The code of the end of the step is on screen: its removed lines
+        // are too.
+        if code == self.doc.code {
+            return (0, 0);
+        }
+        let Some(marks) = moves::diff_marks(&self.doc, &proj, step) else {
+            return (0, 0);
+        };
+        let last = first + u32::try_from(code.len().saturating_sub(1)).unwrap_or(u32::MAX);
+        let (above, under) = marks.groups_in(first, last).fold(
+            (0, 0),
+            |(above, under), ((owner, below), g)| match (below, owner) {
+                (false, o) if o == lines.0 => (above + g.lines.len(), under),
+                (true, o) if o == lines.1 => (above, under + g.lines.len()),
+                _ => (above, under),
+            },
+        );
+        let held = self.doc.code.len().saturating_sub(code.len());
+        let above_held = held.min(above);
+        (above - above_held, under.saturating_sub(held - above_held))
     }
 
     /// What [`App::rows_to_come`] depends on, for [`ScrollHeld::to_come`].
@@ -2533,7 +2576,8 @@ impl App {
     /// rows `top..top + visible` of `layout`, so `f` points at a line the
     /// audience sees. From above it goes to the first line in view, from
     /// below to the last one. With no row of code in view (a callout taller
-    /// than the view), to the line above, as a click there.
+    /// than the view), to the line above, as a click there. A removed line
+    /// of a diff in view counts as its owner, as a click there.
     pub(crate) fn keep_cursor_in_view(
         &mut self,
         layout: &tiza_core::layout::Layout,
@@ -2543,7 +2587,7 @@ impl App {
         use tiza_core::layout::Row;
         let end = (top + visible).min(layout.rows.len());
         let code = |i: usize| match layout.rows[i] {
-            Row::Code(l) => Some(l),
+            Row::Code(l) | Row::Ghost { owner: l, .. } => Some(l),
             _ => None,
         };
         let line = match layout.row_of_line.get(&self.cursor_line) {
@@ -8886,9 +8930,32 @@ impl App {
         if crate::test_hook(&format!("request:{}", req.method)) {
             panic!("TIZA_TEST_HOOK at {}", req.method);
         }
-        match result {
+        match result.map_err(|e| self.name_removed_line(e)) {
             Ok(v) => Response::ok(id, v),
             Err(e) => Response::err(id, e.code(), e.to_string()),
+        }
+    }
+
+    /// A `find` that matches only a removed line of the diff on screen
+    /// ([`tiza_core::layout::Row::Ghost`]): the error says so. A `find`
+    /// never matches a removed line, as it is not code of the step.
+    fn name_removed_line(&self, e: Error) -> Error {
+        let Error::TextNotFound(text) = &e else {
+            return e;
+        };
+        let view = self.doc.view_at(self.doc.step);
+        let removed = tiza_core::layout::ghost_groups(&view.doc)
+            .values()
+            .any(|g| g.lines.iter().any(|l| l.contains(text.as_str())));
+        if !removed {
+            return e;
+        }
+        Error::Because {
+            message: format!(
+                "{e}: that text is a removed line of the diff at step {}",
+                self.doc.step
+            ),
+            inner: Box::new(e),
         }
     }
 
@@ -9436,7 +9503,13 @@ impl App {
                         invisible.push(json!({"line": line, "col": col, "code_point": format!("U+{:04X}", c as u32), "name": tiza_core::printable::char_name(c)}));
                     }
                 }
-                json!({"language": self.doc.source.language, "file": self.shown_file(), "view": self.shown_view(), "first_line": self.doc.source.first_line, "last_line": self.doc.last_line(), "text": out, "invisible": invisible})
+                // The lines that the diff of the step removed: the screen
+                // shows them, `text` does not hold them.
+                let removed: Vec<Value> = tiza_core::layout::ghost_groups(&view.doc)
+                    .into_iter()
+                    .map(|((line, below), g)| json!({"line": line, "place": if below { "after" } else { "before" }, "lines": g.lines}))
+                    .collect();
+                json!({"language": self.doc.source.language, "file": self.shown_file(), "view": self.shown_view(), "first_line": self.doc.source.first_line, "last_line": self.doc.last_line(), "text": out, "invisible": invisible, "removed": removed})
             }
             "scene.get" => {
                 if !params.is_null() {
@@ -10027,6 +10100,9 @@ pub struct HitMap {
     pub origin: (u16, u16),
     /// Code line shown on each visible row (`None` for virtual rows).
     pub rows: Vec<Option<u32>>,
+    /// The owner of each visible row that shows a removed line of a diff
+    /// ([`tiza_core::layout::Row::Ghost`]).
+    pub ghosts: Vec<Option<u32>>,
     /// Screen column where the code text starts.
     pub code_x: u16,
     pub tab_width: usize,
@@ -10052,6 +10128,11 @@ impl App {
         let r = row.checked_sub(oy)? as usize;
         if r >= self.hit.rows.len() || column < ox {
             return None;
+        }
+        // A removed line of a diff is not a line of the code: a click
+        // on it goes to the start of its owner.
+        if let Some(owner) = self.hit.ghosts.get(r).copied().flatten() {
+            return Some((owner, 0));
         }
         let line = (0..=r).rev().find_map(|i| self.hit.rows[i])?;
         let x = column.saturating_sub(self.hit.code_x) as usize;
@@ -11355,22 +11436,19 @@ fn own_camera(camera: &Camera, s: u32) -> bool {
 }
 
 /// The rows of `lines` on `layout`: from the titles of the boxes over the
-/// first line to the rows under the last one, up to the next line or the
-/// top of a box that starts there. `None` when a line is not on it.
+/// first line and the removed lines of a diff that go with it, to the rows
+/// under the last one, up to the next line ([`Layout::span_of_line`]), and
+/// a border on the blank line over or under them. `None` when a line is
+/// not on it.
+///
+/// [`Layout::span_of_line`]: tiza_core::layout::Layout::span_of_line
 pub fn span_rows(layout: &tiza_core::layout::Layout, lines: (u32, u32)) -> Option<(usize, usize)> {
-    use tiza_core::layout::Row;
-    let rows = &layout.rows;
-    let mut top = *layout.row_of_line.get(&lines.0)?;
-    while top > 0
-        && (matches!(rows[top - 1], Row::BoxTop(_)) || layout.top_border_rows.contains(&(top - 1)))
-    {
+    let mut top = layout.span_of_line(lines.0)?.start;
+    if top > 0 && layout.top_border_rows.contains(&(top - 1)) {
         top -= 1;
     }
-    let mut bottom = *layout.row_of_line.get(&lines.1)?;
-    while bottom + 1 < rows.len()
-        && (!matches!(rows[bottom + 1], Row::Code(_) | Row::BoxTop(_))
-            || layout.bottom_border_rows.contains(&(bottom + 1)))
-    {
+    let mut bottom = layout.span_of_line(lines.1)?.end.checked_sub(1)?;
+    if layout.bottom_border_rows.contains(&(bottom + 1)) {
         bottom += 1;
     }
     Some((top, bottom))
@@ -11468,7 +11546,10 @@ pub enum ViewEdge {
 /// rows change: the line of the first row of code at or above row `top`,
 /// and how many rows `top` is under that row. With no row of code above
 /// (the title of a box on the first row), the first row of code, with a
-/// negative offset. `None` with no code.
+/// negative offset. A removed line of a diff over its owner is counted
+/// from its owner, with a negative offset: when the step after takes it
+/// away, the view starts with the owner, and the code does not go up.
+/// `None` with no code.
 pub(crate) fn view_anchor_of(
     layout: &tiza_core::layout::Layout,
     top: usize,
@@ -11479,6 +11560,15 @@ pub(crate) fn view_anchor_of(
         _ => None,
     };
     let last = top.min(layout.rows.len().checked_sub(1)?);
+    if let Row::Ghost {
+        owner,
+        below: false,
+        ..
+    } = layout.rows[last]
+        && let Some(&code) = layout.row_of_line.get(&owner)
+    {
+        return Some((owner, last as isize - code as isize));
+    }
     (0..=last)
         .rev()
         .find_map(line)
@@ -11486,11 +11576,18 @@ pub(crate) fn view_anchor_of(
 }
 
 /// The first row that puts `anchor` back where [`view_anchor_of`] found it,
-/// on `layout`; `None` when its line is not on the layout.
+/// on `layout`; `None` when its line is not on the layout. A negative
+/// offset goes no higher than the first row of its line ([`span_rows`]):
+/// the rows over the line that the view started on can be gone.
 pub(crate) fn view_row_of(
     layout: &tiza_core::layout::Layout,
     anchor: (u32, isize),
 ) -> Option<usize> {
     let row = *layout.row_of_line.get(&anchor.0)? as isize;
-    Some((row + anchor.1).max(0) as usize)
+    let at = row + anchor.1;
+    let at = match layout.span_of_line(anchor.0) {
+        Some(span) if anchor.1 < 0 => at.max(span.start as isize),
+        _ => at,
+    };
+    Some(at.max(0) as usize)
 }

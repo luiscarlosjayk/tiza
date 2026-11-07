@@ -783,6 +783,32 @@ fn invisible_note(v: &Value) -> String {
     out
 }
 
+/// The note after the code of `get_code` and `tiza://code` about the
+/// lines that the diff of the step removed (the `removed` of `code.get`):
+/// the screen shows them, the code above does not hold them. Nothing when
+/// there are none.
+fn removed_note(v: &Value) -> String {
+    let Some(groups) = v["removed"].as_array().filter(|g| !g.is_empty()) else {
+        return String::new();
+    };
+    let mut out = String::from(
+        "\n# The diff of this step removed these lines. The screen shows them with a \u{2212} and no \
+         number, under or over the line that they go with. They are not in the code above, and a find \
+         does not match them.\n",
+    );
+    for g in groups {
+        let place = g["place"].as_str().unwrap_or("before");
+        let line = g["line"].as_u64().unwrap_or(0);
+        for l in g["lines"].as_array().into_iter().flatten() {
+            out.push_str(&format!(
+                "# {place} line {line}: \u{ab}{}\u{bb}\n",
+                l.as_str().unwrap_or("")
+            ));
+        }
+    }
+    out
+}
+
 /// A tool's text reply, with its control characters shown as pictures
 /// (`␛`, `␀`…) and never sent raw to the client.
 fn text(v: impl ToString) -> CallToolResult {
@@ -938,7 +964,7 @@ impl TizaServer {
 
     #[tool(
         meta = always_load(),
-        description = "Returns the code Tiza shows on screen, with line numbers, to pick where a box, arrow, highlight or note goes (the file a `code.link` left up, cropped to its window, with the patches of the current step applied). Read it before annotating to pick exact lines and texts; a first line names the file and window when a link is shown. After the code, a note for each line names its invisible and control characters, with their columns (`# line 3: U+200B zero width space, col 5`). A `find` for a text with one of them must hold the real character (`\\u200b`, `\\u001b` in JSON); a control character shows here as its picture, which a `find` does not match."
+        description = "Returns the code Tiza shows on screen, with line numbers, to pick where a box, arrow, highlight or note goes (the file a `code.link` left up, cropped to its window, with the patches of the current step applied). Read it before annotating to pick exact lines and texts; a first line names the file and window when a link is shown. After the code, a note for each line names its invisible and control characters, with their columns (`# line 3: U+200B zero width space, col 5`). A `find` for a text with one of them must hold the real character (`\\u200b`, `\\u001b` in JSON); a control character shows here as its picture, which a `find` does not match. At the step of a `code.patch` move with `diff`, a last note gives each line that the move removed (`# before line 8: «…»`): the screen shows it with a `−` and no number, and a `find` does not match it."
     )]
     async fn get_code(
         &self,
@@ -946,7 +972,7 @@ impl TizaServer {
     ) -> Result<CallToolResult, McpError> {
         let v = self.call("code.get", json!({})).await?;
         let body = v.get("text").and_then(|t| t.as_str()).unwrap_or("");
-        let note = invisible_note(&v);
+        let note = format!("{}{}", invisible_note(&v), removed_note(&v));
         Ok(text(match v.get("view").and_then(|t| t.as_str()) {
             Some(view) => format!("# {view}\n{body}{note}"),
             None => format!("{body}{note}"),
@@ -1969,7 +1995,7 @@ impl TizaServer {
             "tiza://code" => {
                 let v = self.call("code.get", json!({})).await?;
                 let body = v["text"].as_str().unwrap_or("");
-                Ok(format!("{body}{}", invisible_note(&v)))
+                Ok(format!("{body}{}{}", invisible_note(&v), removed_note(&v)))
             }
             "tiza://render" => {
                 let v = self.call("render.text", json!({})).await?;

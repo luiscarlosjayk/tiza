@@ -266,7 +266,7 @@ A file with a key that this version does not know opens, and `tiza check` gives 
 | `status` | The fields in [Fields of `status`](#fields-of-status). |
 | `api.methods` | A list of `{method, description}`. |
 | `api.schema` | `protocol`, `request`, `response`, and `methods`, a list of `{method, description, params, result}`. |
-| `code.get` | `language`, `file`, `view`, `first_line`, `last_line`, `text` and `invisible`. See [Invisible characters in `code.get`](#invisible-characters-in-codeget). |
+| `code.get` | `language`, `file`, `view`, `first_line`, `last_line`, `text`, `invisible` and `removed`. See [Invisible characters in `code.get`](#invisible-characters-in-codeget) and [Removed lines in `code.get`](#removed-lines-in-codeget). |
 | `scene.get` | `revision`, `step`, `max_step`, `document`, and `stale` and `held` when a move is stale. |
 | `scene.list` | A list of strings, one for each annotation. |
 | `render.text` | `text`, and `width`, the width of the take. |
@@ -311,6 +311,15 @@ A file with a key that this version does not know opens, and `tiza check` gives 
 - A character that has a function on the screen is not in the list, for example the joiner of an emoji sequence. A tab is not in the list.
 - The list is empty when the code has none of these characters.
 - A `find` for a text with such a character must hold the real character, for example `"ad\u200bmin"` in JSON. To point at the character itself, use `line` and `col`. See [A `find` inside a character](#a-find-inside-a-character).
+
+### Removed lines in `code.get`
+
+At the step of a `code.patch` move with `diff`, the screen also shows the lines that the move removed. See [A diff](document-format.md#a-diff). `text` does not hold them. `removed` is a list of their groups, in the order of the screen. Each item is `{line, place, lines}`, for example `{"line": 8, "place": "before", "lines": ["    println!(\"{t} has {n} letters\");"]}`.
+
+- `place` is `before` when the group is above line `line`. It is `after` for the group under the last line.
+- `lines` is the text of each removed line.
+- The list is empty at a step with no removed lines, and while the step types.
+- A `find` does not match a removed line. When the text of a `find` is only on a removed line, the error `text_not_found` says `that text is a removed line of the diff at step N`.
 
 ### A `find` inside a character
 

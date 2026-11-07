@@ -630,7 +630,7 @@ The `stroke` and `heads` fields change the look of an arrow. For example, `examp
 | A color name, from the list under this table | A color value |
 | `dark`, `light` or `terminal` | An object with the same keys, which applies only with that theme |
 
-- Roles: `bg`, `fg`, `muted`, `dimmed`, `accent`, `rail`, `box_line`, `box_bg`, `arrow`, `note`, `highlight_bg`, `status_bg`, `status_fg`, `cmd_bg`, `error`, `diff_add`.
+- Roles: `bg`, `fg`, `muted`, `dimmed`, `accent`, `rail`, `box_line`, `box_bg`, `arrow`, `note`, `highlight_bg`, `status_bg`, `status_fg`, `cmd_bg`, `error`, `diff_add`, `diff_del`.
 - Color names: `orange`, `blue`, `green`, `purple`, `pink`, `cyan`, `yellow`, `red`, `gray`.
 
 A color value is one of these:
@@ -873,19 +873,24 @@ Tiza finds a target on the code as it is at the step of the move. The target mus
 
 ### A diff
 
-With `"diff": true` on a `code.patch` move, the step of the move shows which lines the move wrote.
+With `"diff": true` on a `code.patch` move, the step of the move shows which lines the move wrote and which lines it removed.
 
 - A `+` in the `diff_add` color shows next to the line number of each line that the move writes. In `dark` and `light`, the cell of the `+` also has a tint of that color. The `terminal` theme gives only the color of the `+`.
-- The `+` shows only at the step of the move. At the step after it, the `+` goes away. `tiza check` thus does not report that step as empty.
+- Each line that the move removes comes back on a row of its own, with a `−` in the `diff_del` color and no line number. Its text has the colors of its language. The line numbers are the numbers of the code at the end of the step.
+- The removed lines go above the lines that the move wrote in their place. When the move wrote no line there, they go above the line that is now under them. The removed lines after the last line go under it.
+- A removed line goes dim with the line under it. A box that starts on that line holds them. The `−` never goes dim.
+- A removed line is not a line of the code. A click on it puts the cursor on the line under it. A `find` does not match it, and `get_code` lists it after the code.
+- The `+` and the removed lines show only at the step of the move. At the step after it, they go away, and the lines under them move up. `tiza check` thus does not report that step as empty.
 - A `replace` often writes again the lines around the change. Tiza does not mark the lines at the start and at the end of a `replace` that are the same as before.
 - When a later move of the same step removes a line that the move wrote, that line has no `+`.
-- While the step types, the `+` does not show. It shows when the typing ends.
-- When a move of the document has `diff`, Tiza keeps a column of two cells for the `+` at every step. Without line numbers, Tiza also keeps the column of the `▸` that marks the selected annotation, next to the `+`. Thus the code does not move when the `+` shows.
-- A `diff` shows only the lines that a move writes. It does not show the lines that a move removes.
-- `tiza check` gives the warning `move` when a move with `diff` shows no `+`. For example, the move writes the same lines again, it only removes lines, or the lines that it writes are outside the lines that its step shows.
+- While the step types, the `+` and the removed lines do not show. They show when the typing ends.
+- In normal mode, the removed lines that come above the first line of the view stay above the view. Scroll up to see them. In presentation mode, a `scroll` move to their line shows them.
+- When a move of the document has `diff`, Tiza keeps a column of two cells for the `+` and the `−` at every step. Without line numbers, Tiza also keeps the column of the `▸` that marks the selected annotation, next to the sign. Thus the code does not move when a sign shows.
+- `tiza check` gives the warning `move` when a move with `diff` shows no `+` and no `−`. For example, the move writes the same lines again, or the lines that it writes or removes are outside the lines that its step shows.
+- `tiza check` gives the warning `clipped_code` when a removed line is too wide for the take.
 - A document with `diff` has the schema `2`. Tiza 0.2.1 and earlier versions do not open it.
 
-This `replace` writes lines 7 and 8 again, and it changes only line 8. The image is a real `tiza render` export of this document at step 1:
+This `replace` writes lines 7 and 8 again, and it changes only line 8. The image is a real `tiza render` export of this document at step 1. The old line 8 shows above the new one:
 
 <!-- frame id=patch-diff doc=docs/frames/patch-diff.tiza step=1 -->
 ```json
@@ -902,7 +907,7 @@ This `replace` writes lines 7 and 8 again, and it changes only line 8. The image
 }
 ```
 
-<img src="../images/format/patch-diff.webp" width="380" alt="Lines 6 to 8 at step 1. Line 8 prints {n} letters in {t}, and a green plus sign is next to its line number. Lines 6 and 7 have no sign.">
+<img src="../images/format/patch-diff.webp" width="380" alt="Lines 6 to 8 at step 1. Above line 8, the old line that prints {t} has {n} letters, with a red minus sign and no line number. Line 8 prints {n} letters in {t}, and a green plus sign is next to its line number. Lines 6 and 7 have no sign.">
 
 ### Typing
 

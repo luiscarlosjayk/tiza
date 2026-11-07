@@ -17,6 +17,7 @@ mod color_query_after_resize;
 mod command_typos;
 mod common;
 mod ctrl_c_cancels;
+mod diff_removed_lines;
 mod enter_effects;
 mod goto_own_camera;
 mod half_screen_keys;
