@@ -126,6 +126,12 @@ The example talk [`examples/ownership-talk.tiza`](../../examples/ownership-talk.
 
 <img src="../images/guides/talk-cross.webp" width="0" alt="An animation of a talk with three scenes. First the title slide Ownership in Rust, with no line numbers. Then lines 1 to 4 of ownership.rs, with line numbers: at step 1, a move mark on s comes in, and at step 2, a note under line 4. Then the last slide, Thank you.">
 
+In presentation mode, the counter and the progress bar show how far you are in the whole talk:
+
+<img src="../images/tui/talk-progress.webp" width="680" alt="Step 2 of the second scene of the example talk, in presentation mode: four lines of code with a move mark and a note. On the last row, a progress bar in the accent color fills three quarters of the row, and the counter 3/4 is at the right.">
+
+Step 2 of the second scene of `examples/ownership-talk.tiza` in presentation mode: an image of the TUI in a real terminal of 80 columns and 10 rows, with the Menlo font. The title slide took one key, and steps 0 and 1 of the code took two more: 3 of the 4 keys of the talk.
+
 ## 5. Start at a scene
 
 ```sh

@@ -3,12 +3,12 @@
 near-lossless WebP images.
 
 A `tiza render` export draws the code and the annotations. Some parts of
-Tiza show only on the screen: presentation mode and its step counter, the
-review sign of supervised mode, the live pointer, the focus, the panels and
-the view that a `scroll` move places. This script runs the TUI in VHS, a
-terminal in a headless browser, and takes screenshots of it. CAPTURES below
-gives each capture: the document, the size of the terminal, the keys, and
-the pages that show it.
+Tiza show only on the screen: presentation mode, its step counter and the
+progress bar of a talk, the review sign of supervised mode, the live
+pointer, the focus, the panels and the view that a `scroll` move places.
+This script runs the TUI in VHS, a terminal in a headless browser, and
+takes screenshots of it. CAPTURES below gives each capture: the document,
+the size of the terminal, the keys, and the pages that show it.
 
 The same for every capture:
 - the font: Menlo at 26 px, in cells of about 16 x 31 px. Menlo comes with
@@ -149,6 +149,7 @@ BADGE_DOC = {
 
 OWNERSHIP = ["examples/ownership.rs.tiza", "examples/ownership.rs"]
 TALLY = ["examples/tally-tour.tiza", "examples/tally"]
+TALK = ["examples/ownership-talk.tiza", "examples/talk", "examples/ownership.rs"]
 
 
 def normal(cid, pages, do, step="3", files=OWNERSHIP, doc="ownership.rs.tiza", size=(100, 30)):
@@ -173,6 +174,18 @@ CAPTURES = [
         "args": ["--present", "--step", "3", "ownership.rs.tiza"],
         "size": (100, 30),
         "ready": r"3\/6",
+        "do": [("shot", 0)],
+    },
+    # In a talk, the counter counts the key presses of the whole talk: 1 on
+    # the title slide and 2 in the code before its step 2, of 4. The
+    # progress bar fills 3/4 of the row.
+    {
+        "id": "talk-progress",
+        "pages": ["docs/guides/present-a-long-talk.md"],
+        "files": TALK,
+        "args": ["--present", "--scene", "2", "--step", "2", "ownership-talk.tiza"],
+        "size": (80, 10),
+        "ready": r"3\/4",
         "do": [("shot", 0)],
     },
     {
