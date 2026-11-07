@@ -1,5 +1,6 @@
 //! Each `:` command, socket method, MCP tool and CLI flag has its place in
-//! the reference: a heading or a row of a table that names it. Each list
+//! the reference: a heading, a row of a table or a term of an option list
+//! (`<dt>`) that names it. Each list
 //! comes from the code: `App::COMMANDS`, `protocol::METHODS`, the
 //! `tools/list` of `tiza mcp`, and the `--help` of `tiza` and of each
 //! subcommand (a hidden flag is not in the help, so it needs no row). A new
@@ -7,11 +8,19 @@
 
 use tiza_qa::{McpClient, command, repo_file, repo_root, scratch};
 
-/// The first cell of each row of a table of `page`.
-fn first_cells(page: &str) -> Vec<&str> {
+/// The first cell of each row of a table of `page`, and each term of an
+/// option list, `<dt><code>--lang LANG</code></dt>`, with its `<code>` as
+/// backticks.
+fn first_cells(page: &str) -> Vec<String> {
     page.lines()
-        .filter_map(|l| l.strip_prefix('|'))
-        .filter_map(|l| l.split('|').next())
+        .filter_map(|l| {
+            if let Some(row) = l.strip_prefix('|') {
+                row.split('|').next().map(str::to_string)
+            } else {
+                l.strip_prefix("<dt>")
+                    .map(|t| t.replace("<code>", "`").replace("</code>", "`"))
+            }
+        })
         .collect()
 }
 
@@ -198,6 +207,12 @@ fn a_page_without_the_row_is_seen() {
     assert!(!has_command(cmds, "ste"), "`:step` is not `:ste`");
     let flags = "| `-V` or `--version` | Prints the version. |\n| `--focus A-B` | Dims. |\n";
     assert!(has_row(flags, "--version"));
+    let list = "<dl>\n<dt><code>-h</code> or <code>--help</code></dt>\n<dd>\n\nPrints the help, not `--helps`.\n\n</dd>\n</dl>\n";
+    assert!(has_row(list, "--help"), "a term of an option list is a row");
+    assert!(
+        !has_row(list, "--helps"),
+        "a name in a definition is not a row"
+    );
     assert!(has_row(flags, "--focus"), "a flag with its argument");
     assert!(!has_row(flags, "--verbose"));
     assert!(!has_row(flags, "--foc"), "`--focus` is not `--foc`");
