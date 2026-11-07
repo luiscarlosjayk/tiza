@@ -9,6 +9,7 @@ answers back, so that the test decides when they reach the program. Grown
 from `terminal_rows` of `pty.py`, which measures with Unicode and has no
 wrap and no scroll.
 """
+import codecs
 import re
 import unicodedata
 
@@ -41,6 +42,9 @@ class Term:
         self.scrolls = 0
         self.cpr_asked = 0
         self.rest = ""
+        # A character of several bytes can come in two reads: the decoder
+        # keeps its first bytes until the rest comes.
+        self.utf8 = codecs.getincrementaldecoder("utf-8")(errors="replace")
         self.last = None  # (row, col) of the last character drawn
         self.saved = None  # the cursor of `ESC 7`
 
@@ -100,7 +104,7 @@ class Term:
     def feed(self, data):
         """Feeds output of the program; returns the bytes the terminal
         answers (CPR, OSC 11, OSC 10)."""
-        text = self.rest + data.decode("utf-8", errors="replace")
+        text = self.rest + self.utf8.decode(data)
         m = PARTIAL.search(text)
         if m and m.group(0):
             self.rest, text = text[m.start():], text[: m.start()]
