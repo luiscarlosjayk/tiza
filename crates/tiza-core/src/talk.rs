@@ -455,7 +455,7 @@ pub fn update_talk(
 ) -> Result<(), Error> {
     let text = std::fs::read_to_string(path)?;
     let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
-    let mut raw: Value = serde_json::from_str(text)?;
+    let raw: Value = serde_json::from_str(text)?;
     let on_disk = Talk::from_value(&raw)?;
     if on_disk.scenes != scenes {
         return Err(Error::Invalid(

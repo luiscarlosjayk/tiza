@@ -44,10 +44,12 @@ fn master(dir: &Path) -> Value {
     serde_json::from_str(&std::fs::read_to_string(dir.join("talk.tiza")).unwrap()).unwrap()
 }
 
-/// Runs `tiza ARGS` and returns (success, stderr).
+/// Runs `tiza ARGS` and returns (success, stdout and stderr): `check`
+/// gives its findings on stdout.
 fn run(args: &[&str]) -> (bool, String) {
     let out = tiza(args);
-    let err = String::from_utf8_lossy(&out.stderr).into_owned();
+    let err =
+        String::from_utf8_lossy(&out.stdout).into_owned() + &String::from_utf8_lossy(&out.stderr);
     assert!(!err.contains("panicked"), "tiza {args:?}:\n{err}");
     (out.status.success(), err)
 }
@@ -71,9 +73,12 @@ fn a_talk_that_tiza_can_play_opens_also_with_a_skipped_scene_that_is_missing() {
     assert!(!ok && err.contains(NO_TERMINAL), "{err}");
 }
 
+/// A change to the JSON of a master.
+type Change = Box<dyn FnOnce(&mut Value)>;
+
 #[test]
 fn a_master_that_tiza_cannot_play_does_not_open_and_the_error_names_why() {
-    let cases: Vec<(&str, Box<dyn FnOnce(&mut Value)>, &str)> = vec![
+    let cases: Vec<(&str, Change, &str)> = vec![
         (
             "both",
             Box::new(|m| m["code"] = json!(["x"])),
@@ -148,11 +153,17 @@ fn a_master_with_a_bom_and_crlf_opens_and_an_empty_or_binary_one_does_not() {
     std::fs::write(dir.join("talk.tiza"), crlf).unwrap();
     let (ok, err) = run(&[dir.join("talk.tiza").to_str().unwrap()]);
     assert!(!ok && err.contains(NO_TERMINAL), "{err}");
-    for (name, bytes) in [("empty", &b""[..]), ("binary", &b"{\"talk\": \"\xff\xfe\"}"[..])] {
+    for (name, bytes) in [
+        ("empty", &b""[..]),
+        ("binary", &b"{\"talk\": \"\xff\xfe\"}"[..]),
+    ] {
         let file = dir.join(format!("{name}.tiza"));
         std::fs::write(&file, bytes).unwrap();
         let (ok, err) = run(&[file.to_str().unwrap()]);
-        assert!(!ok && err.contains(&format!("{name}.tiza")), "{name}:\n{err}");
+        assert!(
+            !ok && err.contains(&format!("{name}.tiza")),
+            "{name}:\n{err}"
+        );
         assert!(!err.contains(NO_TERMINAL), "{name}:\n{err}");
     }
 }
@@ -164,16 +175,28 @@ fn scene_needs_a_master_and_theme_file_and_lang_do_not_work_with_one() {
     let talk = talk.to_str().unwrap();
     let own = dir.join("own.tiza");
     let (ok, err) = run(&[own.to_str().unwrap(), "--scene", "2"]);
-    assert!(!ok && err.contains("--scene opens a scene of a talk"), "{err}");
+    assert!(
+        !ok && err.contains("--scene opens a scene of a talk"),
+        "{err}"
+    );
     let theme = dir.join("theme.toml");
     std::fs::write(&theme, "").unwrap();
     let (ok, err) = run(&[talk, "--theme-file", theme.to_str().unwrap()]);
-    assert!(!ok && err.contains("--theme-file does not work with a talk"), "{err}");
+    assert!(
+        !ok && err.contains("--theme-file does not work with a talk"),
+        "{err}"
+    );
     let (ok, err) = run(&[talk, "--lang", "py"]);
-    assert!(!ok && err.contains("--lang does not work with a talk"), "{err}");
+    assert!(
+        !ok && err.contains("--lang does not work with a talk"),
+        "{err}"
+    );
     // A scene that the talk does not have, and one that it skips.
     let (ok, err) = run(&[talk, "--scene", "nowhere"]);
-    assert!(!ok && err.contains("nowhere") && !err.contains(NO_TERMINAL), "{err}");
+    assert!(
+        !ok && err.contains("nowhere") && !err.contains(NO_TERMINAL),
+        "{err}"
+    );
     let (ok, err) = run(&[talk, "--scene", "4"]);
     assert!(!ok && err.contains("skipped"), "{err}");
     // A good scene: the talk opens.
@@ -194,7 +217,10 @@ fn render_check_and_scene_put_refuse_a_master() {
         vec!["--socket", sock.to_str().unwrap(), "scene", "put", talk],
     ] {
         let (ok, err) = run(&args);
-        assert!(!ok && err.contains("this file is a talk"), "{args:?}:\n{err}");
+        assert!(
+            !ok && err.contains("this file is a talk"),
+            "{args:?}:\n{err}"
+        );
     }
     assert_eq!(std::fs::read(dir.join("talk.tiza")).unwrap(), before);
 }

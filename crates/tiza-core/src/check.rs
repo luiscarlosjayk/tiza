@@ -455,6 +455,15 @@ fn check_text_as(
         ));
         return Report::new(frame, out, None, None);
     }
+    // A master plays documents: it is not one.
+    if crate::talk::is_talk(&raw) {
+        out.push(Finding::new(
+            Level::Error,
+            "schema",
+            crate::talk::not_a_document().to_string(),
+        ));
+        return Report::new(frame, out, None, None);
+    }
     let mut migrated = false;
     for (from, migrate) in crate::fs::MIGRATIONS {
         if found <= u64::from(*from) {

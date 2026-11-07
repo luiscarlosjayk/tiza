@@ -1267,7 +1267,10 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
 /// writes a copy.
 fn no_save_hints(app: &App) -> [&'static str; 2] {
     if app.talk.is_some() {
-        ["  unsaved (:w PATH · :q! discards)", "  unsaved (:w PATH · :q!)"]
+        [
+            "  unsaved (:w PATH · :q! discards)",
+            "  unsaved (:w PATH · :q!)",
+        ]
     } else {
         [
             "  unsaved (:saveas PATH · :q! discards)",
