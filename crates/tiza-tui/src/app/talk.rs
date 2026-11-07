@@ -45,8 +45,9 @@ pub struct TalkState {
     /// that are for the first scene only (`--step`, `--focus`) and the
     /// warnings of the config are gone.
     start: SessionStart,
-    /// Follow is on for the scenes that have a file to follow. A scene
-    /// without one leaves it as it was.
+    /// Follow is on for the scenes that have a file to follow: `--follow`,
+    /// then the last `:follow on` or `:follow off` (or `follow.set`). Follow
+    /// that goes off by itself in a scene does not change it.
     follow_wanted: bool,
     /// The undo history of each scene left with all its changes saved, and
     /// what its files held then: it comes back only when they are the same.
@@ -81,6 +82,9 @@ struct Parked {
     /// With `--no-save`, the document with the changes that were not
     /// saved.
     doc: Option<Document>,
+    /// With `doc`: the undo entry and the entries of the last save, so that
+    /// `:q!` names the changes when the scene comes back.
+    saved: Option<(u64, Vec<(u64, String)>)>,
 }
 
 impl TalkState {
@@ -449,11 +453,7 @@ impl App {
             // read now: no files match an empty fingerprint, so the bar says
             // that they are not kept, when the presenter comes back.
             .or_else(|| keep.then(Vec::new));
-        let follow_wanted = if self.source_file().is_some() {
-            self.follow.is_some()
-        } else {
-            t.follow_wanted
-        };
+        let follow_wanted = t.follow_wanted;
 
         let mut next = App::new(doc, path);
         next.disk_step = Some(disk_step);
@@ -471,7 +471,6 @@ impl App {
         let mut start = t.start.clone();
         start.present = self.present;
         start.mouse = self.mouse;
-        start.padding = self.padding_override;
         start.no_save = self.no_save;
         crate::open_theme(&mut next, &start);
         // Autosave as the presenter left it: a `scene put` of another
@@ -522,19 +521,20 @@ impl App {
 
         // From here nothing fails: the talk and the session move.
         let mut talk = self.talk.take().expect("a talk");
-        talk.follow_wanted = follow_wanted;
         let here_path = talk.scene().path.clone();
         let restored = talk.parked.remove(&next.save_path);
         match leave_fingerprint {
             Some(fingerprint) => {
                 let history = std::mem::take(&mut self.history);
                 let doc = keep.then(|| self.doc.clone());
+                let saved = keep.then(|| (self.saved_at, std::mem::take(&mut self.saved_entries)));
                 talk.parked.insert(
                     here_path,
                     Parked {
                         history,
                         fingerprint,
                         doc,
+                        saved,
                     },
                 );
             }
@@ -546,9 +546,14 @@ impl App {
             next.history = p.history;
             next.mark_saved();
             if p.doc.is_some() {
-                // Not saved: what quitting compares with is the file.
+                // Not saved: what quitting compares with is the file, and
+                // the changes are those since the save of before.
                 next.dirty = true;
                 next.saved_json = disk_json;
+                if let Some((at, entries)) = p.saved {
+                    next.saved_at = at;
+                    next.saved_entries = entries;
+                }
             }
         }
         let gone = "the scene changed before the review: the change was not applied";
@@ -562,6 +567,7 @@ impl App {
         self.checks
             .drop_all("check: the scene changed before the check ended; ask again");
         next.osc = std::mem::take(&mut self.osc);
+        next.history_cmds = std::mem::take(&mut self.history_cmds);
         next.socket_path = self.socket_path.take();
         next.image_exporter = self.image_exporter.take();
         next.agent_deferred = std::mem::take(&mut self.agent_deferred);
@@ -618,6 +624,20 @@ impl App {
         let before: u32 = t.presses[..t.index].iter().sum();
         let after: u32 = t.presses[t.index + 1..].iter().sum();
         Some((before + done, before + all + after))
+    }
+
+    /// In a talk, whether the next scenes with a file to follow open with
+    /// follow; `None` with no talk.
+    pub(super) fn follow_wanted(&self) -> Option<bool> {
+        self.talk.as_ref().map(|t| t.follow_wanted)
+    }
+
+    /// In a talk, whether the next scenes with a file to follow open with
+    /// follow ([`App::set_follow_asked`]).
+    pub(super) fn set_follow_wanted(&mut self, wanted: bool) {
+        if let Some(t) = self.talk.as_mut() {
+            t.follow_wanted = wanted;
+        }
     }
 
     /// The other scenes whose changes wait in memory (`--no-save`), in

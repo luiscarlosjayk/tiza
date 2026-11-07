@@ -151,6 +151,9 @@ When Tiza closes, it writes the place in the talk into the master, as `talk.at`.
 - When autosave cannot save a change, for example a read-only file or `:autosave off`, `n` and `p` do not leave the scene. The status bar tells you to type `:w`. `:next!`, `:prev!` and `:scene! X` leave the scene without the change.
 - With `--no-save`, `n` and `p` always leave a scene. Its changes and its undo wait in memory: when you come back, the scene shows them. Tiza does not write them. `q` names the scenes that hold changes and does not quit. `:q!` and Ctrl-C quit without them. When the files of the scene change on disk while it waits, the scene opens from the disk, and the status bar tells you.
 - The flags of the command line apply to each scene: `--theme`, `--padding`, `--no-save`, `--follow` and `--mouse`. `--step` and `--focus` apply only to the scene that the talk opens at.
+- `:pad` changes the padding of the scene on screen, and autosave writes it into the file of the scene. With `--padding`, each scene opens with `--padding`, also when you come back to the scene where you typed `:pad`.
+- `:follow off` turns follow off for the next scenes too, and `:follow on` turns it on again. When follow goes off by itself, for example after a paste or an undo, the next scene with a file follows its file again.
+- The history of `:` commands goes on from scene to scene: `↑` gives the commands that you typed in the scenes before.
 
 ## Special cases
 
@@ -162,6 +165,7 @@ When Tiza closes, it writes the place in the talk into the master, as `talk.at`.
 - **A scene file breaks while the talk is open:** when you go to that scene, the status bar tells why, and the scene on screen stays.
 - **A `scene put` of another document:** it turns autosave off for that scene only. The next scene has autosave on.
 - **An agent change that waits for your review:** it gets `unavailable` when you go to another scene. Tiza does not apply it.
+- **A master that is a symbolic link:** when Tiza writes the place in the talk, a file with the new place replaces the link. The file that the link pointed to keeps the old place. Give Tiza the path of the file, not of the link.
 - **A session has one instance:** a second `tiza talk.tiza` in the same session does not start. See [Close an instance](../reference/cli.md#close-an-instance).
 
 ## See also

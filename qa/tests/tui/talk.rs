@@ -1549,6 +1549,87 @@ print("EXIT", s.finish(10), flush=True)
     }
 }
 
+/// A panic after the talk went back to a scene whose changes waited in
+/// memory (`--no-save`, then `:autosave on`), before their save: the
+/// changes stay, with autosave off for that scene only. The reply and the
+/// bar say it, `q` and a crossing do not leave them, `:w` saves them, and
+/// the next scene has autosave on.
+#[test]
+fn pty_a_panic_after_a_crossing_holds_autosave_and_keeps_the_changes() {
+    let dir = talk_copy("talk-pty-panic-held");
+    let steps = r##"
+def wait(pred, what):
+    end = time.monotonic() + 10
+    while time.monotonic() < end:
+        if pred():
+            return True
+        s.settle(0.05)
+    print("WAIT_TIMEOUT", what, json.dumps(answer("status")), flush=True)
+    return False
+def on_screen(text):
+    return s.wait_for(lambda out: text in plain(out), 10, text)
+ok = ok and until([3, 0], "--scene own")
+notes = answer("status").get("annotations", 0)
+ok and s.send(b":note 1 drawn live\r")
+ok = ok and wait(lambda: answer("status").get("annotations") == notes + 1, "the note")
+# Each crossing goes through the socket: the hook panics after each one.
+rc, reply = api("talk.goto", {"scene": "loop"})
+ok = ok and rc != 0 and until([5, 0], "loop")
+ok and s.send(b":autosave on\r")
+ok = ok and wait(lambda: answer("status").get("autosave") is True, ":autosave on")
+rc, reply = api("talk.goto", {"scene": "own"})
+print("CALL", json.dumps([rc, reply]), flush=True)
+ok = ok and until([3, 0], "back to own")
+print("AUTOSAVE", json.dumps(answer("status").get("autosave")), flush=True)
+ok and s.send(b"q")
+ok = ok and on_screen("unsaved changes (autosave off)")
+ok and s.send(b":scene loop\r")
+ok = ok and on_screen("changes not saved")
+print("HERE", json.dumps(here()), flush=True)
+print("DISK", "drawn live" in open("own.tiza").read(), flush=True)
+ok and s.send(b":w\r")
+ok = ok and wait(lambda: "drawn live" in open("own.tiza").read(), ":w")
+# The next scene has autosave as the presenter left it, before the bug.
+rc, reply = api("talk.goto", {"scene": "loop"})
+ok = ok and until([5, 0], "loop again")
+print("NEXT", json.dumps(answer("status").get("autosave")), flush=True)
+print("PATH", ok, flush=True)
+s.send(b"q")
+print("EXIT", s.finish(10), flush=True)
+"##;
+    let out = pty_talk(
+        &dir,
+        &["talk.tiza", "--no-save", "--scene", "own"],
+        "talk:panic-after",
+        steps,
+    );
+    assert!(out.contains("PATH True"), "{out}");
+    let call: serde_json::Value = serde_json::from_str(text_after(&out, "CALL")).unwrap();
+    assert_ne!(call[0], 0, "the request fails: {out}");
+    let reply = call[1].as_str().unwrap_or_default();
+    assert!(
+        reply.contains("autosave is off: :w saves its changes"),
+        "the reply says that autosave is off: {out}"
+    );
+    assert_eq!(text_after(&out, "AUTOSAVE"), "false", "{out}");
+    assert_eq!(
+        text_after(&out, "HERE"),
+        "[3, 0]",
+        "q and the crossing leave the scene on screen: {out}"
+    );
+    assert_eq!(
+        text_after(&out, "DISK"),
+        "False",
+        "nothing saved before :w: {out}"
+    );
+    assert_eq!(
+        text_after(&out, "NEXT"),
+        "true",
+        "the next scene has autosave on: {out}"
+    );
+    assert!(out.contains("EXIT 0\n"), "{out}");
+}
+
 /// In presentation mode the terminal tab shows the `title` of the master:
 /// Tiza pushes the old title on the stack (`CSI 22;0 t`), sets its own
 /// (`OSC 0`), keeps it when the talk goes to another scene, and pops the

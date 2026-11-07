@@ -164,6 +164,27 @@ fn a_step_reply_names_its_scene_and_the_next_scene_after_the_last_step() {
     assert_eq!(r["scene"]["position"], 3, "{r}");
 }
 
+#[test]
+fn step_next_on_the_last_step_of_the_last_scene_does_not_move_also_with_loop() {
+    let dir = talk_copy("tapi-last-loop");
+    let last = dir.join("2024.tiza");
+    let looping = std::fs::read_to_string(&last).unwrap().replacen(
+        "\"step\": 0,",
+        "\"step\": 0, \"loop\": true,",
+        1,
+    );
+    std::fs::write(&last, looping).unwrap();
+    let live = open(&dir, SessionStart::default());
+    live.api_ok("talk.goto", json!({"scene": 7}));
+    assert!(live.with(|a| a.doc.looping));
+    let end = live.with(|a| a.doc.max_step());
+    live.api_ok("step.set", json!({"step": end}));
+    // As the key `n`: the last scene does not go back to step 0.
+    let r = live.api_ok("step.next", json!({}));
+    assert_eq!(r["scene"]["position"], 7, "{r}");
+    assert_eq!(r["step"], end, "{r}");
+}
+
 // ---------------------------------------------------------------- AC2
 
 #[test]

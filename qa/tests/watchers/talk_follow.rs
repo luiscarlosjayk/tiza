@@ -1,6 +1,6 @@
-//! `--follow` in a talk, on the real binary in a pty, with watchers that
-//! start and stop slowly (the `follow:slow` hook holds each 3 s, as a busy
-//! fseventsd does).
+//! `--follow` in a talk, on the real binary in a pty. AC1 and AC2 run with
+//! watchers that start and stop slowly (the `follow:slow` hook holds each
+//! 3 s, as a busy fseventsd does).
 //!
 //! Acceptance criteria:
 //! - AC1 A scene change does not wait for the watcher of either scene: the
@@ -9,6 +9,8 @@
 //! - AC2 The scene with a file follows it; the watcher of a scene stops
 //!   when the talk leaves it. After a scene with no file, the next scene
 //!   with a file follows again.
+//! - AC3 A panic in `follow.set` leaves follow as it was, also for the
+//!   next scenes of the talk.
 
 use std::path::Path;
 
@@ -118,4 +120,73 @@ fn pty_a_scene_change_does_not_wait_for_a_slow_watcher_and_follow_goes_on() {
     let back = line_json(&out, "BACK");
     assert_eq!(back["enabled"], true, "{out}");
     assert_eq!(back["watching"], "starting", "{out}");
+}
+
+/// A panic in `follow.set` drops the request whole: follow comes back in
+/// the scene on screen, and the next scene with a file follows it as
+/// before the request.
+const PANIC_BODY: &str = r##"
+import json
+binary, cwd = sys.argv[1], sys.argv[2]
+os.chdir(cwd)
+env = dict(os.environ, TERM="xterm-256color", TIZA_NO_OSC="1", TIZA_TEST_HOOK="request:follow.set")
+
+def api(method, params):
+    r = subprocess.run([binary, "--socket", "s.sock", "api", method, json.dumps(params)],
+                       capture_output=True, text=True, timeout=30)
+    return r.returncode
+
+def answer(method):
+    r = subprocess.run([binary, "--socket", "s.sock", "api", method, "{}"],
+                       capture_output=True, text=True, timeout=30)
+    return json.loads(r.stdout) if r.returncode == 0 else {}
+
+def position():
+    return (answer("follow.status").get("test_scene") or {}).get("position")
+
+def until(pred, what, timeout=BUDGET):
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        if pred():
+            return True
+        s.settle(0.05)
+    print("WAIT_TIMEOUT", what, json.dumps(answer("follow.status")), flush=True)
+    return False
+
+s = Pty([binary, "--socket", "s.sock", "--follow", "talk.tiza", "--scene", "2"], 30, 100, env=env)
+ok = s.wait_listening() and until(lambda: position() == 2, "scene 2", 10)
+print("CALL", api("follow.set", {"enabled": False}), flush=True)
+print("BACK", json.dumps(answer("follow.status").get("enabled")), flush=True)
+ok and s.send(b":scene 7\r")
+ok = ok and until(lambda: position() == 7, "scene 7", 10)
+print("NEXT", json.dumps(answer("follow.status").get("enabled")), flush=True)
+print("PATH", ok, flush=True)
+s.send(b"q")
+print("EXIT", s.finish(10), flush=True)
+"##;
+
+#[test]
+fn pty_a_panic_in_follow_set_leaves_follow_as_it_was_for_the_next_scenes() {
+    let dir = scratch("talk-follow-panic");
+    copy_dir(&fixture("shared/talk"), &dir);
+    // Scene 7 follows the same file as scene 2.
+    std::fs::copy(dir.join("borrow.tiza"), dir.join("2024.tiza")).unwrap();
+    let budget = FOLLOW_START_BUDGET.as_secs();
+    let waits = PANIC_BODY.matches("until(lambda").count() as u64;
+    let out = tiza_qa::pty_script_with_deadline(
+        &dir,
+        "talk-follow-panic.py",
+        &format!("BUDGET = {budget}\n{PANIC_BODY}"),
+        &[bin().to_str().unwrap(), dir.to_str().unwrap()],
+        PTY_DEADLINE_S + waits * budget,
+    );
+    assert!(out.contains("PATH True"), "{out}");
+    assert_ne!(line_json(&out, "CALL"), 0, "the request fails: {out}");
+    assert_eq!(line_json(&out, "BACK"), true, "follow comes back: {out}");
+    assert_eq!(
+        line_json(&out, "NEXT"),
+        true,
+        "the next scene with a file follows it: {out}"
+    );
+    assert!(out.contains("EXIT 0"), "{out}");
 }

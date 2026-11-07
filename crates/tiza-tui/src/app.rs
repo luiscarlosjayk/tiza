@@ -379,6 +379,9 @@ struct RequestState {
     agent_notice: Option<AgentNotice>,
     agent_deferred: Vec<(String, &'static str)>,
     following: bool,
+    /// In a talk, whether the next scenes open with follow: `follow.set`
+    /// changes it.
+    follow_wanted: Option<bool>,
     /// What a follow pause waits for: a request at the resume step loads
     /// the change and clears it.
     pause: Pause,
@@ -484,6 +487,7 @@ impl RequestState {
             agent_notice: app.agent_notice.clone(),
             agent_deferred: app.agent_deferred.clone(),
             following: app.follow.is_some(),
+            follow_wanted: app.follow_wanted(),
             pause: app.pause.clone(),
             loaded: app.follow.as_ref().map(|f| FollowLoaded {
                 last_content: f.last_content.clone(),
@@ -542,6 +546,9 @@ impl RequestState {
         app.screen_via_history = self.screen_via_history;
         app.pause_embedded = self.pause_embedded;
         app.effect = self.effect;
+        if let Some(wanted) = self.follow_wanted {
+            app.set_follow_wanted(wanted);
+        }
         // Follow holds a file watcher: stopped, or started again. The
         // watcher gets back what a load wrote; one started again, its counts
         // of reads too (the same watcher keeps them: Tiza did read the file).
@@ -5526,6 +5533,16 @@ impl App {
             || self.overlay != Overlay::None
     }
 
+    /// [`App::set_follow`] that the presenter or an agent asks for (`:follow`,
+    /// `follow.set`): in a talk, the next scenes with a file to follow open
+    /// with follow as asked. When follow goes off by itself (a paste, an
+    /// undo, a watcher that does not start), they open with follow as before.
+    pub fn set_follow_asked(&mut self, enabled: bool) -> Result<String, Error> {
+        let msg = self.set_follow(enabled)?;
+        self.set_follow_wanted(enabled);
+        Ok(msg)
+    }
+
     /// Enables or disables follow mode. Enabling needs a file reference
     /// (`:link` first when the code is embedded). At a step with a patch
     /// applied it starts paused: a save, or a change made while follow was
@@ -7072,8 +7089,8 @@ impl App {
                             }
                         },
                     }),
-                    "on" | "yes" | "start" => self.set_follow(true),
-                    "off" | "no" | "stop" => self.set_follow(false),
+                    "on" | "yes" | "start" => self.set_follow_asked(true),
+                    "off" | "no" | "stop" => self.set_follow_asked(false),
                     _ => Err(Error::Invalid("usage: :follow [on|off]".into())),
                 },
                 "until" => {
@@ -8762,10 +8779,13 @@ impl App {
     /// what a load of the file wrote), supervision, the alerts — goes back
     /// to what it was ([`RequestState`]), the undo entries it recorded are
     /// forgotten, and the document is saved again when the request had
-    /// saved a half-done change. The crash hook leaves the terminal alone
-    /// meanwhile ([`answering_request`]); the panic's place and message go
-    /// to `panics.log` in Tiza's runtime directory, and nothing of it is
-    /// shown or returned (it may quote the document).
+    /// saved a half-done change. A request that changed the scene of a talk
+    /// before its panic keeps the new scene: changes of the scene that are
+    /// not saved stay in memory, with autosave off, for `:w`. The crash
+    /// hook leaves the terminal alone meanwhile ([`answering_request`]); the
+    /// panic's place and message go to `panics.log` in Tiza's runtime
+    /// directory, and nothing of it is shown or returned (it may quote the
+    /// document).
     pub fn handle_request(&mut self, req: Request) -> Response {
         let id = req.id.clone();
         let method = req.method.clone();
@@ -8786,8 +8806,17 @@ impl App {
         // The talk went to another scene before the panic: the App is the
         // one of the new scene, whole (the change of scene cannot fail once
         // it replaces the App). Nothing goes back, and nothing is saved here,
-        // outside the guard: a save that did not happen waits as a change.
+        // outside the guard (the panic can have come from a save): changes
+        // that are not saved wait in memory, with autosave off, so that `q`
+        // does not quit without them and `:w` saves them.
         let crossed = self.scene_generation != generation;
+        // A save that failed keeps autosave on: it saves again by itself
+        // when it can, and `q` already stops for it.
+        let held = crossed && self.dirty && self.autosave && self.save_error.is_none();
+        if held {
+            self.autosave = false;
+            self.autosave_held = true;
+        }
         if !crossed && let Some(before) = before {
             before.restore(self);
         }
@@ -8823,6 +8852,9 @@ impl App {
         let msg = format!(
             "{what}: a bug in Tiza stopped this request (a panic){}; please report it{}",
             match &scene {
+                Some(s) if held => format!(
+                    " after the talk went to {s}; the scene on screen is {s}; autosave is off: :w saves its changes, :autosave on resumes"
+                ),
                 Some(s) => format!(" after the talk went to {s}; the scene on screen is {s}"),
                 None if mutating => ", and nothing of it was kept".into(),
                 None => String::new(),
@@ -9373,7 +9405,7 @@ impl App {
                     })?;
                 let was = self.follow.is_some();
                 let said = self.message.clone();
-                let msg = self.set_follow(enabled)?;
+                let msg = self.set_follow_asked(enabled)?;
                 // Turned on paused, where a save waits: the presenter is
                 // told too, or the next save would seem lost; unless turning
                 // it on said something of its own (a file that cannot be
