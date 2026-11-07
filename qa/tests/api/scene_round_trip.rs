@@ -473,7 +473,7 @@ fn unchanged_put_writes_nothing() {
 #[test]
 fn every_example_round_trips_at_every_step() {
     let dir = examples_copy("examples");
-    for name in tiza_files(&dir) {
+    for name in example_documents(&dir) {
         let tiza = dir.join(&name);
         let live = open(&tiza);
         let max = get(&live)["max_step"].as_u64().unwrap() as u32;
@@ -1454,6 +1454,28 @@ fn tiza_files(dir: &Path) -> Vec<String> {
     names
 }
 
+/// The documents of the examples in `dir`. A master is not a document:
+/// each scene of its talk that shows is, after the other documents, so
+/// that each of those keeps its place and its seed.
+fn example_documents(dir: &Path) -> Vec<String> {
+    let mut docs = Vec::new();
+    let mut scenes = Vec::new();
+    for name in tiza_files(dir) {
+        let d = read_json(&dir.join(&name));
+        let Some(talk) = d["talk"]["scenes"].as_array() else {
+            docs.push(name);
+            continue;
+        };
+        let parent = Path::new(&name).parent().unwrap();
+        for s in talk.iter().filter(|s| s["skip"] != true) {
+            let file = s.as_str().or(s["file"].as_str()).unwrap();
+            scenes.push(parent.join(file).to_string_lossy().into_owned());
+        }
+    }
+    docs.extend(scenes);
+    docs
+}
+
 /// A move an agent could add at `step`, on the code shown there.
 fn random_move(rng: &mut Rng, live: &Live, step: u32, i: usize) -> Value {
     let (code, first) = live.with(move |app| {
@@ -1777,7 +1799,7 @@ fn random_moves(dir: &Path, name: &str, seed: u64) -> Tally {
 fn random_moves_on_the_examples_survive_get_put() {
     let started = Instant::now();
     let dir = examples_copy("random");
-    let names = tiza_files(&dir);
+    let names = example_documents(&dir);
     let tallies: Vec<Tally> = std::thread::scope(|s| {
         let jobs: Vec<_> = names
             .iter()

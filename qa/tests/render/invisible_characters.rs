@@ -639,11 +639,24 @@ fn random_documents_draw_every_letter_or_an_ellipsis() {
 fn without_these_characters_every_measure_is_the_old_one() {
     // The new measures differ from the old ones only on the characters
     // this card is about: every example lays out as before.
-    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples");
+    // At any depth: the scenes of a talk are in a folder. A master is not a
+    // document, and its scenes are files of their own.
+    let mut files = Vec::new();
+    let mut dirs = vec![std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples")];
+    while let Some(d) = dirs.pop() {
+        for e in std::fs::read_dir(&d).unwrap() {
+            let p = e.unwrap().path();
+            if p.is_dir() {
+                dirs.push(p);
+            } else if p.extension().is_some_and(|x| x == "tiza") {
+                files.push(p);
+            }
+        }
+    }
     let mut seen = 0;
-    for e in std::fs::read_dir(&dir).unwrap() {
-        let p = e.unwrap().path();
-        if p.extension().is_none_or(|x| x != "tiza") {
+    for p in files {
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
+        if v.get("talk").is_some() {
             continue;
         }
         let doc = tiza_core::fs::load_document(&p).unwrap();

@@ -20,7 +20,7 @@ schema = json.load(open("schema/tiza.schema.json"))
 Draft202012Validator.check_schema(schema)
 v = Draft202012Validator(schema)
 bad = 0
-for f in sorted(glob.glob("examples/*.tiza") + glob.glob("qa/fixtures/**/*.tiza", recursive=True)):
+for f in sorted(glob.glob("examples/**/*.tiza", recursive=True) + glob.glob("qa/fixtures/**/*.tiza", recursive=True)):
     errs = list(v.iter_errors(json.load(open(f))))
     why = next((w for p, w in MUST_FAIL.items() if fnmatch.fnmatch(f, p)), None)
     if why:
