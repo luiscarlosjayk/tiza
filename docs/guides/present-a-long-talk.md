@@ -103,6 +103,25 @@ The first time, the talk opens at step 0 of the first scene that shows. Then go 
 - With a `title` in the master, the terminal tab shows the title while you present. The tab gets its old title back when presentation mode stops or when you quit.
 - `q` quits. Autosave stays on during the talk. With changes that are not saved in the scene on screen, `q` does not quit: type `:q!`. See [Present](../reference/keys.md#present).
 
+The example talk [`examples/ownership-talk.tiza`](../../examples/ownership-talk.tiza) has three scenes. The title slide has no line numbers, and `center` puts it in the middle across. Then come four lines of code, with their line numbers, in two steps. The last slide comes after the last step of the code.
+
+<!-- frame id=talk-cross doc=examples/ownership-talk.tiza animate=0 -->
+```json
+{
+  "schema": 2,
+  "talk": {
+    "title": "Ownership in Rust",
+    "scenes": [
+      "talk/cover.txt.tiza",
+      "talk/move.rs.tiza",
+      "talk/thanks.txt.tiza"
+    ]
+  }
+}
+```
+
+<img src="../images/guides/talk-cross.webp" width="0" alt="An animation of a talk with three scenes. First the title slide Ownership in Rust, with no line numbers. Then lines 1 to 4 of ownership.rs, with line numbers: at step 1, a move mark on s comes in, and at step 2, a note under line 4. Then the last slide, Thank you.">
+
 ## 5. Start at a scene
 
 ```sh

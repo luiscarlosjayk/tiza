@@ -1,0 +1,11 @@
+{
+  "schema": 2,
+  "talk": {
+    "title": "Ownership in Rust",
+    "scenes": [
+      "talk/cover.txt.tiza",
+      "talk/move.rs.tiza",
+      "talk/thanks.txt.tiza"
+    ]
+  }
+}

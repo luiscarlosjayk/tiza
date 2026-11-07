@@ -94,6 +94,21 @@ fn attr<'a>(tag: &'a str, name: &str) -> &'a str {
     &tag[at..at + tag[at..].find('"').unwrap()]
 }
 
+/// A relative path with its `.` and `..` taken out, with `/`.
+fn normal(path: &Path) -> String {
+    let mut rel = PathBuf::new();
+    for c in path.components() {
+        match c {
+            std::path::Component::ParentDir => {
+                rel.pop();
+            }
+            std::path::Component::CurDir => {}
+            c => rel.push(c),
+        }
+    }
+    rel.to_string_lossy().replace('\\', "/")
+}
+
 /// The frames are not in the repository: `site/build.sh` makes them with
 /// `scripts/docs_frames.py`. This check reads only the pages, so an empty
 /// file stands for each image of a page that the repository does not have,
@@ -107,17 +122,8 @@ fn stand_in_frames(root: &Path, frames: &Path) {
             if src.contains("://") {
                 continue;
             }
-            // The path of the image in the repository, with its `..` taken out.
-            let mut rel = PathBuf::new();
-            for c in dir.join(src).components() {
-                match c {
-                    std::path::Component::ParentDir => {
-                        rel.pop();
-                    }
-                    std::path::Component::CurDir => {}
-                    c => rel.push(c),
-                }
-            }
+            // The path of the image in the repository.
+            let rel = PathBuf::from(normal(&dir.join(src)));
             if !root.join(&rel).exists() {
                 let dest = frames.join(&rel);
                 std::fs::create_dir_all(dest.parent().unwrap()).unwrap();
@@ -246,23 +252,42 @@ fn each_frame_shows_its_image_then_the_block_that_makes_it() {
                     "{at}: the block is {doc}"
                 );
                 let name = Path::new(doc).file_name().unwrap().to_str().unwrap();
-                let run = match (f.opts.get("step"), f.opts.get("animate")) {
-                    (Some(step), _) => format!("<code>tiza {name} --step {step}</code>"),
-                    (None, Some(from)) => {
-                        format!("<code>tiza {name} --present --step {from}</code>")
-                    }
-                    (None, None) => panic!("{at}: no step= and no animate="),
-                };
-                assert!(how.contains(&run), "{at}: {how}");
-                // A link to the document and to the code next to it.
                 let json: serde_json::Value = serde_json::from_str(&file).unwrap();
                 let dir = Path::new(doc).parent().unwrap();
-                for linked in [
-                    doc.to_string(),
-                    dir.join(json["code"]["file"].as_str().unwrap())
-                        .display()
-                        .to_string(),
-                ] {
+                // A link to the document and to the code next to it. For
+                // a talk: to each scene that shows, and to its code.
+                let mut linked = vec![doc.to_string()];
+                let run = if let Some(scenes) = json["talk"]["scenes"].as_array() {
+                    let mut first = None;
+                    for (pos, s) in scenes.iter().enumerate() {
+                        if s["skip"] == true {
+                            continue;
+                        }
+                        let scene = s.as_str().or(s["file"].as_str()).unwrap();
+                        first = first.or(Some(pos + 1));
+                        linked.push(normal(&dir.join(scene)));
+                        let text = std::fs::read_to_string(root.join(dir).join(scene)).unwrap();
+                        let sd: serde_json::Value = serde_json::from_str(&text).unwrap();
+                        if let Some(code) = sd["code"]["file"].as_str() {
+                            let at = dir.join(scene).parent().unwrap().join(code);
+                            linked.push(normal(&at));
+                        }
+                    }
+                    assert_eq!(f.opts.get("animate").map(String::as_str), Some("0"), "{at}");
+                    let first = first.unwrap_or_else(|| panic!("{at}: no scene shows"));
+                    format!("<code>tiza {name} --present --scene {first} --step 0</code>")
+                } else {
+                    linked.push(normal(&dir.join(json["code"]["file"].as_str().unwrap())));
+                    match (f.opts.get("step"), f.opts.get("animate")) {
+                        (Some(step), _) => format!("<code>tiza {name} --step {step}</code>"),
+                        (None, Some(from)) => {
+                            format!("<code>tiza {name} --present --step {from}</code>")
+                        }
+                        (None, None) => panic!("{at}: no step= and no animate="),
+                    }
+                };
+                assert!(how.contains(&run), "{at}: {how}");
+                for linked in linked {
                     assert!(
                         how.contains(&format!("/main/{linked}\"")),
                         "{at}: no link to {linked}: {how}"
@@ -309,7 +334,17 @@ fn each_frame_shows_its_image_then_the_block_that_makes_it() {
 fn a_frame_that_is_not_whole_stops_the_build() {
     let root = repo_root();
     let site = root.join("site");
+    // A still of a talk needs a scene: a talk is a frame with animate=0.
+    let talk = std::fs::read_to_string(root.join("examples/ownership-talk.tiza")).unwrap();
+    let still_of_a_talk = format!(
+        "<!-- frame id=x doc=examples/ownership-talk.tiza step=0 -->\n```json\n{}\n```\n\n<img src=\"a.webp\" width=\"1\" alt=\"a\">",
+        talk.trim_end_matches('\n')
+    );
     let cases = [
+        (
+            "examples/ownership-talk.tiza is a talk: give animate=0",
+            still_of_a_talk.as_str(),
+        ),
         (
             "the block that makes it is missing",
             "<!-- frame id=x code=examples/ownership.rs:1-3 -->\n\n<img src=\"a.webp\" width=\"1\" alt=\"a\">\n\ntext",

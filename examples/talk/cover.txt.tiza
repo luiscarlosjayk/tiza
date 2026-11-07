@@ -1,0 +1,19 @@
+{
+  "schema": 2,
+  "title": "Cover",
+  "source": {
+    "language": "txt",
+    "first_line": 1
+  },
+  "code": [
+    "Ownership in Rust",
+    "",
+    "Who owns a String, and when does it go away?"
+  ],
+  "step": 0,
+  "theme": "dark",
+  "padding": [1, 2],
+  "numbers": false,
+  "center": true,
+  "annotations": []
+}

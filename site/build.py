@@ -405,22 +405,60 @@ class Site:
                 raise BuildError("%s: its block is not JSON: %s" % (where, err))
             if not isinstance(d, dict):
                 raise BuildError("%s: its block is not a JSON object" % where)
-            # The files that the document reads: its code, and the files
-            # of its code.link moves, each one time.
-            files = []
-            ref = d.get("code")
-            if isinstance(ref, dict) and isinstance(ref.get("file"), str):
-                files.append(ref["file"])
-            moves = d.get("moves") if isinstance(d.get("moves"), list) else []
-            for mv in moves:
-                if isinstance(mv, dict) and mv.get("action") == "code.link" \
-                        and isinstance(mv.get("file"), str) and mv["file"] not in files:
-                    files.append(mv["file"])
+            def reads(d, at=""):
+                # The files that a document reads: its code, and the files
+                # of its code.link moves, relative to the folder `at`.
+                out = []
+                ref = d.get("code")
+                if isinstance(ref, dict) and isinstance(ref.get("file"), str):
+                    out.append(ref["file"])
+                moves = d.get("moves") if isinstance(d.get("moves"), list) else []
+                out += [mv["file"] for mv in moves if isinstance(mv, dict)
+                        and mv.get("action") == "code.link" and isinstance(mv.get("file"), str)]
+                return [posixpath.normpath(posixpath.join(at, f)) for f in out]
+
             here = posixpath.dirname(doc)
+            talk = d.get("talk") if isinstance(d.get("talk"), dict) else None
+            first = None
+            if talk is None:
+                listed = reads(d)
+            else:
+                # A master: each scene that shows, and the files that the
+                # scene reads, relative to the master.
+                if "animate" not in opts or opts["animate"] != "0":
+                    raise BuildError("%s: %s is a talk: give animate=0" % (where, doc))
+                listed = []
+                scenes = talk.get("scenes") if isinstance(talk.get("scenes"), list) else []
+                for pos, s in enumerate(scenes, 1):
+                    f = s.get("file") if isinstance(s, dict) else s
+                    if not isinstance(f, str) or (isinstance(s, dict) and s.get("skip")):
+                        continue
+                    first = first or pos
+                    listed.append(f)
+                    try:
+                        with open(os.path.join(self.repo, here, f), encoding="utf-8") as sf:
+                            sd = json.load(sf)
+                    except (OSError, ValueError) as err:
+                        raise BuildError("%s: scene %s of %s: %s" % (where, f, doc, err))
+                    if isinstance(sd, dict):
+                        listed += reads(sd, posixpath.dirname(f))
+                if first is None:
+                    raise BuildError("%s: %s shows no scene" % (where, doc))
+            # Each file one time.
+            files = []
+            for f in listed:
+                if f not in files:
+                    files.append(f)
             next_to = " and ".join(link(posixpath.normpath(posixpath.join(here, f)), f)
                                    for f in files)
             how = "Save it as %s%s." % (link(doc, name), " next to " + next_to if files else "")
-            if "animate" in opts:
+            if talk is not None:
+                # A talk opens where it was left: --scene and --step show
+                # the talk from its start.
+                how += " Then run <code>tiza %s --present --scene %d --step 0</code>, and press " \
+                       "<code>→</code> to go to the next step, and from the last step of a scene " \
+                       "to the next scene." % (e(name), first)
+            elif "animate" in opts:
                 # A document opens at its own step: --step shows the
                 # animation from where the frame starts.
                 how += " Then run <code>tiza %s --present --step %s</code>, and press " \

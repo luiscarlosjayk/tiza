@@ -46,6 +46,9 @@ commands, for a move or a field that no `:` command makes:
   `:theme file catppuccin-mocha.toml`.
 - The page shows the JSON of the document next to its frame. The document
   and its code go in docs/frames/.
+- A master .tiza (a talk) is a `doc=` frame with `animate=0`: every scene
+  in a row. Its width W is the widest of the widths of its scenes, each
+  one as a document alone.
 
 Usage: docs_frames.py TIZA [--out DIR] [PAGE...]
 Without PAGE: every page under docs/ with a frame comment. The pages, with
@@ -247,6 +250,38 @@ def narrowest_width(tiza, doc, work, code_has_ellipsis):
     sys.exit(f"docs-frames: no width up to 400 where {doc} is clean")
 
 
+def is_talk(path):
+    """A master .tiza: `talk` in place of `code`."""
+    try:
+        return "talk" in json.loads(read(path))
+    except ValueError:
+        return False
+
+
+def doc_width(tiza, doc, work):
+    """The width of a document alone: its narrowest clean width, where a
+    `…` that the export has at 400 columns too does not count."""
+    wide = run(tiza, "render", doc, "--format", "txt", "--width", "400", "--out", "-", cwd=work)
+    if wide.returncode:
+        sys.exit(f"docs-frames: {doc}: {wide.stderr.strip()}")
+    return narrowest_width(tiza, doc, work, "…" in wide.stdout)
+
+
+def talk_width(tiza, doc, work):
+    """The width of a talk: the widest of the widths of its scenes that
+    show, each one as a document alone. A scene path is relative to its
+    master."""
+    widths = []
+    for s in json.loads(read(doc))["talk"]["scenes"]:
+        if isinstance(s, dict) and s.get("skip"):
+            continue
+        f = s["file"] if isinstance(s, dict) else s
+        widths.append(doc_width(tiza, os.path.join(os.path.dirname(doc), f), work))
+    if not widths:
+        sys.exit(f"docs-frames: {doc} shows no scene")
+    return max(widths)
+
+
 def webp_width(path):
     """Width in pixels of a WebP file, from the header of its first chunk
     (the WebP container format: VP8L, VP8X or VP8)."""
@@ -318,6 +353,9 @@ def main():
                          "of the repository")
             if key == "doc" and not rel.endswith(".tiza"):
                 sys.exit(f"docs-frames: {page_path}: frame {fid}: doc={rel} is not a .tiza document")
+            if key == "doc" and is_talk(path) and opts.get("animate") != "0":
+                sys.exit(f"docs-frames: {page_path}: frame {fid}: doc={rel} is a talk: give "
+                         "animate=0, every scene in a row from the start")
             names = {os.path.basename(rel)}
             for f in opts.get("files", "").split(",") if "files" in opts else []:
                 fp = os.path.realpath(os.path.join(ROOT, f))
@@ -356,16 +394,17 @@ def main():
                     files = opts["files"].split(",") if "files" in opts else []
                     doc = make_doc(tiza, fid, path, rng, cmds, work, sock, files)
                     ellipsis = "…" in read(os.path.join(ROOT, path))
+                    width = opts.get("width") or narrowest_width(tiza, doc, work, ellipsis)
+                elif is_talk(os.path.join(ROOT, opts["doc"])):
+                    # The master and its scenes as they are in the
+                    # repository: the export only reads them.
+                    doc = os.path.join(ROOT, opts["doc"])
+                    width = opts.get("width") or talk_width(tiza, doc, work)
                 else:
                     # The document as it is in the repository: the export
                     # only reads it.
                     doc = os.path.join(ROOT, opts["doc"])
-                    wide = run(tiza, "render", doc, "--format", "txt", "--width", "400", "--out", "-",
-                               cwd=work)
-                    if wide.returncode:
-                        sys.exit(f"docs-frames: {fid}: {wide.stderr.strip()}")
-                    ellipsis = "…" in wide.stdout
-                width = opts.get("width") or narrowest_width(tiza, doc, work, ellipsis)
+                    width = opts.get("width") or doc_width(tiza, doc, work)
                 theme = [] if opts.get("theme") == "doc" else ["--theme", opts.get("theme", "dark")]
                 if "animate" in opts:
                     # Every step, with the typing and the enter effects.
