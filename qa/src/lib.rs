@@ -437,6 +437,59 @@ pub struct FollowSeen {
 impl Live {
     /// Opens `doc` (saved to `save_path` on autosave) and starts serving `socket`.
     pub fn open(doc: Document, save_path: PathBuf, socket: PathBuf) -> Live {
+        Live::open_with(
+            move || {
+                let mut app = App::new(doc, save_path);
+                tiza_tui::open_without_terminal(&mut app, &tiza_tui::SessionStart::default());
+                app
+            },
+            socket,
+        )
+    }
+
+    /// [`Live::open`] with `start` as the options of the command line.
+    pub fn open_start(
+        doc: Document,
+        save_path: PathBuf,
+        start: tiza_tui::SessionStart,
+        socket: PathBuf,
+    ) -> Live {
+        Live::open_with(
+            move || {
+                let mut app = App::new(doc, save_path);
+                tiza_tui::open_without_terminal(&mut app, &start);
+                app
+            },
+            socket,
+        )
+    }
+
+    /// Opens the talk of the master `master` as `tiza MASTER` opens it (at
+    /// `scene`, as `--scene` names it, else where its `at` says), with
+    /// `start` as the options of the command line, and starts serving
+    /// `socket`.
+    pub fn open_talk(
+        master: &Path,
+        scene: Option<&str>,
+        start: tiza_tui::SessionStart,
+        socket: PathBuf,
+    ) -> Live {
+        let loaded = tiza_core::talk::load_talk(master).expect("the master loads");
+        let scene = scene.map(str::to_string);
+        Live::open_with(
+            move || {
+                let (mut app, _) = App::first_scene(loaded, &start, scene.as_deref())
+                    .expect("the first scene opens");
+                tiza_tui::open_without_terminal(&mut app, &start);
+                app
+            },
+            socket,
+        )
+    }
+
+    /// Starts the app that `make` opens, on its own thread, and serves
+    /// `socket`.
+    fn open_with(make: impl FnOnce() -> App + Send + 'static, socket: PathBuf) -> Live {
         // A Unix socket path has room for 104 bytes on macOS: a long scratch
         // name fails here and says what to change.
         let len = socket.as_os_str().len();
@@ -451,8 +504,7 @@ impl Live {
         let steps = Arc::new(Mutex::new(Vec::new()));
         let log = Arc::clone(&steps);
         let join = std::thread::spawn(move || {
-            let mut app = App::new(doc, save_path);
-            tiza_tui::open_without_terminal(&mut app, &tiza_tui::SessionStart::default());
+            let mut app = make();
             let server = tiza_tui::ipc::start(&sock).expect("socket");
             app.socket_path = Some(server.path.clone());
             // See [`Live::steps`]: noted on this thread after each call that

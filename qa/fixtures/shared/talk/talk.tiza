@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "talk": {
+    "title": "A short talk",
+    "scenes": [
+      "intro.tiza",
+      "borrow.tiza",
+      {"file": "own.tiza", "name": "own"},
+      {"file": "not-shown.tiza", "skip": true},
+      "loop.tiza",
+      {"file": "again.tiza", "name": "borrow"},
+      "2024.tiza"
+    ]
+  },
+  "kept": "a key that this version does not know"
+}

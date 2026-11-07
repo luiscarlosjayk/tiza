@@ -215,7 +215,14 @@ pub fn open_without_terminal(app: &mut App, start: &SessionStart) {
 
 /// Starts the TUI with an opened document. Returns when it closes.
 pub fn run(opened: Opened, opts: RunOptions) -> io::Result<Exit> {
-    let mut app = App::new(opened.document, opened.save_path);
+    let app = App::new(opened.document, opened.save_path);
+    run_app(app, opened.notice, opts)
+}
+
+/// Starts the TUI with `app`, a document ([`run`]) or the first scene of a
+/// talk ([`App::first_scene`]), and `notice` from its load. Returns when it
+/// closes.
+pub fn run_app(mut app: App, notice: Option<String>, opts: RunOptions) -> io::Result<Exit> {
     let start = &opts.start;
     open_theme(&mut app, start);
     // The host's appearance, and how wide it draws the glyphs of Tiza's own
@@ -240,12 +247,7 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<Exit> {
         .collect();
     let (owed, cut_answer, query_size) = (start_up.owed, start_up.cut, start_up.size);
     app.image_exporter = opts.image_exporter;
-    open_rest(
-        &mut app,
-        start,
-        opened.notice.as_ref(),
-        &start.config_warnings,
-    );
+    open_rest(&mut app, start, notice.as_ref(), &start.config_warnings);
 
     // The binary installed them before it started the socket, so that a
     // signal never leaves the socket behind: this call only reads them.
@@ -279,6 +281,9 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<Exit> {
         let _ = crossterm::terminal::disable_raw_mode();
         let gone = silence_dead_stderr();
         if let Some(s) = app.unsaved_summary() {
+            say_on_exit(gone, &s);
+        }
+        if let Some(s) = app.save_talk_position() {
             say_on_exit(gone, &s);
         }
         drop(ipc);
@@ -378,6 +383,10 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<Exit> {
         say_on_exit(gone, &msg);
     }
     if let Some(s) = app.unsaved_summary() {
+        say_on_exit(gone, &s);
+    }
+    // In a talk, where it was: the next `tiza MASTER` opens there.
+    if let Some(s) = app.save_talk_position() {
         say_on_exit(gone, &s);
     }
     if let Some(written) = quit_written {
@@ -1169,7 +1178,9 @@ fn editor_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
         KeyCode::Right if app.present => {
             app.next_step();
         }
-        KeyCode::Left if app.present => app.set_step(app.doc.step.saturating_sub(1)),
+        KeyCode::Left if app.present => {
+            app.prev_step();
+        }
         KeyCode::Char('h') | KeyCode::Left => app.move_col(-1),
         KeyCode::Char('l') | KeyCode::Right => app.move_col(1),
         KeyCode::Char('w') => app.word_forward(),
@@ -1193,7 +1204,9 @@ fn editor_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
         KeyCode::Char('n') | KeyCode::PageDown => {
             app.next_step();
         }
-        KeyCode::Char('p') | KeyCode::PageUp => app.set_step(app.doc.step.saturating_sub(1)),
+        KeyCode::Char('p') | KeyCode::PageUp => {
+            app.prev_step();
+        }
         // Presenting, not editing: in presentation mode these keys do
         // nothing (`:undo` and `:redo` still work, and show their result).
         KeyCode::Char('u') if !app.present => app.undo(),

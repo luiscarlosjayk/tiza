@@ -1,0 +1,10 @@
+{"schema": 1, "source": {"language": "rs"},
+ "theme": "dark", "numbers": false, "padding": [0, 3],
+ "code": {"file": "src/borrow.rs"},
+ "step": 1,
+ "steps": [{"step": 2, "id": "shared", "title": "A shared borrow"}],
+ "annotations": [
+   {"id": "b1", "step": 1, "type": "box", "from_line": 2, "to_line": 2, "label": "the owner"},
+   {"id": "b2", "step": 2, "type": "arrow", "from": {"line": 3, "col": 13}, "to": {"line": 2, "col": 9}, "label": "borrows s"},
+   {"id": "b3", "step": 3, "type": "callout", "from_line": 4, "to_line": 4, "text": "r is still valid here", "placement": "margin"}
+ ]}

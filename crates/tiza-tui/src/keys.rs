@@ -408,6 +408,14 @@ pub const HELP: &[(Section, &[Row])] = &[
                 desc: "Go to a named step, or to step N.",
             },
             Command {
+                syntax: ":scene {X} [{STEP}]",
+                desc: "In a talk, go to scene X (a position or a name), at STEP or step 0.",
+            },
+            Command {
+                syntax: ":next!  :prev!  :scene!",
+                desc: "In a talk, go to another scene without the changes that are not saved.",
+            },
+            Command {
                 syntax: ":link {path}[:{A-B}]",
                 desc: "Show another file from this step on. At step 0, :link is :ref.",
             },

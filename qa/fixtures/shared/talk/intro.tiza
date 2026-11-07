@@ -1,0 +1,9 @@
+{"schema": 1, "source": {"language": "rs", "first_line": 1},
+ "theme": "light", "padding": [2, 6],
+ "code": ["// A short talk", "// about borrows"],
+ "step": 0,
+ "steps": [{"step": 0, "auto_advance_ms": 3600000}, {"step": 1, "auto_advance_ms": 3600000}, {"step": 2, "auto_advance_ms": 3600000}],
+ "annotations": [
+   {"id": "t1", "step": 1, "type": "note", "line": 1, "text": "intro one"},
+   {"id": "t2", "step": 2, "type": "note", "line": 2, "text": "intro two"}
+ ]}

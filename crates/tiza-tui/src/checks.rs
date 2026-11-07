@@ -169,6 +169,19 @@ impl Checks {
             .map_or(0, |b| b.waiters.len())
     }
 
+    /// Answers every request that runs or waits `unavailable` with `msg`:
+    /// the document they asked about is gone (the next scene of a talk).
+    /// A check that runs ends with no one to answer.
+    pub fn drop_all(&self, msg: &str) {
+        let mut st = lock(&self.0);
+        let mut batches: Vec<Batch> = st.waiting.take().map(|(b, _)| b).into_iter().collect();
+        batches.extend(st.running.take());
+        drop(st);
+        for (id, tx) in batches.into_iter().flat_map(|b| b.waiters) {
+            let _ = tx.send(Response::err(id, "unavailable", msg.to_string()));
+        }
+    }
+
     /// Answers request `id` on `reply` with the check of the document at
     /// `revision`, at `width` (the one the check uses, never "the
     /// default"). `snapshot` copies the document; it is called only when no

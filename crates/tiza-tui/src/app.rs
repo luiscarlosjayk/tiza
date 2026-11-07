@@ -22,6 +22,9 @@ use tiza_core::protocol::{
 use tiza_core::theme::Theme;
 use tiza_core::{Error, fs};
 
+mod talk;
+pub use talk::{Landing, TalkState, scene_label};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Mode {
     Normal,
@@ -97,10 +100,9 @@ fn selection_use(name: &str) -> Option<SelectionUse> {
         | "wq" | "wq!" | "box" | "arrow" | "ar" | "note" | "n" | "embed" | "link" | "ref"
         | "spot" | "spotlight" | "callout" | "co" | "set" | "follow" | "until" | "clear"
         | "del" | "delete" | "rm" | "color" | "col" | "label" | "step" | "s" | "next" | "goto"
-        | "prev" | "focus" | "f" | "theme" | "t" | "present" | "p" | "lang" | "title"
-        | "margin" | "numbers" | "nums" | "pad" | "padding" | "layout" | "autosave" | "scroll" => {
-            Ignores
-        }
+        | "prev" | "next!" | "prev!" | "scene" | "scene!" | "focus" | "f" | "theme" | "t"
+        | "present" | "p" | "lang" | "title" | "margin" | "numbers" | "nums" | "pad"
+        | "padding" | "layout" | "autosave" | "scroll" => Ignores,
         _ => return None,
     })
 }
@@ -874,6 +876,15 @@ pub struct App {
     /// Agent changes not shown that arrived in presentation mode: told on
     /// the bar when it ends, never on the take.
     agent_deferred: Vec<(String, &'static str)>,
+    /// The talk this scene is in (a master `.tiza`), or `None` for a
+    /// document opened alone.
+    pub talk: Option<Box<TalkState>>,
+    /// In a talk, the step that the file of the scene holds: a save writes
+    /// it, never the step on screen (the master keeps the position).
+    disk_step: Option<u32>,
+    /// A `scene put` of another document turned autosave off for this
+    /// document only: the next scene of a talk has it on again.
+    autosave_held: bool,
 }
 
 impl App {
@@ -986,6 +997,9 @@ impl App {
             history_said: None,
             agent_notice: None,
             agent_deferred: Vec::new(),
+            talk: None,
+            disk_step: None,
+            autosave_held: false,
         };
         app.rebuild_theme();
         app.mark_saved();
@@ -1053,19 +1067,25 @@ impl App {
     /// appearance and, when following, pick the matching theme.
     pub fn set_host(&mut self, host: crate::appearance::Host) {
         if let Some(dark) = host.dark() {
-            self.host_dark = Some(dark);
-            if self.theme_auto {
-                self.set_theme_name(
-                    if dark {
-                        ThemeName::Dark
-                    } else {
-                        ThemeName::Light
-                    },
-                    false,
-                );
-            } else {
-                self.rebuild_theme();
-            }
+            self.apply_host_dark(dark);
+        }
+    }
+
+    /// [`App::set_host`] with what the terminal answered: also for the
+    /// next scene of a talk, which does not ask again.
+    fn apply_host_dark(&mut self, dark: bool) {
+        self.host_dark = Some(dark);
+        if self.theme_auto {
+            self.set_theme_name(
+                if dark {
+                    ThemeName::Dark
+                } else {
+                    ThemeName::Light
+                },
+                false,
+            );
+        } else {
+            self.rebuild_theme();
         }
     }
 
@@ -2397,7 +2417,8 @@ impl App {
         if !self.theme_auto {
             self.doc.theme = Some(self.theme.name);
         }
-        match fs::save_document(&self.doc, &self.save_path) {
+        let saved = fs::save_document(&self.disk_doc(), &self.save_path);
+        match saved {
             Ok(()) => {
                 self.dirty = false;
                 // The file holds only what this version knows now.
@@ -2530,6 +2551,13 @@ impl App {
     /// from then on; the paths it names, in memory and in the undo history,
     /// are rewritten for that folder once the file is written.
     fn save_as(&mut self, rest: &str, force: bool) -> Result<String, Error> {
+        // The master names this file: a scene that moves to another file
+        // leaves the talk. `:w PATH` writes a copy.
+        if self.talk.is_some() {
+            return Err(Error::Invalid(
+                ":saveas does not work in a talk: the master names the file of each scene; :w PATH writes a copy".into(),
+            ));
+        }
         if rest.is_empty() {
             return Err(Error::Invalid(
                 "usage: :saveas PATH   (saves there from now on; ! overwrites an existing file)"
@@ -2579,11 +2607,24 @@ impl App {
     /// The sidecar as a save would write it now (the theme as `save` sets
     /// it): what quitting compares with what was last written.
     fn pending_json(&self) -> Option<String> {
-        let mut d = self.doc.clone();
+        let mut d = self.disk_doc().into_owned();
         if !self.theme_auto {
             d.theme = Some(self.theme.name);
         }
         fs::document_json(&d).ok()
+    }
+
+    /// The document as its file holds it: in a talk, at the step of the
+    /// file, not the one on screen.
+    fn disk_doc(&self) -> std::borrow::Cow<'_, Document> {
+        match self.disk_step {
+            Some(s) if s != self.doc.step => {
+                let mut d = self.doc.clone();
+                d.step = s;
+                std::borrow::Cow::Owned(d)
+            }
+            _ => std::borrow::Cow::Borrowed(&self.doc),
+        }
     }
 
     /// Takes note of the document as it stands as the one on disk (opened
@@ -3241,6 +3282,7 @@ impl App {
         };
         if other && self.autosave {
             self.autosave = false;
+            self.autosave_held = true;
             self.info(format!(
                 "another document loaded: autosave off (:w saves over {}, :saveas PATH saves elsewhere, :autosave on resumes)",
                 self.save_path.display()
@@ -3256,6 +3298,7 @@ impl App {
             if !sent.edited.is_empty() {
                 msg = if self.autosave {
                     self.autosave = false;
+                    self.autosave_held = true;
                     format!(
                         "not saved, and autosave is off: {} (:w saves it embedded in {}, :saveas PATH saves elsewhere, :autosave on resumes)",
                         sent.edited.join("; "),
@@ -3661,18 +3704,10 @@ impl App {
         }
     }
 
-    /// `:next`, `:prev`, `:step N`: goes to `step` and says where it is,
-    /// unless the step said something loud (a move that does not apply):
-    /// then that stays on the bar, as with the `n` key.
-    fn step_message(&mut self, step: u32) -> String {
-        if self.step_to(step) {
-            return String::new();
-        }
-        self.step_label_line()
-    }
-
-    /// [`App::step_message`] for `:step N`: to the step on screen, as a
-    /// goto there ([`App::step_to_asked`]).
+    /// `:step N`: goes to step N and says where it is, unless the step
+    /// said something loud (a move that does not apply): then that stays on
+    /// the bar, as with the `n` key. To the step on screen, as a goto there
+    /// ([`App::step_to_asked`]).
     fn step_message_asked(&mut self, step: u32) -> String {
         if self.step_to_asked(step) {
             return String::new();
@@ -3703,10 +3738,38 @@ impl App {
         self.step_to(step);
     }
 
+    /// `p`, PageUp (`←` in presentation mode), `:prev` and `step.prev`:
+    /// one step back; in a talk, see [`App::prev_in_talk`].
+    pub fn prev_step(&mut self) -> bool {
+        self.prev_step_forced(false)
+    }
+
+    fn prev_step_forced(&mut self, force: bool) -> bool {
+        if let Some(loud) = self.prev_in_talk(force) {
+            return loud;
+        }
+        self.step_to(self.doc.step.saturating_sub(1))
+    }
+
     /// `n`, PageDown (`→` in presentation mode), `:next`, `step.next` and
     /// the auto-advance: one step on, or
     /// back to step 0 past the last one when the document loops.
     pub fn next_step(&mut self) -> bool {
+        self.next_step_forced(false)
+    }
+
+    /// [`App::next_step`]; in a talk, past the end of the scene, to the
+    /// next scene (`force`: also with changes that are not saved).
+    fn next_step_forced(&mut self, force: bool) -> bool {
+        if let Some(loud) = self.next_scene_key(force) {
+            return loud;
+        }
+        self.next_step_in_scene()
+    }
+
+    /// One step on in this document, or back to step 0 past the last one
+    /// when it loops.
+    fn next_step_in_scene(&mut self) -> bool {
         match self.doc.next_step_from(self.doc.step) {
             Some(0) => self.step_to_with(0, true),
             Some(n) => self.step_to(n),
@@ -3746,11 +3809,14 @@ impl App {
         if now.saturating_duration_since(ready) < std::time::Duration::from_millis(ms) {
             return false;
         }
-        // Fires once per arrival: a last step without `loop` stays put.
+        // Fires once per arrival: a last step without `loop` stays put, or
+        // goes to the next scene of a talk.
         self.step_ready_at = None;
-        let before = (self.doc.step, self.revision);
-        self.next_step();
-        (self.doc.step, self.revision) != before
+        let before = (self.doc.step, self.revision, self.save_path.clone());
+        if self.next_scene_auto().is_none() {
+            self.next_step_in_scene();
+        }
+        (self.doc.step, self.revision, self.save_path.clone()) != before
     }
 
     /// Goes to `step` (moves applied, typing started going forward one).
@@ -5772,6 +5838,10 @@ impl App {
         {
             st["watchers"] = json!(crate::follow::live_watchers());
             st["bar"] = json!(self.message.as_ref().map(|m| m.0.clone()));
+            st["test_scene"] = json!(self.talk.as_ref().map(|t| {
+                let s = t.scene();
+                json!({"position": s.position, "name": s.name, "file": s.path})
+            }));
         }
         st
     }
@@ -6424,6 +6494,7 @@ impl App {
         "redo",
         "review",
         "saveas",
+        "scene",
         "scroll",
         "set",
         "spot",
@@ -6998,13 +7069,14 @@ impl App {
                         _ => Err(Error::Invalid("usage: :step N  |  :step ID N".into())),
                     }
                 }
-                "next" => {
-                    if self.next_step() {
+                "next" | "next!" => {
+                    if self.next_step_forced(cmd == "next!") {
                         Ok(String::new())
                     } else {
                         Ok(self.step_label_line())
                     }
                 }
+                "scene" | "scene!" => self.scene_command(rest, cmd == "scene!"),
                 "goto" => {
                     let id = rest.trim();
                     if id.is_empty() {
@@ -7015,7 +7087,13 @@ impl App {
                     self.goto_step(id)?;
                     Ok(self.step_label_line())
                 }
-                "prev" => Ok(self.step_message(self.doc.step.saturating_sub(1))),
+                "prev" | "prev!" => {
+                    if self.prev_step_forced(cmd == "prev!") {
+                        Ok(String::new())
+                    } else {
+                        Ok(self.step_label_line())
+                    }
+                }
                 "focus" | "f" => {
                     if rest.is_empty() {
                         self.focus = None;
@@ -7320,6 +7398,7 @@ impl App {
                     )),
                     "on" | "yes" => {
                         self.autosave = true;
+                        self.autosave_held = false;
                         self.no_save = false;
                         if self.dirty {
                             self.save()?;
@@ -7333,6 +7412,7 @@ impl App {
                     }
                     "off" | "no" => {
                         self.autosave = false;
+                        self.autosave_held = false;
                         Ok("autosave off (:w saves explicitly)".into())
                     }
                     _ => Err(Error::Invalid("usage: :autosave [on|off]".into())),
@@ -7378,8 +7458,12 @@ impl App {
             Ok(_) => {}
             Err(e) => self.error(e.to_string()),
         }
-        // Undo/redo bring annotations back as they were: no hint there.
-        if !matches!(cmd, "undo" | "u" | "redo") {
+        // Undo/redo bring annotations back as they were: no hint there. A
+        // step command can open another scene, with annotations of its own.
+        if !matches!(
+            cmd,
+            "undo" | "u" | "redo" | "next" | "next!" | "prev" | "prev!" | "scene" | "scene!"
+        ) {
             self.add_step_hint(&before, prev_message.as_ref());
         }
     }
@@ -9222,7 +9306,7 @@ impl App {
                 serde_json::to_value(StepReply::of(&self.doc, self.revision))?
             }
             "step.prev" => {
-                self.set_step(self.doc.step.saturating_sub(1));
+                self.prev_step();
                 serde_json::to_value(StepReply::of(&self.doc, self.revision))?
             }
             "step.goto" => {
