@@ -66,7 +66,14 @@ fn round_trip_every_fixture() {
         );
         let json: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&saved).unwrap()).unwrap();
-        assert_eq!(json["schema"], SCHEMA_VERSION);
+        // A save writes the schema that the document needs: that of the
+        // version that wrote the fixture, so that it opens there again.
+        assert_eq!(
+            json["schema"],
+            fixture_schema(&f),
+            "{}: saved with another schema",
+            f.display()
+        );
         // Saving again is byte-stable.
         let again = dir.join("again.tiza");
         fs::save_document(&back, &again).unwrap();

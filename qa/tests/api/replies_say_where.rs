@@ -138,7 +138,7 @@ fn spotlight_past_its_until() {
         json!({"type": "spotlight", "from_line": 2, "to_line": 3, "step": 1}),
     );
     assert_eq!(r["visible"], json!(false), "{r}");
-    assert_eq!(r["hidden"], json!("a spotlight shows only at its step 1"));
+    assert_eq!(r["hidden"], json!("it shows only at step 1"));
     let r = live.api_ok(
         "annotation.add",
         json!({"type": "spotlight", "from_line": 2, "to_line": 3, "step": 1, "until": 3}),

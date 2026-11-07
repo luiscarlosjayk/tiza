@@ -591,6 +591,7 @@ mod tests {
         )
         .unwrap();
         d.add(crate::model::Annotation {
+            until: None,
             id: "a1".into(),
             step: 2,
             color: None,

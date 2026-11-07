@@ -1902,7 +1902,6 @@ pub fn shift_shape_by(
             from_line,
             to_line,
             ids,
-            until,
         } => {
             let (a, b) = match from_line {
                 Some(f) => {
@@ -1915,7 +1914,6 @@ pub fn shift_shape_by(
                 from_line: a,
                 to_line: b,
                 ids: ids.clone(),
-                until: *until,
             }
         }
     })
@@ -2715,6 +2713,7 @@ mod tests {
         assert_eq!(d.link_files(), ["lib.rs"]);
         // An annotation added at step 1 belongs to lib.rs; at step 2 to the main file.
         let note = |step: u32, line: u32| Annotation {
+            until: None,
             id: String::new(),
             step,
             color: None,

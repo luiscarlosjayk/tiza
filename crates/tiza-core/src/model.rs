@@ -12,8 +12,10 @@ use unicode_segmentation::UnicodeSegmentation;
 use crate::error::Error;
 use crate::moves::{self, Move, MoveAction, ViewKey, ViewRef};
 
-/// Schema version of the `.tiza` file.
-pub const SCHEMA_VERSION: u32 = 1;
+/// The newest schema of the `.tiza` file that this version reads. A file
+/// is written with the schema it needs ([`Document::schema_needed`]), so a
+/// file that uses nothing new opens in an older Tiza.
+pub const SCHEMA_VERSION: u32 = 2;
 
 /// The last step a document can have: annotations, moves and
 /// `steps` entries name steps 0 to this. A take is laid out over every
@@ -53,33 +55,31 @@ fn annotation_what(id: &str) -> String {
     }
 }
 
-/// The rule of a spotlight's `until`: a spotlight is active from its step to
-/// its `until`, so an `until` before its step makes it active at no step.
-/// The text that says so, or `None` when the annotation keeps the rule (not
-/// a spotlight, no `until`, or an `until` at or after its step). `tiza
-/// check` gives it as the error `until`; `annotation.add`,
-/// `annotation.update` and `:until` refuse with it. The fix comes first:
-/// the status bar cuts the end of a long message.
-pub fn until_before_step(step: u32, shape: &Shape) -> Option<String> {
-    match shape {
-        Shape::Spotlight {
-            until: Some(until), ..
-        } if *until < step => Some(format!(
+/// The rule of `until`: an annotation shows from its step to its `until`,
+/// so an `until` before its step makes it show at no step. The text that
+/// says so, or `None` when the annotation keeps the rule (no `until`, or
+/// an `until` at or after its step). `tiza check` gives it as the error
+/// `until`; `annotation.add`, `annotation.update` and `:until` refuse with
+/// it. The fix comes first: the status bar cuts the end of a long message.
+pub fn until_before_step(step: u32, until: Option<u32>, shape: &Shape) -> Option<String> {
+    match until {
+        Some(until) if until < step => Some(format!(
             "give until {step} or later, or remove it \
-             (until {until} is before step {step}: the spotlight never shows)"
+             (until {until} is before step {step}: the {} never shows)",
+            shape.kind_name()
         )),
         _ => None,
     }
 }
 
 /// [`until_before_step`] as the refusal of a request, named by the id of
-/// the annotation (`spotlight` when it has none yet): `a17: give until 1
+/// the annotation (its type when it has none yet): `a17: give until 1
 /// or later, …`.
-pub fn check_until(id: &str, step: u32, shape: &Shape) -> Result<(), Error> {
-    match until_before_step(step, shape) {
+pub fn check_until(id: &str, step: u32, until: Option<u32>, shape: &Shape) -> Result<(), Error> {
+    match until_before_step(step, until, shape) {
         Some(text) => {
             let who = if id.trim().is_empty() {
-                "spotlight"
+                shape.kind_name()
             } else {
                 id
             };
@@ -101,6 +101,10 @@ pub fn check_hold_ms(ms: u64, what: &str) -> Result<(), Error> {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
 pub struct Document {
+    // In memory a loaded document has `SCHEMA_VERSION`; a document that
+    // goes out (a save, `scene.get`) has `Document::schema_needed`.
+    /// The version of the format: 2 when the document has an `until` on an
+    /// annotation that is not a spotlight, else 1.
     pub schema: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
@@ -804,8 +808,6 @@ pub enum Shape {
         to_line: Option<u32>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         ids: Vec<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        until: Option<u32>,
     },
 }
 
@@ -922,18 +924,64 @@ pub struct Annotation {
     pub file: Option<String>,
     #[serde(flatten)]
     pub shape: Shape,
+    // Declared after `shape`, so that a file writes it where Tiza 0.2
+    // wrote the `until` of a spotlight: after the fields of the shape.
+    /// The last step that shows the annotation: `step` or a later one (an
+    /// earlier one makes it show at no step). Absent: a spotlight shows
+    /// only at its `step`, any other annotation to the last step.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub until: Option<u32>,
 }
 
 impl Annotation {
+    /// The last step at which it shows, or `None` for an annotation that
+    /// shows to the last step: its `until`, else its own `step` for a
+    /// spotlight.
+    pub fn end(&self) -> Option<u32> {
+        match (&self.shape, self.until) {
+            (_, Some(until)) => Some(until),
+            (Shape::Spotlight { .. }, None) => Some(self.step),
+            (_, None) => None,
+        }
+    }
+
+    /// The rule of when an annotation shows: from its `step` to its
+    /// [`end`](Self::end). Every place that asks whether an annotation is
+    /// on the screen at a step asks this.
+    pub fn shown_at(&self, step: u32) -> bool {
+        self.step <= step && self.end().is_none_or(|end| step <= end)
+    }
+
+    /// Whether the layout of `step` takes it: [`shown_at`](Self::shown_at),
+    /// except that a spotlight takes part from its step on, because the
+    /// layout asks [`spot_active_at`](Self::spot_active_at) of the step whose
+    /// dim it shows, which is the step before while a step types and its
+    /// dim fades. While `step` types (`typing`), the annotations of `step`
+    /// wait until the typing ends.
+    pub fn drawn_at(&self, step: u32, typing: bool) -> bool {
+        match self.shape {
+            Shape::Spotlight { .. } => self.came_at(step, typing),
+            _ => self.came_at(step, typing) && self.shown_at(step),
+        }
+    }
+
+    /// Whether its step has come at `step`, also if it left after its
+    /// `until`. While `step` types (`typing`), the annotations of `step`
+    /// have not come yet.
+    pub fn came_at(&self, step: u32, typing: bool) -> bool {
+        self.step <= step && !(typing && self.step == step)
+    }
+
+    /// Whether it showed at a step before `step` and does not show at
+    /// `step`: it left at its `until`.
+    pub fn left_at(&self, step: u32) -> bool {
+        self.step <= step && !self.shown_at(step)
+    }
+
     /// Whether this is a spotlight that is active at `step`: from its
     /// `step` to its `until`, or only at its `step`.
     pub fn spot_active_at(&self, step: u32) -> bool {
-        match &self.shape {
-            Shape::Spotlight { until, .. } => {
-                self.step <= step && step <= until.unwrap_or(self.step)
-            }
-            _ => false,
-        }
+        matches!(self.shape, Shape::Spotlight { .. }) && self.shown_at(step)
     }
 }
 
@@ -1040,8 +1088,8 @@ pub struct View {
 pub enum Hidden {
     /// No annotation has that id.
     NoSuch(String),
-    /// A spotlight past its `until`.
-    SpotlightPast { from: u32, end: u32 },
+    /// Past its `until` (a spotlight without one: past its step).
+    Past { from: u32, end: u32 },
     /// It appears at a later step.
     Later(u32),
     /// Its file is not the one shown at `step`.
@@ -1065,11 +1113,11 @@ impl std::fmt::Display for Hidden {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Hidden::NoSuch(id) => write!(f, "no annotation {id}"),
-            Hidden::SpotlightPast { from, end } if from == end => {
-                write!(f, "a spotlight shows only at its step {end}")
+            Hidden::Past { from, end } if from == end => {
+                write!(f, "it shows only at step {end}")
             }
-            Hidden::SpotlightPast { from, end } => {
-                write!(f, "a spotlight shows from step {from} to {end}")
+            Hidden::Past { from, end } => {
+                write!(f, "it shows only at steps {from}-{end}")
             }
             Hidden::Later(s) => write!(f, "it appears at step {s}"),
             Hidden::OtherFile { file, shown, step } => {
@@ -1211,7 +1259,28 @@ impl Document {
             d.follows = None;
         }
         d.embed_code();
+        d.schema = d.schema_needed();
         d
+    }
+
+    /// The schema that this document needs: the oldest one that has every
+    /// field it uses. A save and `scene.get` write it, so a document that
+    /// uses nothing new opens in an older Tiza, and one that does is
+    /// refused there («reads schema 1 at most») instead of drawn wrong.
+    ///
+    /// Raise it only for a field that an older version draws wrong and
+    /// says nothing about: Tiza 0.2 reads an unknown field of an
+    /// annotation as nothing. What an older version skips with a warning
+    /// (an effect or a move that it does not know) needs no new schema.
+    /// Schema 2 is the schema of every new field of Tiza 0.3: a later
+    /// field of 0.3 adds its test here, with the same number.
+    pub fn schema_needed(&self) -> u32 {
+        // Schema 1 has `until` only on a spotlight.
+        let until = self
+            .annotations
+            .iter()
+            .any(|a| a.until.is_some() && !matches!(a.shape, Shape::Spotlight { .. }));
+        if until { 2 } else { 1 }
     }
 
     // ---- moves (ADR 0007) and views ----
@@ -1848,7 +1917,8 @@ impl Document {
                 Some(shape) if a.file == proj.shown.file => Some(Annotation { shape, ..a.clone() }),
                 Some(_) => None,
                 None => {
-                    if a.step <= step {
+                    // One that left before `step` needs no anchor there.
+                    if a.shown_at(step) {
                         unanchored.push(a.id.clone());
                     }
                     None
@@ -1947,6 +2017,17 @@ impl Document {
             let hi = r.iter().map(|(_, b)| *b).max()?;
             Some((lo, hi))
         };
+        // One that left: the view would go to a place with nothing drawn.
+        if let Some(end) = a.end().filter(|end| a.step <= step && step > *end) {
+            let at = if a.step == end {
+                format!("step {end}")
+            } else {
+                format!("steps {}-{end}", a.step)
+            };
+            return Err(format!(
+                "annotation «{id}» shows only at {at}, not at step {step}"
+            ));
+        }
         if a.step <= step {
             let shape = shapes
                 .get(k)
@@ -1996,12 +2077,11 @@ impl Document {
         let Some(a) = self.find_annotation(id) else {
             return Some(Hidden::NoSuch(id.to_string()));
         };
-        match &a.shape {
-            Shape::Spotlight { until, .. } if step >= a.step => {
-                let end = until.unwrap_or(a.step);
-                if step > end {
-                    return Some(Hidden::SpotlightPast { from: a.step, end });
-                }
+        // Past its `until` first: one that left and lost its anchor after it
+        // left is past, not unanchored.
+        match a.end() {
+            Some(end) if step >= a.step && step > end => {
+                return Some(Hidden::Past { from: a.step, end });
             }
             _ if a.step > step => {
                 return Some(
@@ -2154,12 +2234,8 @@ impl Document {
     pub fn change_steps(&self, last: u32) -> Vec<u32> {
         let mut out: Vec<u32> = std::iter::once(0)
             .chain(self.annotations.iter().flat_map(|a| {
-                let end = match &a.shape {
-                    Shape::Spotlight {
-                        until: Some(until), ..
-                    } => Some(until.saturating_add(1)),
-                    _ => None,
-                };
+                // The step after its `until`, where it leaves.
+                let end = a.until.map(|until| until.saturating_add(1));
                 [a.step, a.step.saturating_add(1)].into_iter().chain(end)
             }))
             .chain(self.moves.iter().map(|m| m.at_step))
@@ -2182,6 +2258,19 @@ impl Document {
                 (*s, *s..=end)
             })
             .collect()
+    }
+
+    /// Whether an annotation leaves at `step`: it shows at the step before
+    /// and not at `step`. For `tiza check`, a step where only something
+    /// leaves is not a step with nothing new. The layout asks
+    /// [`spots_change_at`](Self::spots_change_at) instead: only a spotlight
+    /// changes the dim of the base.
+    pub fn leaves_at(&self, step: u32) -> bool {
+        step >= 1
+            && self
+                .annotations
+                .iter()
+                .any(|a| a.shown_at(step - 1) && !a.shown_at(step))
     }
 
     /// Whether a spotlight changes at `step`: one is active at `step` and
@@ -2876,6 +2965,7 @@ mod tests {
         let mut d = doc();
         let id = d
             .add(Annotation {
+                until: None,
                 id: String::new(),
                 step: 1,
                 color: None,
@@ -2891,6 +2981,7 @@ mod tests {
         assert_eq!(id, "a1");
         let err = d
             .add(Annotation {
+                until: None,
                 id: String::new(),
                 step: 1,
                 color: None,
@@ -2910,6 +3001,7 @@ mod tests {
     fn roundtrip_json() {
         let mut d = doc();
         d.add(Annotation {
+            until: None,
             id: "a1".into(),
             step: 2,
             color: None,

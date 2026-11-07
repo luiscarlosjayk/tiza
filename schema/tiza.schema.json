@@ -297,14 +297,6 @@
             "type": {
               "const": "spotlight",
               "type": "string"
-            },
-            "until": {
-              "format": "uint32",
-              "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
             }
           },
           "required": [
@@ -360,6 +352,15 @@
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
+        },
+        "until": {
+          "description": "The last step that shows the annotation: `step` or a later one (an\nearlier one makes it show at no step). Absent: a spotlight shows\nonly at its `step`, any other annotation to the last step.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
         }
       },
       "required": [
@@ -1189,6 +1190,7 @@
       ]
     },
     "schema": {
+      "description": "The version of the format: 2 when the document has an `until` on an\nannotation that is not a spotlight, else 1.",
       "format": "uint32",
       "minimum": 0,
       "type": "integer"

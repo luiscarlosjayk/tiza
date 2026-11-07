@@ -1,6 +1,7 @@
 //! How Tiza draws the code and the annotations into a frame and into text:
 //! styles, themes, margins, Unicode and snapshots.
 
+mod annotation_until;
 mod arrow_styles;
 mod border_styles;
 mod box_border_rows;

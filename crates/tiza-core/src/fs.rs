@@ -1047,13 +1047,23 @@ pub fn read_view_file(file: &str, base_dir: Option<&Path>) -> Result<Vec<String>
 }
 
 /// Migrations between schema versions: `(from, f)` turns a schema-`from`
-/// JSON value into schema `from + 1`. Applied in order on load; files are
-/// written in the current schema. Every bump of `SCHEMA_VERSION` adds one
-/// entry here and a fixture under `qa/fixtures/compat/` (a QA test checks both).
-pub const MIGRATIONS: &[(u32, Migration)] = &[];
+/// JSON value into schema `from + 1`. Applied in order on load; a file is
+/// written with the schema it needs ([`Document::schema_needed`]). Every
+/// bump of `SCHEMA_VERSION` adds one entry here and a fixture under
+/// `qa/fixtures/compat/` (a QA test checks both).
+pub const MIGRATIONS: &[(u32, Migration)] = &[(1, from_1_to_2)];
 
-/// A function that rewrites a raw document of one schema into the next.
-pub type Migration = fn(&mut serde_json::Value);
+/// A function that rewrites a raw document of one schema into the next,
+/// and says whether it changed anything: `tiza check` reads a document
+/// that no migration changed straight from its text, so that an error
+/// keeps its line.
+pub type Migration = fn(&mut serde_json::Value) -> bool;
+
+/// Schema 2 only adds fields (`until` on every annotation): a schema-1
+/// document is a schema-2 document as it is.
+fn from_1_to_2(_: &mut serde_json::Value) -> bool {
+    false
+}
 
 /// Absolute path of the file a document's code comes from, when it is a
 /// file reference (`code: {file, lines}`); `None` for embedded code.
@@ -1332,6 +1342,7 @@ pub fn document_json(doc: &Document) -> Result<String, Error> {
     if !doc.is_embedded() {
         doc.follows = None;
     }
+    doc.schema = doc.schema_needed();
     Ok(serde_json::to_string_pretty(&doc)?)
 }
 

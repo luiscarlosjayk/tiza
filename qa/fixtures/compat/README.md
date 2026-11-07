@@ -10,4 +10,6 @@ One file per **producer**, named `v<schema>-<app version>-<what>.tiza`, written 
 
 - `v1-roundtrip-scroll.tiza` — written by hand: a `scroll` move with each target (`line`, `find` with `occurrence`, `annotation`) and each `align`, one of them without `align` (the default, `center`). A save writes the moves as they are in the file.
 
+- `v2-0.3.0-until.tiza` — written by hand as Tiza 0.3.0 saves it: an `until` on each type of annotation, a spotlight whose `ids` name a note with an `until`, an annotation with no `until`, and a `replace` at step 3 that removes the text of a highlight that went at step 1. Each annotation goes after its `until`. The file has `"schema": 2`, and a save keeps it.
+
 A fixture named `v1-newer-*.tiza` is a file of a newer Tiza. It does not follow the schema of this version, so `scripts/check-schema.py` expects it to fail the validation, and fails when it validates.

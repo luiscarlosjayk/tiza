@@ -292,6 +292,7 @@ mod tests {
     fn doc() -> Document {
         let mut d = Document::from_code("fn a() {}\nfn b() {}\nfn c() {}\n", "rs", None);
         d.add(crate::model::Annotation {
+            until: None,
             id: "n1".into(),
             step: 1,
             color: None,
@@ -305,6 +306,7 @@ mod tests {
         })
         .unwrap();
         d.add(crate::model::Annotation {
+            until: None,
             id: "n2".into(),
             step: 2,
             color: None,

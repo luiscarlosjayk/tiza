@@ -220,24 +220,34 @@ fn nesting_depth(spans: &[(u32, u32)]) -> usize {
         .unwrap_or(0)
 }
 
+/// The steps at which an arrow shows, for [`assign_lanes`]: from its step
+/// to its `until`, or to the end.
+type Life = (u32, u32);
+
+/// An arrow that shows at every step, as the layout of one step sees them.
+const ALWAYS: Life = (0, u32::MAX);
+
 /// Greedy lane assignment: longest span first, lane 0 farthest from the
-/// code; a span takes the first lane none of whose spans touch it.
+/// code; a span takes the first lane none of whose spans touch it. Two
+/// spans touch when their lines touch and they show at a same step: two
+/// arrows that never show together can share a lane.
 fn assign_lanes<T: Copy + Ord + std::ops::Sub<Output = T>>(
-    spans: &mut [(T, T, usize)],
+    spans: &mut [(T, T, Life, usize)],
 ) -> (Vec<usize>, usize) {
-    // (a, b, key): the result maps each key to its lane.
-    spans.sort_by_key(|(a, b, _)| (std::cmp::Reverse(*b - *a), *a));
-    let mut lanes: Vec<Vec<(T, T)>> = Vec::new();
+    // (a, b, life, key): the result maps each key to its lane.
+    spans.sort_by_key(|(a, b, _, _)| (std::cmp::Reverse(*b - *a), *a));
+    let mut lanes: Vec<Vec<(T, T, Life)>> = Vec::new();
     let mut out = vec![0; spans.len()];
-    for (a, b, key) in spans.iter().copied() {
+    for (a, b, (s, e), key) in spans.iter().copied() {
+        let apart = |&(x, y, (t, u)): &(T, T, Life)| b < x || a > y || e < t || s > u;
         let lane = lanes
             .iter()
-            .position(|l| l.iter().all(|(x, y)| b < *x || a > *y))
+            .position(|l| l.iter().all(apart))
             .unwrap_or_else(|| {
                 lanes.push(Vec::new());
                 lanes.len() - 1
             });
-        lanes[lane].push((a, b));
+        lanes[lane].push((a, b, (s, e)));
         out[key] = lane;
     }
     (out, lanes.len())
@@ -375,8 +385,9 @@ pub fn stable_geometry(doc: &Document, opts: &LayoutOptions) -> StableGeometry {
         ..Default::default()
     };
     // Each arrow's span in the coordinates of the last step it is drawn at
-    // (moves shift them together with the code, so the overlaps hold).
-    let mut arrow_span: Vec<(String, u32, u32)> = Vec::new();
+    // (moves shift them together with the code, so the overlaps hold), and
+    // the steps at which it shows.
+    let mut arrow_span: Vec<(String, u32, u32, Life)> = Vec::new();
     // Only the steps where something changes: the others draw
     // like the last of these before them.
     for step in doc.change_steps(last) {
@@ -413,7 +424,7 @@ pub fn stable_geometry(doc: &Document, opts: &LayoutOptions) -> StableGeometry {
             g.num_w = g.num_w.max(d.last_line().to_string().len() + 2);
         }
         let vis = d.annotations.iter().filter(|a| {
-            a.step <= step
+            a.shown_at(step)
                 && a.shape
                     .line_ranges()
                     .iter()
@@ -427,9 +438,12 @@ pub fn stable_geometry(doc: &Document, opts: &LayoutOptions) -> StableGeometry {
                 } => boxes.push((*from_line, *to_line)),
                 Shape::Arrow { from, to, .. } if from.line != to.line => {
                     let span = (from.line.min(to.line), from.line.max(to.line));
-                    match arrow_span.iter_mut().find(|(id, _, _)| *id == a.id) {
+                    match arrow_span.iter_mut().find(|(id, ..)| *id == a.id) {
                         Some(e) => (e.1, e.2) = span,
-                        None => arrow_span.push((a.id.clone(), span.0, span.1)),
+                        None => {
+                            let life = (a.step, a.end().unwrap_or(u32::MAX));
+                            arrow_span.push((a.id.clone(), span.0, span.1, life));
+                        }
                     }
                 }
                 _ => {}
@@ -437,10 +451,10 @@ pub fn stable_geometry(doc: &Document, opts: &LayoutOptions) -> StableGeometry {
         }
         g.box_depth = g.box_depth.max(nesting_depth(&boxes));
     }
-    let mut spans: Vec<(u32, u32, usize)> = arrow_span
+    let mut spans: Vec<(u32, u32, Life, usize)> = arrow_span
         .iter()
         .enumerate()
-        .map(|(i, (_, a, b))| (*a, *b, i))
+        .map(|(i, (_, a, b, life))| (*a, *b, *life, i))
         .collect();
     let (lanes, count) = assign_lanes(&mut spans);
     g.lane_count = count;
@@ -469,7 +483,7 @@ pub fn stable_geometry(doc: &Document, opts: &LayoutOptions) -> StableGeometry {
         g.take_hash = h.finish();
         g.take = Some(Arc::new(take));
     }
-    for (i, (id, _, _)) in arrow_span.into_iter().enumerate() {
+    for (i, (id, ..)) in arrow_span.into_iter().enumerate() {
         g.lane_of.insert(id, lanes[i]);
     }
     g
@@ -871,7 +885,7 @@ fn layout_core(
     // drawn once, from the last plan (a document with no margin callout at
     // the step has nothing to plan).
     let mut planning = doc.annotations.iter().any(|a| {
-        a.step <= opts.step
+        a.drawn_at(opts.step, false)
             && matches!(&a.shape, Shape::Callout { placement, .. }
                 if *placement != crate::model::Placement::Below)
     });
@@ -1128,7 +1142,7 @@ fn layout_pass(
     let vis: Vec<&Annotation> = doc
         .annotations
         .iter()
-        .filter(|a| a.step <= opts.step && !(opts.typing && a.step == opts.step))
+        .filter(|a| a.drawn_at(opts.step, opts.typing))
         .filter(|a| {
             a.shape
                 .line_ranges()
@@ -1141,7 +1155,20 @@ fn layout_pass(
     let auto = theme.auto_palette();
     let mut arrow_seq = 0usize;
     let mut colors: std::collections::HashMap<&str, Rgb> = std::collections::HashMap::new();
-    for a in &vis {
+    // The palette goes over every annotation that has come, also one that
+    // left at its `until`: an arrow keeps its color when another one leaves.
+    // Only those in `vis` are drawn.
+    let came = doc
+        .annotations
+        .iter()
+        .filter(|a| a.came_at(opts.step, opts.typing))
+        .filter(|a| {
+            a.shape
+                .line_ranges()
+                .iter()
+                .all(|(f, t)| doc.has_line(*f) && doc.has_line(*t))
+        });
+    for a in came {
         let chosen = a.color.as_deref().and_then(|c| theme.named_color(c));
         let c = match (&a.shape, chosen) {
             (_, Some(c)) => c,
@@ -1187,7 +1214,11 @@ fn layout_pass(
             }
             for id in ids {
                 spot_ids.push(id.as_str());
-                if let Some(target) = doc.find_annotation(id) {
+                // One that left at its `until` keeps no line bright: there
+                // is nothing of it on the screen.
+                if let Some(target) = doc.find_annotation(id)
+                    && !shared.spot_step.is_some_and(|s| target.left_at(s))
+                {
                     spot_lines.extend(target.shape.line_ranges());
                 }
             }
@@ -1727,10 +1758,10 @@ fn layout_pass(
             .collect();
         // Longest first → lane 0 (the farthest from the code). With a
         // stable geometry each arrow keeps the lane of the whole take.
-        let mut keyed: Vec<(usize, usize, usize)> = spans
+        let mut keyed: Vec<(usize, usize, Life, usize)> = spans
             .iter()
             .enumerate()
-            .map(|(i, (a, b, _))| (*a, *b, i))
+            .map(|(i, (a, b, _))| (*a, *b, ALWAYS, i))
             .collect();
         let (lanes, _) = assign_lanes(&mut keyed);
         for (i, (_, _, ann)) in spans.into_iter().enumerate() {
@@ -3587,6 +3618,7 @@ mod tests {
         );
         let s = d.find_text("let s", 1, None).unwrap();
         d.add(Annotation {
+            until: None,
             id: "a1".into(),
             step: 1,
             color: None,
@@ -3607,6 +3639,7 @@ mod tests {
         })
         .unwrap();
         d.add(Annotation {
+            until: None,
             id: "a2".into(),
             step: 1,
             color: None,
@@ -3625,6 +3658,7 @@ mod tests {
         })
         .unwrap();
         d.add(Annotation {
+            until: None,
             id: "a3".into(),
             step: 2,
             color: None,
@@ -3640,6 +3674,7 @@ mod tests {
         })
         .unwrap();
         d.add(Annotation {
+            until: None,
             id: "a4".into(),
             step: 2,
             color: None,
@@ -3697,6 +3732,7 @@ mod tests {
     fn spotlight_dims_code_and_other_annotations() {
         let mut d = doc();
         d.add(Annotation {
+            until: None,
             id: "s1".into(),
             step: 3,
             color: None,
@@ -3707,7 +3743,6 @@ mod tests {
                 from_line: Some(7),
                 to_line: Some(9),
                 ids: vec!["a3".into()],
-                until: None,
             },
         })
         .unwrap();
@@ -3768,6 +3803,7 @@ mod tests {
         // the long code fit in the margin of the short code.
         let mut d = doc();
         d.add(Annotation {
+            until: None,
             id: "n1".into(),
             step: 1,
             color: None,
@@ -3819,6 +3855,7 @@ mod tests {
         let mut d = doc();
         // A long note on a line whose next line has its own label.
         d.add(Annotation {
+            until: None,
             id: "n1".into(),
             step: 1,
             color: None,
@@ -3941,6 +3978,7 @@ mod tests {
             None,
         );
         d.add(Annotation {
+            until: None,
             id: "c1".into(),
             step: 1,
             color: Some("cyan".into()),
@@ -3959,6 +3997,7 @@ mod tests {
         })
         .unwrap();
         d.add(Annotation {
+            until: None,
             id: "n1".into(),
             step: 1,
             color: None,
@@ -3972,6 +4011,7 @@ mod tests {
         })
         .unwrap();
         d.add(Annotation {
+            until: None,
             id: "b1".into(),
             step: 1,
             color: None,
@@ -4039,6 +4079,7 @@ mod tests {
             None,
         );
         d.add(Annotation {
+            until: None,
             id: "c1".into(),
             step: 1,
             color: None,
@@ -4058,6 +4099,7 @@ mod tests {
         .unwrap();
         if with_note {
             d.add(Annotation {
+                until: None,
                 id: "n1".into(),
                 step: 1,
                 color: None,
@@ -4143,6 +4185,7 @@ mod tests {
         let mut d = doc();
         for (id, text) in [("n1", "first"), ("n2", "second")] {
             d.add(Annotation {
+                until: None,
                 id: id.into(),
                 step: 1,
                 color: None,
@@ -4157,6 +4200,7 @@ mod tests {
             .unwrap();
         }
         d.add(Annotation {
+            until: None,
             id: "b1".into(),
             step: 1,
             color: None,
@@ -4255,6 +4299,7 @@ mod tests {
         // Box L2-3, callout L1-3: the callout explains more than the box.
         let mut d = callout_doc(Placement::Below);
         d.update(Annotation {
+            until: None,
             id: "c1".into(),
             step: 1,
             color: Some("cyan".into()),

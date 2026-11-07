@@ -2,6 +2,7 @@
 //! mode, the pointer, the mouse and the terminal (start, resize and close).
 
 mod annotation_list;
+mod annotation_until;
 mod arrow_keys;
 mod ascii_badge;
 mod bar_hint_at_80;

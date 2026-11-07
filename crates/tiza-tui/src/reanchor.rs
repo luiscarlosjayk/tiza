@@ -398,7 +398,6 @@ impl<'a> Remap<'a> {
                 from_line,
                 to_line,
                 ids,
-                until,
             } => {
                 let (a, b) = match (from_line, to_line) {
                     (Some(f), Some(t)) => {
@@ -413,7 +412,6 @@ impl<'a> Remap<'a> {
                     from_line: a,
                     to_line: b,
                     ids: ids.clone(),
-                    until: *until,
                 }
             }
         })

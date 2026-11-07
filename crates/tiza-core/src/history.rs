@@ -259,6 +259,7 @@ mod tests {
         let mut h = History::default();
         h.record(&d, "note a1");
         d.add(Annotation {
+            until: None,
             id: "a1".into(),
             step: 1,
             color: None,

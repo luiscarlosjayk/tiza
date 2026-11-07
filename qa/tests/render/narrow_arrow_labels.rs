@@ -127,6 +127,7 @@ fn two_arrows_into_one_line_follow_each_other() {
     );
     for (i, (from, label)) in [(1u32, "one"), (2, "two")].iter().enumerate() {
         doc.add(tiza_core::model::Annotation {
+            until: None,
             id: format!("a{i}"),
             step: 1,
             color: None,

@@ -10,4 +10,5 @@ mod no_save;
 mod quit_writes_nothing;
 mod range_documents;
 mod relative_paths;
+mod schema_needed;
 mod write_to_another_folder;

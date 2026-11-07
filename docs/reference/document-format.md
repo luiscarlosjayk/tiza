@@ -37,7 +37,11 @@ Two examples show moves and views:
 <dt><code>schema</code></dt>
 <dd>
 
-The version of the format, `1`.
+The version of the format, `1` or `2`.
+
+- Tiza writes `2` only when the document uses a field of version 2: an `until` on an annotation that is not a spotlight.
+- Else Tiza writes `1`, so that Tiza 0.2.1 and earlier versions can open the file.
+- A version that reads only `1` does not open a file with `2`. Thus it does not show a box, an arrow or a note at steps after its `until`.
 
 Integer. Required.
 
@@ -209,6 +213,7 @@ A new annotation from the TUI appears at the current step. A socket or MCP reque
 | `step` | integer | `1` | The step at which the annotation appears, at most 999. |
 | `type` | string | Required | The annotation `type`, one of the seven values under this table. |
 | `color` | string | No default | A [color name](#color-names) or `#rrggbb`. |
+| `until` | integer | No default | The last step that shows the annotation, not before `step`. Without `until`, the annotation shows to the last step. A spotlight without `until` shows only at its `step`. See [Rules for annotations](#rules-for-annotations). |
 | `effect` | `"draw"` or `"fade"` | No default | Experimental. The enter effect of the annotation. See [Enter effects](#enter-effects-experimental). |
 | `file` | string | The document's own file | The main file or a linked file that the annotation belongs to (see [Several files](#several-files)). |
 | `markers` | object `{start, end}` | No default | The two texts that Tiza uses to find a range again after the code changes. |
@@ -343,15 +348,9 @@ The ids of annotations in the document that the spotlight does not dim, also out
 Array of ids. Required when there is no `from_line`, else `[]`.
 
 </dd>
-<dt><code>until</code></dt>
-<dd>
-
-The last step at which the spotlight is active. When `until` is before `step`, the spotlight never shows, and `tiza check` gives the error `until`. Tiza opens such a document. `:until`, `:step ID S`, `:set ID step=S`, the `+` key, `annotation.add`, and `annotation.update` with `step` or `shape` refuse such a spotlight.
-
-Integer. No default.
-
-</dd>
 </dl>
+
+A spotlight also has the field `until` of all annotations. A spotlight without `until` is active only at its `step`.
 
 A `spotlight` from [`:spot`](commands/annotate.md#spot), as its frame shows it:
 
@@ -384,7 +383,11 @@ Each value has this meaning:
 
 #### Rules for annotations
 
-- A spotlight is active from its `step` to `until`. Without `until`, it is active only at its `step`.
+- An annotation shows from its `step` to its `until`. Without `until`, it shows to the last step. A spotlight without `until` is active only at its `step`.
+- After its `until`, the annotation is not drawn, and it does not get a lane, a color or a place in the margin. At that step, `tiza check` does not report it as `(unanchored)` or outside its window.
+- A step at which only an annotation goes is not a step with nothing new.
+- When `until` is before `step`, the annotation never shows, and `tiza check` gives the error `until`. Tiza opens such a document. `:until`, `:step ID S`, `:set ID step=S`, the `+` key, `annotation.add`, and `annotation.update` with `step`, `until` or `shape` refuse such an annotation.
+- A spotlight does not keep in focus an annotation of its `ids` after the `until` of that annotation. `tiza check` gives a warning for it.
 - A spotlight dims the code outside its lines. It does not dim the code of the annotations in its `ids`.
 - A spotlight also dims each annotation that does not touch its lines and that is not in its `ids`.
 - A dimmed mark keeps its label, in the dimmed color.
@@ -1379,7 +1382,7 @@ Each image under this paragraph is a real `tiza render` export of the document a
 
 The [document schema](../../schema/tiza.schema.json) accepts some documents that Tiza refuses. Tiza does not load a document that breaks one of these rules:
 
-- `schema` is at most `1`.
+- `schema` is at most `2`.
 - Every `at_step` is 1 or more, because step 0 is the code with no change.
 - No annotation, move or entry of `steps` names a step after 999.
 - `wait.ms` is 1 or more.

@@ -68,7 +68,10 @@ fn newer_schema_and_unknown_type_are_errors() {
     let doc = dir.join("new.tiza");
     std::fs::write(
         &doc,
-        r#"{"schema":2,"source":{"language":"rs"},"code":["x"],"annotations":[]}"#,
+        format!(
+            r#"{{"schema":{},"source":{{"language":"rs"}},"code":["x"],"annotations":[]}}"#,
+            tiza_core::model::SCHEMA_VERSION + 1
+        ),
     )
     .unwrap();
     let out = tiza(&["render", doc.to_str().unwrap(), "--out", "-"]);

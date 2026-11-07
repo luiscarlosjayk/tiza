@@ -191,24 +191,28 @@ fn a_put_with_a_newer_schema_changes_and_saves_nothing() {
     assert_eq!(state(&live), before);
 }
 
+/// A put with an older schema is saved with the schema that the document
+/// needs: 1 when it uses nothing new, so that an older Tiza opens it, and 2
+/// with an `until` on a note. `scene.get` gives the same.
 #[test]
-fn a_put_with_an_older_schema_is_saved_as_the_current_one() {
+fn a_put_with_an_older_schema_is_saved_with_the_schema_it_needs() {
     let live = three_notes("put-old");
     let mut doc = live.api_ok("scene.get", json!({}))["document"].clone();
     doc["schema"] = json!(0);
     doc["title"] = json!("older");
+    live.api_ok("scene.put", json!({"document": doc.clone()}));
+    let schemas = |live: &Live| {
+        let got = live.api_ok("scene.get", json!({}))["document"]["schema"].clone();
+        let (path, bytes, _) = saved(live);
+        let file: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(file["title"], json!("older"), "{}", path.display());
+        (got, file["schema"].clone())
+    };
+    assert_eq!(schemas(&live), (json!(1), json!(1)));
+    // An `until` on a note: a field of schema 2.
+    doc["annotations"][1]["until"] = json!(2);
     live.api_ok("scene.put", json!({"document": doc}));
-    let now = live.api_ok("scene.get", json!({}))["document"].clone();
-    assert_eq!(now["schema"], json!(tiza_core::model::SCHEMA_VERSION));
-    let (path, bytes, _) = saved(&live);
-    let file: Value = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(
-        file["schema"],
-        json!(tiza_core::model::SCHEMA_VERSION),
-        "{}",
-        path.display()
-    );
-    assert_eq!(file["title"], json!("older"));
+    assert_eq!(schemas(&live), (json!(2), json!(2)));
 }
 
 #[test]

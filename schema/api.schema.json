@@ -781,14 +781,6 @@
                   "type": {
                     "const": "spotlight",
                     "type": "string"
-                  },
-                  "until": {
-                    "format": "uint32",
-                    "minimum": 0,
-                    "type": [
-                      "integer",
-                      "null"
-                    ]
                   }
                 },
                 "required": [
@@ -844,6 +836,15 @@
                 "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
+              },
+              "until": {
+                "description": "The last step that shows the annotation: `step` or a later one (an\nearlier one makes it show at no step). Absent: a spotlight shows\nonly at its `step`, any other annotation to the last step.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
               }
             },
             "required": [
@@ -976,6 +977,7 @@
                 ]
               },
               "schema": {
+                "description": "The version of the format: 2 when the document has an `until` on an\nannotation that is not a spotlight, else 1.",
                 "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
@@ -2028,7 +2030,7 @@
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "description": "Parameters of `annotation.add`: a shape described in an agent-friendly way.",
+        "description": "A shape and its `until`. In `annotation.update`, a `shape` replaces\nthe shape and its `until` together.",
         "oneOf": [
           {
             "properties": {
@@ -2341,16 +2343,6 @@
               "type": {
                 "const": "spotlight",
                 "type": "string"
-              },
-              "until": {
-                "default": null,
-                "description": "The last step at which the spotlight is active: its `step` or a\nlater one (an earlier one is refused). Absent: only at its `step`.",
-                "format": "uint32",
-                "minimum": 0,
-                "type": [
-                  "integer",
-                  "null"
-                ]
               }
             },
             "required": [
@@ -2397,6 +2389,16 @@
           },
           "step": {
             "default": null,
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "until": {
+            "default": null,
+            "description": "The last step at which it shows: its `step` or a later one (an\nearlier one is refused). Absent: a spotlight shows only at its\n`step`, any other annotation to the last step.",
             "format": "uint32",
             "minimum": 0,
             "type": [
@@ -2672,8 +2674,8 @@
             ],
             "type": "string"
           },
-          "ShapeSpec": {
-            "description": "Parameters of `annotation.add`: a shape described in an agent-friendly way.",
+          "ShapeWithUntil": {
+            "description": "A shape and its `until`. In `annotation.update`, a `shape` replaces\nthe shape and its `until` together.",
             "oneOf": [
               {
                 "properties": {
@@ -2986,16 +2988,6 @@
                   "type": {
                     "const": "spotlight",
                     "type": "string"
-                  },
-                  "until": {
-                    "default": null,
-                    "description": "The last step at which the spotlight is active: its `step` or a\nlater one (an earlier one is refused). Absent: only at its `step`.",
-                    "format": "uint32",
-                    "minimum": 0,
-                    "type": [
-                      "integer",
-                      "null"
-                    ]
                   }
                 },
                 "required": [
@@ -3003,7 +2995,20 @@
                 ],
                 "type": "object"
               }
-            ]
+            ],
+            "properties": {
+              "until": {
+                "default": null,
+                "description": "The last step at which it shows: its `step` or a later one (an\nearlier one is refused). Absent: a spotlight shows only at its\n`step`, any other annotation to the last step.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
           },
           "Stroke": {
             "description": "How a line is drawn: `─│` (solid), `╌╎` (dashed), `┄┆` (dotted), `━┃` (thick), `═║` (double).",
@@ -3180,14 +3185,14 @@
           "shape": {
             "anyOf": [
               {
-                "$ref": "#/$defs/ShapeSpec"
+                "$ref": "#/$defs/ShapeWithUntil"
               },
               {
                 "type": "null"
               }
             ],
             "default": null,
-            "description": "If present, replaces the whole shape."
+            "description": "If present, replaces the whole shape and its `until` (without\n`until` in it, the annotation has none after the update)."
           },
           "step": {
             "default": null,
@@ -3208,6 +3213,15 @@
               }
             ],
             "description": "Arrows: new stroke (solid, dashed, dotted, thick, double)."
+          },
+          "until": {
+            "description": "The new last step at which it shows: its `step` or a later one.\n`null` removes it. Absent: the annotation keeps its `until`. Not\nwith `shape`, which has its own `until`.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "required": [
@@ -3726,14 +3740,6 @@
                   "type": {
                     "const": "spotlight",
                     "type": "string"
-                  },
-                  "until": {
-                    "format": "uint32",
-                    "minimum": 0,
-                    "type": [
-                      "integer",
-                      "null"
-                    ]
                   }
                 },
                 "required": [
@@ -3789,6 +3795,15 @@
                 "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
+              },
+              "until": {
+                "description": "The last step that shows the annotation: `step` or a later one (an\nearlier one makes it show at no step). Absent: a spotlight shows\nonly at its `step`, any other annotation to the last step.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
               }
             },
             "required": [
@@ -3921,6 +3936,7 @@
                 ]
               },
               "schema": {
+                "description": "The version of the format: 2 when the document has an `until` on an\nannotation that is not a spotlight, else 1.",
                 "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
@@ -6662,7 +6678,7 @@
             "description": "One problem `check` found.",
             "properties": {
               "code": {
-                "description": "Stable kind, for scripts: `schema`, `code`, `link`, `duplicate_id`,\n`unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,\n`steps`, `unanchored`, `outside_window` (outside the `code.link`\nwindow of a step that shows its file), `not_shown` (its own step\nshows another file), `clipped_label`, `clipped_code` (code lines\ncut with `…`, one finding for each file and set of cut lines),\n`empty_step`, `effect` (the enter effect `draw` on a shape with no\nstroke, or an effect that this version does not know), `until` (a spotlight's `until` before its `step`), and\n`stale` (a live instance's move the code changed under).",
+                "description": "Stable kind, for scripts: `schema`, `code`, `link`, `duplicate_id`,\n`unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,\n`steps`, `unanchored`, `outside_window` (outside the `code.link`\nwindow of a step that shows its file), `not_shown` (its own step\nshows another file), `clipped_label`, `clipped_code` (code lines\ncut with `…`, one finding for each file and set of cut lines),\n`empty_step`, `effect` (the enter effect `draw` on a shape with no\nstroke, or an effect that this version does not know), `until` (an `until` before its `step`, an error; a spotlight\nwhose `ids` names an annotation that has left, a warning), and\n`stale` (a live instance's move the code changed under).",
                 "type": "string"
               },
               "file": {

@@ -57,7 +57,7 @@ fn table_of_typos_is_rejected_with_a_way_forward() {
             "step a2 2",
             "a2: give until 2 or later, or remove it (until 1 is before step 2",
         ),
-        ("until a1 3", "a1 is not a spotlight"),
+        ("until a1 x", "usage: :until ID N  |  :until ID -"),
         ("step a1 99999", "beyond the last step (2)"),
         ("step a1 0", "steps ≥ 1"),
         // AC8: empty key/value and shapes
@@ -120,7 +120,9 @@ fn valid_forms_still_work_and_report_what_they_did() {
         ("focus 7-9", "focus on 7-9"),
         ("step a1 2", "a1 now appears at step 2"),
         ("step a1 3", "a1 now appears at step 3"),
-        ("until a2 3", "a2 active until step 3"),
+        ("until a2 3", "a2 shows until step 3"),
+        // Each type takes an `until`, not only a spotlight.
+        ("until a1 3", "a1 shows until step 3"),
         ("callout 7-9 @below why", ": callout at L7-9"),
         ("set a1 color=blue", "a1"),
         ("set a4 effect=draw", "a4"),

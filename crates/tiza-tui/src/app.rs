@@ -2759,6 +2759,22 @@ impl App {
         effect: Option<Effect>,
         shape: Shape,
     ) -> Result<String, Error> {
+        self.add_annotation_until(id, step, color, markers, file, effect, shape, None)
+    }
+
+    /// [`App::add_annotation_full`] with an `until` (`annotation.add`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_annotation_until(
+        &mut self,
+        id: Option<String>,
+        step: Option<u32>,
+        color: Option<String>,
+        markers: Option<tiza_core::model::RangeMarkers>,
+        file: Option<String>,
+        effect: Option<Effect>,
+        shape: Shape,
+        until: Option<u32>,
+    ) -> Result<String, Error> {
         if let Some(c) = &color
             && self.theme.named_color(c).is_none()
         {
@@ -2776,10 +2792,10 @@ impl App {
             return Err(Error::Invalid(format!("style: {}", unknown_color())));
         }
         let step = step.unwrap_or(self.doc.step).max(1);
-        // A spotlight that never shows, judged at the step it gets. Only
+        // An annotation that never shows, judged at the step it gets. Only
         // here: `scene.put`, `scene.patch` and a reload keep one, as a file
         // does, and `check` reports it.
-        tiza_core::model::check_until(id.as_deref().unwrap_or(""), step, &shape)?;
+        tiza_core::model::check_until(id.as_deref().unwrap_or(""), step, until, &shape)?;
         self.history.record(&self.doc, "add");
         // A personal style comes into the document with its first mark, in
         // the same undo step.
@@ -2791,6 +2807,7 @@ impl App {
         };
         let kind = shape.kind_name();
         let res = self.doc.add(Annotation {
+            until,
             id: id.unwrap_or_default(),
             step,
             color,
@@ -2906,10 +2923,20 @@ impl App {
                 )));
             }
         }
+        if p.shape.is_some() && p.until.is_some() {
+            return Err(Error::Invalid(
+                "give until in the shape or alone, not both".into(),
+            ));
+        }
         if let Some(spec) = &p.shape {
-            let (shape, markers) = spec.resolve_with_markers(&self.doc)?;
+            let (shape, markers) = spec.spec.resolve_with_markers(&self.doc)?;
             ann.shape = shape;
             ann.markers = markers;
+            // A shape replaces its `until` too.
+            ann.until = spec.until;
+        }
+        if let Some(u) = p.until {
+            ann.until = u;
         }
         if let Some(mv) = &p.mv {
             mv.apply(&mut ann.shape, &self.doc)?;
@@ -3019,11 +3046,11 @@ impl App {
         {
             return Err(Error::Invalid(DRAW_NEEDS_A_STROKE.into()));
         }
-        // A spotlight that never shows: checked when the update moves its
-        // step or gives its shape (and so its `until`). One from a file
+        // An annotation that never shows: checked when the update moves its
+        // step or gives its `until` (alone or in a shape). One from a file
         // keeps its `until` through the other updates; `check` reports it.
-        if p.step.is_some() || p.shape.is_some() {
-            tiza_core::model::check_until(&ann.id, ann.step, &ann.shape)?;
+        if p.step.is_some() || p.shape.is_some() || p.until.is_some() {
+            tiza_core::model::check_until(&ann.id, ann.step, ann.until, &ann.shape)?;
         }
         // Nothing to change: no undo entry, no new revision, no save.
         if self.doc.find_annotation(&p.id) == Some(&ann) {
@@ -3505,21 +3532,27 @@ impl App {
                 if let Some(f) = &ann.file {
                     ann.file = Some(self.canonical_file(f));
                 }
-                let old = d.find_annotation(&id).map(|a| (a.step, a.file.clone()));
+                let old = d
+                    .find_annotation(&id)
+                    .map(|a| (a.step, a.file.clone(), a.until));
                 d.annotations.retain(|a| a.id != id);
                 if let Shape::Mark { kind, .. } = &ann.shape {
                     Self::adopt_personal_style(&mut d, &self.personal_styles, kind);
                 }
                 // An id the document has keeps the step it is sent with
-                // and, without a `step` or a `file` key, its step or its file
-                // (`file: null` is the main one). Only a new id gets the
+                // and, without a `step`, a `file` or an `until` key, its
+                // step, its file or its `until` (`file: null` is the main
+                // one, `until: null` removes it). Only a new id gets the
                 // defaults of a new annotation.
-                if let Some((old_step, old_file)) = old {
+                if let Some((old_step, old_file, old_until)) = old {
                     if v.get("step").is_none() {
                         ann.step = old_step;
                     }
                     if v.get("file").is_none() {
                         ann.file = old_file;
+                    }
+                    if v.get("until").is_none() {
+                        ann.until = old_until;
                     }
                     d.settle_file(&mut ann)?;
                     d.add_settled(ann)?;
@@ -3858,6 +3891,14 @@ impl App {
                 self.held_unresolved = self.scroll_held.is_some() && !(settle && pointer_on);
             }
             self.clamp_cursor();
+            // A selection that the new step does not show (before its step,
+            // or past its `until`) goes: a key must not act on what the
+            // screen does not draw.
+            if let Some(id) = &self.selected
+                && !self.doc.find_annotation(id).is_some_and(|a| a.shown_at(s))
+            {
+                self.selected = None;
+            }
             // The step moved the cursor (to the pointer, a `cursor` move):
             // not a motion of the presenter's for the pointer to follow.
             self.pointer_seen = self.pointer_snapshot();
@@ -6004,7 +6045,7 @@ impl App {
     /// The annotations that the screen draws at this step, in reading order
     /// (the first line on the screen, then the id), each with that line.
     /// The rules of the layout: the file shown, the step reached, a
-    /// spotlight within its `until`, the lines inside the view where the
+    /// annotation within its `until`, the lines inside the view where the
     /// moves of the step put them, a note or a callout with room, and not
     /// the step's own while its moves type. A spotlight of ids only takes
     /// the first line of what it names; with none of them drawn it has no
@@ -6055,12 +6096,10 @@ impl App {
         let mut v = Vec::new();
         for a in &doc.annotations {
             let lines = a.shape.line_ranges();
-            let drawn = a.step <= step
-                && !(self.typing.is_some() && a.step == step)
-                && match &a.shape {
-                    Shape::Spotlight { until, .. } => step <= until.unwrap_or(a.step),
-                    _ => true,
-                }
+            // Selectable while it shows: a spotlight's dim that fades out
+            // at the next step is not one.
+            let drawn = a.came_at(step, self.typing.is_some())
+                && a.shown_at(step)
                 && lines
                     .iter()
                     .all(|(f, t)| doc.has_line(*f) && doc.has_line(*t));
@@ -6142,7 +6181,7 @@ impl App {
 
     /// Tab / Shift-Tab: select the next or the previous annotation that the
     /// screen draws, and move the cursor to its first line on the screen.
-    /// The others (another file's, a spotlight past its `until`) are in the
+    /// The others (another file's, one past its `until`) are in the
     /// list (`L`, Enter).
     pub fn select_annotation(&mut self, dir: i32) {
         if self.present {
@@ -6307,6 +6346,7 @@ impl App {
                 };
                 match self.update_annotation(&UpdateParams {
                     id: id.clone(),
+                    until: None,
                     step: Some(step),
                     color: None,
                     label: None,
@@ -6735,26 +6775,52 @@ impl App {
                 },
                 "until" => {
                     let (id, n) = split_first(rest);
-                    let n: u32 = n.parse().map_err(|_| {
-                        Error::Invalid(
-                            "usage: :until ID N   (last step in which the spotlight stays active)"
-                                .into(),
-                        )
-                    })?;
-                    let mut ann = self
+                    let until = match n.trim() {
+                        "-" => None,
+                        n => Some(n.parse::<u32>().map_err(|_| {
+                            Error::Invalid(
+                                "usage: :until ID N  |  :until ID -   (the last step that shows it, or - to remove)"
+                                    .into(),
+                            )
+                        })?),
+                    };
+                    let ann = self
                         .doc
                         .find_annotation(id)
-                        .cloned()
                         .ok_or_else(|| Error::NotFound(id.to_string()))?;
-                    let Shape::Spotlight { until, .. } = &mut ann.shape else {
-                        return Err(Error::Invalid(format!("{id} is not a spotlight")));
+                    if until.is_none() && ann.until.is_none() {
+                        return Ok(format!("{id} has no until"));
+                    }
+                    let id = ann.id.clone();
+                    self.update_annotation(&UpdateParams {
+                        id: id.clone(),
+                        until: Some(until),
+                        step: None,
+                        color: None,
+                        label: None,
+                        effect: None,
+                        file: None,
+                        shape: None,
+                        mv: None,
+                        stroke: None,
+                        route: None,
+                        heads: None,
+                        border: None,
+                        corners: None,
+                        fill: None,
+                        emphasis: None,
+                    })?;
+                    let msg = match until {
+                        Some(n) => format!("{id} shows until step {n}"),
+                        None => format!("{id} has no until now"),
                     };
-                    *until = Some(n);
-                    tiza_core::model::check_until(&ann.id, ann.step, &ann.shape)?;
-                    self.history.record(&self.doc, format!("{id} until {n}"));
-                    self.doc.update(ann)?;
-                    self.touch();
-                    Ok(format!("{id} active until step {n}"))
+                    // Not on the screen now: the reason, as the reply to an
+                    // agent's edit says it.
+                    let tail = self
+                        .not_shown(&id, &mut None)
+                        .map(|why| self.hidden_tail(&why, &msg))
+                        .unwrap_or_default();
+                    Ok(msg + &tail)
                 }
                 "clear" => {
                     let step = match rest.trim() {
@@ -6794,6 +6860,7 @@ impl App {
                     let c = if c == "auto" { "" } else { c };
                     self.update_annotation(&UpdateParams {
                         id: id.into(),
+                        until: None,
                         step: None,
                         color: Some(c.into()),
                         label: None,
@@ -6817,6 +6884,7 @@ impl App {
                         .ok_or_else(|| Error::Invalid("usage: :label ID text".into()))?;
                     self.update_annotation(&UpdateParams {
                         id: id.into(),
+                        until: None,
                         step: None,
                         color: None,
                         label: Some(text.trim().into()),
@@ -6890,6 +6958,7 @@ impl App {
                             }
                             self.update_annotation(&UpdateParams {
                                 id: id.to_string(),
+                                until: None,
                                 step: Some(n),
                                 color: None,
                                 label: None,
@@ -7850,6 +7919,7 @@ impl App {
         let mut callout_text: Option<String> = None;
         let mut p = UpdateParams {
             id: id.to_string(),
+            until: None,
             step: None,
             color: None,
             label: None,
@@ -8225,7 +8295,6 @@ impl App {
                 from_line: range.map(|r| r.0),
                 to_line: range.map(|r| r.1),
                 ids,
-                until: None,
             },
         )?;
         Ok(format!("{id}: spotlight at step {}", self.doc.step.max(1)))
@@ -9011,9 +9080,17 @@ impl App {
                 if let Some(f) = &p.file {
                     p.file = Some(self.canonical_file(f));
                 }
-                let (shape, markers) = p.shape.resolve_with_markers(&self.doc)?;
-                let id = self
-                    .add_annotation_full(p.id, p.step, p.color, markers, p.file, p.effect, shape)?;
+                let (shape, markers) = p.shape.spec.resolve_with_markers(&self.doc)?;
+                let id = self.add_annotation_until(
+                    p.id,
+                    p.step,
+                    p.color,
+                    markers,
+                    p.file,
+                    p.effect,
+                    shape,
+                    p.shape.until,
+                )?;
                 // Where it stands against the view right now.
                 serde_json::to_value(self.mutated(id))?
             }

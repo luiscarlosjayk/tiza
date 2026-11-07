@@ -366,8 +366,8 @@ pub const HELP: &[(Section, &[Row])] = &[
                 desc: "Add a spotlight. The rest of the step dims.",
             },
             Command {
-                syntax: ":until {ID} {N}",
-                desc: "Keep the spotlight on until step N.",
+                syntax: ":until {ID} {N|-}",
+                desc: "Show it until step N, or - to remove.",
             },
             Sub("Change"),
             Command {

@@ -95,6 +95,10 @@ pub struct BoxParams {
     )]
     pub step: Option<u32>,
     #[schemars(
+        description = "Last step that shows it: `step` or later (an earlier one is refused). Leave it out to show it to the end."
+    )]
+    pub until: Option<u32>,
+    #[schemars(
         description = "Color: orange, blue, green, purple, pink, cyan, yellow, red, gray or #rrggbb. Arrows without a color rotate through the palette."
     )]
     pub color: Option<String>,
@@ -121,6 +125,10 @@ pub struct ArrowParams {
     #[schemars(description = "Text next to the arrow head (e.g. \"move\")")]
     pub label: Option<String>,
     pub step: Option<u32>,
+    #[schemars(
+        description = "Last step that shows it: `step` or later (an earlier one is refused). Leave it out to show it to the end."
+    )]
+    pub until: Option<u32>,
     #[schemars(
         description = "Color: orange, blue, green, purple, pink, cyan, yellow, red, gray or #rrggbb. Arrows without a color rotate through the palette."
     )]
@@ -240,6 +248,10 @@ pub struct NoteParams {
     pub text: String,
     pub step: Option<u32>,
     #[schemars(
+        description = "Last step that shows it: `step` or later (an earlier one is refused). Leave it out to show it to the end."
+    )]
+    pub until: Option<u32>,
+    #[schemars(
         description = "Color: orange, blue, green, purple, pink, cyan, yellow, red, gray or #rrggbb. Arrows without a color rotate through the palette."
     )]
     pub color: Option<String>,
@@ -255,6 +267,10 @@ pub struct HighlightParams {
     pub at: At,
     pub label: Option<String>,
     pub step: Option<u32>,
+    #[schemars(
+        description = "Last step that shows it: `step` or later (an earlier one is refused). Leave it out to show it to the end."
+    )]
+    pub until: Option<u32>,
     #[schemars(
         description = "Color: orange, blue, green, purple, pink, cyan, yellow, red, gray or #rrggbb. Arrows without a color rotate through the palette."
     )]
@@ -284,6 +300,10 @@ pub struct MarkParams {
     #[schemars(description = "Extra text after the legend (e.g. \"s goes into t\")")]
     pub label: Option<String>,
     pub step: Option<u32>,
+    #[schemars(
+        description = "Last step that shows it: `step` or later (an earlier one is refused). Leave it out to show it to the end."
+    )]
+    pub until: Option<u32>,
     #[schemars(
         description = "Color: orange, blue, green, purple, pink, cyan, yellow, red, gray or #rrggbb. Arrows without a color rotate through the palette."
     )]
@@ -360,6 +380,13 @@ pub struct UpdateParams {
         description = "The file the annotation goes to, as a `code.link` names it. `null` is the main file. Leave it out to keep the file of the annotation."
     )]
     pub file: Option<Option<String>>,
+    /// Absent keeps the `until`, `null` removes it (`present`).
+    #[serde(default, deserialize_with = "tiza_core::protocol::present")]
+    #[schemars(
+        with = "Option<u32>",
+        description = "New last step that shows it: `step` or later. `null` removes it: then it shows to the end (a spotlight shows only at its step). Leave it out to keep the `until` of the annotation."
+    )]
+    pub until: Option<Option<u32>>,
     /// Not a parameter (not in the schema): refused here, with what to give
     /// instead, as the tool has no `shape`.
     #[serde(default)]
@@ -424,6 +451,10 @@ pub struct CalloutParams {
     )]
     pub width: Option<usize>,
     pub step: Option<u32>,
+    #[schemars(
+        description = "Last step that shows it: `step` or later (an earlier one is refused). Leave it out to show it to the end."
+    )]
+    pub until: Option<u32>,
     pub color: Option<String>,
     pub id: Option<String>,
     #[schemars(description = "Border stroke: solid (default), dashed, dotted, thick, double")]
@@ -851,7 +882,7 @@ impl TizaServer {
     }
 
     #[tool(
-        description = "Checks the live document, as `tiza check --json` does. It runs inside the instance on a copy and changes nothing: run it before you show a document. Errors: an anchor or a marker that matches nothing; a move whose target does not match exactly once at its step; a linked file that Tiza cannot read; an unknown or a duplicate id; a spotlight whose `until` is before its `step`. Warnings: an annotation hidden as (unanchored) at a step; an annotation outside the `code.link` window of a step that shows its file (`outside_window`: `outside the window at step 3 (src/queue.rs:10-36): kept, but not drawn there`); an annotation whose own step does not show its file (`not_shown`: `its file src/stack.rs is not shown at step 4 (src/queue.rs is): kept, but not drawn at its step`); a label that `width` clips with «…», with its step, id and full text; code lines that `width` cuts with «…», with the file, the lines and the steps; a step with nothing new; a marker that matches more than once. `width` is columns of code, as `render_text` takes it (`tiza check --width` takes the width of a terminal and takes off its padding). `min_clean_width` is the narrowest width that clips no label. When `width` clips no label, `narrower` lists the narrower widths that clip none too. `revision` is the revision that it checked: the screen and the other tools keep working while it runs, so a check that waited can check a later revision. One check runs and one waits. A check at another width replaces the waiting one, which fails with `busy`: ask again."
+        description = "Checks the live document, as `tiza check --json` does. It runs inside the instance on a copy and changes nothing: run it before you show a document. Errors: an anchor or a marker that matches nothing; a move whose target does not match exactly once at its step; a linked file that Tiza cannot read; an unknown or a duplicate id; an annotation whose `until` is before its `step`. Warnings: an annotation hidden as (unanchored) at a step; an annotation outside the `code.link` window of a step that shows its file (`outside_window`: `outside the window at step 3 (src/queue.rs:10-36): kept, but not drawn there`); an annotation whose own step does not show its file (`not_shown`: `its file src/stack.rs is not shown at step 4 (src/queue.rs is): kept, but not drawn at its step`); a label that `width` clips with «…», with its step, id and full text; code lines that `width` cuts with «…», with the file, the lines and the steps; a step with nothing new; a marker that matches more than once. `width` is columns of code, as `render_text` takes it (`tiza check --width` takes the width of a terminal and takes off its padding). `min_clean_width` is the narrowest width that clips no label. When `width` clips no label, `narrower` lists the narrower widths that clip none too. `revision` is the revision that it checked: the screen and the other tools keep working while it runs, so a check that waited can check a later revision. One check runs and one waits. A check at another width replaces the waiting one, which fails with `busy`: ask again."
     )]
     async fn check(
         &self,
@@ -926,7 +957,7 @@ impl TizaServer {
         &self,
         Parameters(p): Parameters<BoxParams>,
     ) -> Result<CallToolResult, McpError> {
-        let mut params = json!({"type": "box", "from_line": p.from_line, "to_line": p.to_line, "find_start": p.find_start, "find_end": p.find_end, "label": p.label, "step": p.step, "id": p.id, "color": p.color, "effect": p.effect});
+        let mut params = json!({"type": "box", "from_line": p.from_line, "to_line": p.to_line, "find_start": p.find_start, "find_end": p.find_end, "label": p.label, "step": p.step, "until": p.until, "id": p.id, "color": p.color, "effect": p.effect});
         for (k, v) in border_style_json(&p.border, &p.corners, p.fill)? {
             params[k] = v;
         }
@@ -941,7 +972,7 @@ impl TizaServer {
         &self,
         Parameters(p): Parameters<ArrowParams>,
     ) -> Result<CallToolResult, McpError> {
-        let mut params = json!({"type": "arrow", "from": p.from, "to": p.to, "label": p.label, "step": p.step, "id": p.id, "color": p.color, "effect": p.effect});
+        let mut params = json!({"type": "arrow", "from": p.from, "to": p.to, "label": p.label, "step": p.step, "until": p.until, "id": p.id, "color": p.color, "effect": p.effect});
         let style = line_style_json(&p.stroke, &p.route, &p.head_start, &p.head_end)?;
         for (k, v) in style {
             if k == "heads" {
@@ -969,7 +1000,7 @@ impl TizaServer {
         let v = self
             .call(
                 "annotation.add",
-                json!({"type": "note", "line": p.line, "text": p.text, "step": p.step, "id": p.id, "color": p.color, "effect": p.effect}),
+                json!({"type": "note", "line": p.line, "text": p.text, "step": p.step, "until": p.until, "id": p.id, "color": p.color, "effect": p.effect}),
             )
             .await?;
         Ok(annotation_reply(&v, "added"))
@@ -982,7 +1013,7 @@ impl TizaServer {
         &self,
         Parameters(p): Parameters<HighlightParams>,
     ) -> Result<CallToolResult, McpError> {
-        let mut params = json!({"type": "highlight", "at": p.at, "label": p.label, "step": p.step, "id": p.id, "color": p.color, "effect": p.effect});
+        let mut params = json!({"type": "highlight", "at": p.at, "label": p.label, "step": p.step, "until": p.until, "id": p.id, "color": p.color, "effect": p.effect});
         if let Some(e) = emphasis_json(&p.emphasis)? {
             params["emphasis"] = e;
         }
@@ -997,7 +1028,7 @@ impl TizaServer {
         &self,
         Parameters(p): Parameters<MarkParams>,
     ) -> Result<CallToolResult, McpError> {
-        let mut params = json!({"type": "mark", "kind": p.kind, "style": p.style.unwrap_or_default(), "at": p.at, "label": p.label, "step": p.step, "id": p.id, "color": p.color, "effect": p.effect});
+        let mut params = json!({"type": "mark", "kind": p.kind, "style": p.style.unwrap_or_default(), "at": p.at, "label": p.label, "step": p.step, "until": p.until, "id": p.id, "color": p.color, "effect": p.effect});
         if let Some(e) = emphasis_json(&p.emphasis)? {
             params["emphasis"] = e;
         }
@@ -1006,7 +1037,7 @@ impl TizaServer {
     }
 
     #[tool(
-        description = "Changes an annotation that exists and keeps its id. It can change the step, the color or the label (the text of a note, the title of a callout). For an arrow, it can change the line style: stroke, route, head_start and head_end. For a box or a callout, it can change the border: border, corners and fill. For a highlight or a mark, it can change the emphasis: fill, underline, brackets or strike. To move the annotation and keep its type, kind and style, give its new place. Use `at` for highlights and marks, `at` or `from_line` for notes, `from` and `to` for arrows, and `from_line` and `to_line` for boxes, callouts and spotlights. `file` puts it on another file of the document: a linked file as a `code.link` names it, or `null` for the main file. A field that does not apply to the type of the annotation fails with invalid_argument. Tiza refuses a field that it does not know."
+        description = "Changes an annotation that exists and keeps its id. It can change the step, the color or the label (the text of a note, the title of a callout). For an arrow, it can change the line style: stroke, route, head_start and head_end. For a box or a callout, it can change the border: border, corners and fill. For a highlight or a mark, it can change the emphasis: fill, underline, brackets or strike. `until` changes the last step that shows it. To move the annotation and keep its type, kind and style, give its new place. Use `at` for highlights and marks, `at` or `from_line` for notes, `from` and `to` for arrows, and `from_line` and `to_line` for boxes, callouts and spotlights. `file` puts it on another file of the document: a linked file as a `code.link` names it, or `null` for the main file. A field that does not apply to the type of the annotation fails with invalid_argument. Tiza refuses a field that it does not know."
     )]
     async fn update_annotation(
         &self,
@@ -1034,6 +1065,9 @@ impl TizaServer {
         }
         if let Some(effect) = &p.effect {
             params["effect"] = json!(effect);
+        }
+        if let Some(until) = &p.until {
+            params["until"] = json!(until);
         }
         if p.text.is_some() {
             return Err(invalid_argument(
@@ -1085,7 +1119,7 @@ impl TizaServer {
                 return Err(invalid_argument("unknown placement (margin, below, auto)"));
             }
         };
-        let mut params = json!({"type": "callout", "from_line": p.from_line, "to_line": p.to_line, "find_start": p.find_start, "find_end": p.find_end, "text": p.text, "title": p.title, "placement": placement, "width": p.width, "step": p.step, "color": p.color, "id": p.id, "effect": p.effect});
+        let mut params = json!({"type": "callout", "from_line": p.from_line, "to_line": p.to_line, "find_start": p.find_start, "find_end": p.find_end, "text": p.text, "title": p.title, "placement": placement, "width": p.width, "step": p.step, "until": p.until, "color": p.color, "id": p.id, "effect": p.effect});
         for (k, v) in border_style_json(&p.border, &p.corners, p.fill)? {
             params[k] = v;
         }

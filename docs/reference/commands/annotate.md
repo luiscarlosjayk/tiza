@@ -470,17 +470,36 @@ A spotlight with only an id dims all the code, except the code of that annotatio
 
 ## `:until`
 
-Keeps a spotlight active up to a later step.
+Sets the last step that shows an annotation, or removes it.
 
 ```
 :until ID N
+:until ID -
 ```
 
-For example, `:until a2 4` keeps the spotlight `a2` active from its step to step 4.
+For example, `:until a2 4` shows the box `a2` from its step to step 4. At step 5 it is not drawn.
 
-- `N` cannot be before the step of the spotlight.
+- Each type of annotation takes it. A spotlight stays active to step `N`.
+- `N` cannot be before the step of the annotation.
+- `-` removes the `until`. Then the annotation shows to the last step, and a spotlight only at its step.
+- Tiza replies `a2 shows until step 4`. When the step on screen does not show the annotation, the reply also tells why.
+- `u` undoes it.
 
-This frame is animated, from step 1 to step 3. The spotlight `a1` starts at step 1, and `:until a1 2` keeps it active at step 2. At step 3 it is not active:
+This frame is animated, from step 1 to step 3. The box `a1` starts at step 1, and `:until a1 2` stops it after step 2. At step 3, only the note shows:
+
+<!-- frame id=until-box code=examples/ownership.rs:6-8 animate=1 -->
+```
+:box 6-7 borrow
+:note 8 t is still here
+:step a2 2
+:until a1 2
+:note 6 t owns its String
+:step a3 3
+```
+
+<img src="../../images/commands/until-box.webp" width="380" alt="At steps 1 and 2, a box with the label borrow goes around lines 6 and 7. At step 2 the note t is still here comes in beside line 8. At step 3 the box is not there, and the note t owns its String comes in beside line 6.">
+
+A spotlight. This frame is animated, from step 1 to step 3. The spotlight `a1` starts at step 1, and `:until a1 2` keeps it active at step 2. At step 3 it is not active:
 
 <!-- frame id=until-default code=examples/ownership.rs:6-8 animate=1 -->
 ```

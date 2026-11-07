@@ -131,6 +131,15 @@
       },
       "to": {
         "$ref": "#/$defs/At"
+      },
+      "until": {
+        "description": "Last step that shows it: `step` or later (an earlier one is refused). Leave it out to show it to the end.",
+        "format": "uint32",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
       }
     },
     "required": [
@@ -246,6 +255,15 @@
       },
       "to_line": {
         "description": "Last line enclosed by the box (inclusive); defaults to from_line",
+        "format": "uint32",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "until": {
+        "description": "Last step that shows it: `step` or later (an earlier one is refused). Leave it out to show it to the end.",
         "format": "uint32",
         "minimum": 0,
         "type": [
@@ -381,6 +399,15 @@
       "width": {
         "description": "Max text width in columns (default ~34 in the margin, full code width below)",
         "format": "uint",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "until": {
+        "description": "Last step that shows it: `step` or later (an earlier one is refused). Leave it out to show it to the end.",
+        "format": "uint32",
         "minimum": 0,
         "type": [
           "integer",
@@ -542,6 +569,15 @@
           }
         ],
         "description": "Inline one-off style for this mark: {glyph, legend, color}. Overrides the kind's fields."
+      },
+      "until": {
+        "description": "Last step that shows it: `step` or later (an earlier one is refused). Leave it out to show it to the end.",
+        "format": "uint32",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
       }
     },
     "required": [
@@ -792,6 +828,15 @@
       "text": {
         "description": "Note text (a short sentence: goes in the right margin or below the line)",
         "type": "string"
+      },
+      "until": {
+        "description": "Last step that shows it: `step` or later (an earlier one is refused). Leave it out to show it to the end.",
+        "format": "uint32",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
       }
     },
     "required": [
@@ -1187,6 +1232,15 @@
           "integer",
           "null"
         ]
+      },
+      "until": {
+        "description": "Last step that shows it: `step` or later (an earlier one is refused). Leave it out to show it to the end.",
+        "format": "uint32",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
       }
     },
     "required": [
@@ -1544,6 +1598,16 @@
       },
       "to_line": {
         "description": "Boxes, callouts and spotlights: new last line",
+        "format": "uint32",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "until": {
+        "default": null,
+        "description": "New last step that shows it: `step` or later. `null` removes it: then it shows to the end (a spotlight shows only at its step). Leave it out to keep the `until` of the annotation.",
         "format": "uint32",
         "minimum": 0,
         "type": [

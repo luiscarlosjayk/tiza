@@ -20,7 +20,7 @@ fn code() -> Vec<String> {
         .collect()
 }
 
-fn note(id: &str, step: u32, line: u32) -> Value {
+pub(crate) fn note(id: &str, step: u32, line: u32) -> Value {
     json!({"id": id, "step": step, "type": "note", "line": line, "text": id})
 }
 
@@ -35,7 +35,7 @@ fn spot(id: &str, step: u32, lines: (u32, u32), until: Option<u32>) -> Value {
 
 /// A document with the code above, `annotations` and `moves`, next to a
 /// file `other.rs` of four lines.
-fn document(name: &str, annotations: Value, moves: Value) -> PathBuf {
+pub(crate) fn document(name: &str, annotations: Value, moves: Value) -> PathBuf {
     let dir = scratch(name);
     std::fs::write(
         dir.join("other.rs"),
@@ -63,13 +63,13 @@ fn check_report(file: &Path) -> (i32, Value) {
 }
 
 /// `tiza check --json`: (exit code, findings).
-fn check_json(file: &Path) -> (i32, Vec<Value>) {
+pub(crate) fn check_json(file: &Path) -> (i32, Vec<Value>) {
     let (code, v) = check_report(file);
     (code, v["findings"].as_array().unwrap().clone())
 }
 
 /// The steps of the `empty_step` warnings.
-fn empty_steps(findings: &[Value]) -> Vec<u64> {
+pub(crate) fn empty_steps(findings: &[Value]) -> Vec<u64> {
     findings
         .iter()
         .filter(|f| f["code"] == "empty_step")
@@ -77,7 +77,7 @@ fn empty_steps(findings: &[Value]) -> Vec<u64> {
         .collect()
 }
 
-fn with_code(findings: &[Value], code: &str) -> Vec<Value> {
+pub(crate) fn with_code(findings: &[Value], code: &str) -> Vec<Value> {
     findings
         .iter()
         .filter(|f| f["code"] == code)
@@ -88,7 +88,7 @@ fn with_code(findings: &[Value], code: &str) -> Vec<Value> {
 /// The take of each step from step 0, in ANSI, from one `tiza render
 /// --all-steps`: all the steps with one geometry, as `tiza check` lays
 /// them out, at the width that `tiza check` uses by default.
-fn takes(file: &Path) -> Vec<String> {
+pub(crate) fn takes(file: &Path) -> Vec<String> {
     let dir = file.with_file_name("takes");
     let o = tiza_qa::command()
         .args([
@@ -118,7 +118,7 @@ fn takes(file: &Path) -> Vec<String> {
 /// Checks `file` and checks each step against the takes: a step with no
 /// annotation and no move of its own has `empty_step` exactly when it
 /// draws as the step before it. Returns the steps of `empty_step`.
-fn checked_against_takes(file: &Path) -> Vec<u64> {
+pub(crate) fn checked_against_takes(file: &Path) -> Vec<u64> {
     let doc: Value = serde_json::from_str(&std::fs::read_to_string(file).unwrap()).unwrap();
     let starts: Vec<u64> = doc["annotations"]
         .as_array()

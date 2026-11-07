@@ -161,11 +161,12 @@ The arguments of the MCP tools are in [Arguments](mcp-tools.md#arguments). The s
 - An anchor also takes `end`, the grapheme after the span, with `line` and `col`. Without `end`, a span goes to the end of the line.
 - Tiza uses `end` only when the anchor has no `find`. The `from` and `to` of an arrow ignore `end`.
 - `annotation.update` takes the new place in `move`: `{"id": "a1", "move": {"at": {"find": "s: String"}}}`. `move` takes `at`, `from`, `to`, `from_line` and `to_line`.
-- `annotation.update` takes `shape`, which replaces the whole shape of the annotation.
+- `annotation.update` takes `shape`, which replaces the whole shape of the annotation and its `until`. A `shape` without `until` removes the `until`.
+- `annotation.add` and `annotation.update` take `until`, the last step that shows the annotation. In `annotation.update`, an absent `until` keeps it, and `null` removes it. A request with `until` and also a `shape` fails with `invalid_argument`: give `until` in the shape or alone.
 - `annotation.update` takes `heads` with one end only. The other end stays.
 - `annotation.add` and `annotation.update` take `effect`, the experimental [enter effect](document-format.md#enter-effects-experimental): `draw`, `fade` or `null`. In `annotation.update`, an absent `effect` keeps the effect, and `null` removes it.
 - `draw` on an annotation without a stroke fails with `invalid_argument`. `annotation.update` checks it when the request has `effect`, `shape` or `emphasis`. Other updates keep the effect, also on an annotation from a file.
-- A spotlight with an `until` before its `step` never shows. Thus a request that makes one fails with `invalid_argument`. `annotation.add` checks it at the step that the spotlight gets, also when the request has no `step`. `annotation.update` checks it when the request has `step` or `shape`. An update without `step` or `shape` does not check it. This is also true for a spotlight from a file that already has such an `until`.
+- An annotation with an `until` before its `step` never shows. Thus a request that makes one fails with `invalid_argument`. `annotation.add` checks it at the step that the annotation gets, also when the request has no `step`. `annotation.update` checks it when the request has `step`, `until` or `shape`. An update without them does not check it. This is also true for an annotation from a file that already has such an `until`.
 - `theme.set` without `theme` changes between dark and light, as [Agents and themes](themes.md#agents-and-themes) tells. The MCP tool `set_theme` needs `theme`.
 
 ### `scene.clear`
@@ -184,8 +185,8 @@ The arguments of the MCP tools are in [Arguments](mcp-tools.md#arguments). The s
 
 - `scene.put` takes `document`, a `.tiza` object with its code embedded. The instance cannot read a file reference that you send.
 - Tiza refuses a document with a newer `schema` with `unsupported_schema`, and nothing changes.
-- The message is the same as when a file opens, for example `.tiza document with schema 99: this version of Tiza reads schema 1 at most`.
-- Tiza migrates a document with an older `schema`, as it does for a file. When Tiza saves the document, it writes the current schema.
+- The message is the same as when a file opens, for example `.tiza document with schema 99: this version of Tiza reads schema 2 at most`.
+- Tiza migrates a document with an older `schema`, as it does for a file. When Tiza saves the document, and in the copy of `scene.get`, it writes the lowest schema that the document needs. See [`schema`](document-format.md#top-level-fields).
 - The presenter can undo a `scene.put` with `u`. The undo also gives back the step.
 - For the save rules, see [Agents and saving](../concepts/saving.md#agents-and-saving).
 - `scene.patch` takes these fields: `step`, `theme`, `padding`, `title`, `numbers`, `margin`, `styles`, `annotations`, `steps` and `loop`.
@@ -195,9 +196,9 @@ The arguments of the MCP tools are in [Arguments](mcp-tools.md#arguments). The s
 - `steps` replaces the whole list of [named steps](document-format.md#named-steps). `[]` clears it.
 - `annotations` merges full annotations by id. A new id adds an annotation, and the same id replaces one. `{"id": "a1", "deleted": true}` deletes one.
 - `deleted` for an id that the document does not have fails with `invalid_argument`.
-- A replaced annotation keeps its step without `step`, and its file without `file`. `file: null` is the main file.
+- A replaced annotation keeps its step without `step`, its file without `file`, and its `until` without `until`. `file: null` is the main file, and `until: null` removes the `until`.
 - A new id gets the defaults of `annotation.add`. `file: null` is then the file on screen at its step.
-- `scene.put` and `scene.patch` accept a spotlight with an `until` before its `step`, as Tiza does when it opens a file. `tiza check` reports it with the error `until`.
+- `scene.put` and `scene.patch` accept an annotation with an `until` before its `step`, as Tiza does when it opens a file. `tiza check` reports it with the error `until`.
 
 For example:
 

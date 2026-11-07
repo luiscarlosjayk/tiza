@@ -1,0 +1,13 @@
+---
+source: qa/tests/saving/format_compatibility.rs
+expression: out
+---
+ 1      fn main() {
+ 2          let s = String::from("hi");
+ 3          let n = s.len();
+ 4          println!("{s} has {n} bytes");   ┆ to the last step
+ 5      }
+ 6
+ 7      fn len(s: &String) -> usize {
+ 8          s.len()
+ 9      }

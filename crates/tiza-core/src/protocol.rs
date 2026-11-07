@@ -220,11 +220,20 @@ pub enum ShapeSpec {
         find_end: Option<String>,
         #[serde(default)]
         ids: Vec<String>,
-        /// The last step at which the spotlight is active: its `step` or a
-        /// later one (an earlier one is refused). Absent: only at its `step`.
-        #[serde(default)]
-        until: Option<u32>,
     },
+}
+
+/// A shape and its `until`. In `annotation.update`, a `shape` replaces
+/// the shape and its `until` together.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ShapeWithUntil {
+    #[serde(flatten)]
+    pub spec: ShapeSpec,
+    /// The last step at which it shows: its `step` or a later one (an
+    /// earlier one is refused). Absent: a spotlight shows only at its
+    /// `step`, any other annotation to the last step.
+    #[serde(default)]
+    pub until: Option<u32>,
 }
 
 /// A line range given either as numbers or as two text markers.
@@ -377,7 +386,6 @@ impl ShapeSpec {
                 find_start,
                 find_end,
                 ids,
-                until,
             } => {
                 let (a, b) = if find_start.is_some() || find_end.is_some() {
                     let (a, b, m) = resolve_range(
@@ -397,7 +405,6 @@ impl ShapeSpec {
                     from_line: a,
                     to_line: b,
                     ids: ids.clone(),
-                    until: *until,
                 }
             }
         };
@@ -427,7 +434,7 @@ pub struct AddParams {
     #[serde(default)]
     pub file: Option<String>,
     #[serde(flatten)]
-    pub shape: ShapeSpec,
+    pub shape: ShapeWithUntil,
 }
 
 /// Parameters of `annotation.update`. Tiza refuses a key that it does not
@@ -461,9 +468,19 @@ pub struct UpdateParams {
         skip_serializing_if = "Option::is_none"
     )]
     pub file: Option<Option<String>>,
-    /// If present, replaces the whole shape.
+    /// If present, replaces the whole shape and its `until` (without
+    /// `until` in it, the annotation has none after the update).
     #[serde(default)]
-    pub shape: Option<ShapeSpec>,
+    pub shape: Option<ShapeWithUntil>,
+    /// The new last step at which it shows: its `step` or a later one.
+    /// `null` removes it. Absent: the annotation keeps its `until`. Not
+    /// with `shape`, which has its own `until`.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub until: Option<Option<u32>>,
     /// Moves the annotation, keeping its type, kind and style (`move`).
     #[serde(default, rename = "move", skip_serializing_if = "Option::is_none")]
     pub mv: Option<MoveSpec>,
@@ -1486,15 +1503,21 @@ fn quote(text: &str) -> String {
 }
 
 fn describe_shape(a: &Annotation) -> String {
+    // The id and the steps at which it shows: `[step 2]`, or `[step 2-4]`
+    // with an `until`.
+    let head = format!(
+        "{} [step {}{}]",
+        a.id,
+        a.step,
+        a.until.map(|u| format!("-{u}")).unwrap_or_default()
+    );
     match &a.shape {
         Shape::Highlight {
             span,
             label,
             emphasis,
         } => format!(
-            "{} [step {}] highlight{} L{} {}..{}{}",
-            a.id,
-            a.step,
+            "{head} highlight{} L{} {}..{}{}",
             if emphasis.is_default() {
                 String::new()
             } else {
@@ -1511,9 +1534,7 @@ fn describe_shape(a: &Annotation) -> String {
         Shape::Mark {
             kind, span, label, ..
         } => format!(
-            "{} [step {}] mark {} L{} {}..{}{}",
-            a.id,
-            a.step,
+            "{head} mark {} L{} {}..{}{}",
             kind,
             span.line,
             span.start,
@@ -1529,9 +1550,7 @@ fn describe_shape(a: &Annotation) -> String {
             label,
             ..
         } => format!(
-            "{} [step {}] box L{}-{}{}",
-            a.id,
-            a.step,
+            "{head} box L{}-{}{}",
             from_line,
             to_line,
             label
@@ -1542,9 +1561,7 @@ fn describe_shape(a: &Annotation) -> String {
         Shape::Arrow {
             from, to, label, ..
         } => format!(
-            "{} [step {}] arrow L{}:{} → L{}:{}{}",
-            a.id,
-            a.step,
+            "{head} arrow L{}:{} → L{}:{}{}",
             from.line,
             from.col,
             to.line,
@@ -1555,7 +1572,7 @@ fn describe_shape(a: &Annotation) -> String {
                 .unwrap_or_default()
         ),
         Shape::Note { line, text } => {
-            format!("{} [step {}] note L{} «{}»", a.id, a.step, line, text)
+            format!("{head} note L{} «{}»", line, text)
         }
         Shape::Callout {
             from_line,
@@ -1564,9 +1581,7 @@ fn describe_shape(a: &Annotation) -> String {
             title,
             ..
         } => format!(
-            "{} [step {}] callout L{}-{}{} «{}»",
-            a.id,
-            a.step,
+            "{head} callout L{}-{}{} «{}»",
             from_line,
             to_line.unwrap_or(*from_line),
             title.as_ref().map(|t| format!(" {t}:")).unwrap_or_default(),
@@ -1587,12 +1602,8 @@ fn describe_shape(a: &Annotation) -> String {
             from_line,
             to_line,
             ids,
-            until,
         } => format!(
-            "{} [step {}{}] spotlight{}{}",
-            a.id,
-            a.step,
-            until.map(|u| format!("-{u}")).unwrap_or_default(),
+            "{head} spotlight{}{}",
             from_line
                 .map(|f| format!(" L{}-{}", f, to_line.unwrap_or(f)))
                 .unwrap_or_default(),

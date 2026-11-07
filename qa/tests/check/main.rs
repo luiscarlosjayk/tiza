@@ -1,5 +1,6 @@
 //! `tiza check`, the live check and the clean width.
 
+mod annotation_until;
 mod clean_width;
 mod clipped_code;
 mod config_width;

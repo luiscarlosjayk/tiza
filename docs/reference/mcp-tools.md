@@ -190,7 +190,9 @@ The fields of each annotation type are in [Annotations](document-format.md#annot
 - In the margin, a long title can make the block wider. Below the code, Tiza cuts a long title.
 - `kind` is a [kind](document-format.md#kinds), the name of a style, the name of a personal style of the config file of the instance, or any name when `style` has a `glyph`. `list_kinds` gives the personal styles in `personal`.
 - `style` is a [mark style](document-format.md#mark-style) for this mark only: `glyph`, `legend` and `color`.
-- `until` is the last step at which a spotlight is active. Without it, the spotlight is active only at its `step`. A spotlight with an `until` before its `step` never shows. Thus the call fails with `invalid_argument`. `update_annotation` checks it when the call has `step`.
+- Each `add_` tool takes `until`, the last step that shows the annotation. Without it, the annotation shows to the last step, and a spotlight only at its `step`.
+- An annotation with an `until` before its `step` never shows. Thus the call fails with `invalid_argument`. `update_annotation` checks it when the call has `step` or `until`.
+- `update_annotation` takes `until`. Without it, the annotation keeps its `until`. `null` removes it.
 
 ### `define_style`
 
@@ -356,8 +358,8 @@ The `hidden` field has one of these messages.
 | `its file FILE is not shown at step N (SHOWN is)` | A `code.link` shows another file at that step. |
 | `its lines are outside the code shown at step N (A-B)` | The lines are outside the window of a `code.link`. |
 | `it lost its anchor at step N (unanchored: no line of it survived a patch)` | A move removed every line of the annotation. |
-| `a spotlight shows only at its step N` | A spotlight is active at one step, and the step on screen is after it. |
-| `a spotlight shows from step A to B` | The step on screen is after the `until` of a spotlight. |
+| `it shows only at step N` | The step on screen is after the `until` of the annotation, here `N`. A spotlight without `until` shows only at its step. |
+| `it shows only at steps A-B` | The step on screen is after the `until` of the annotation, here `B`. |
 | `it is not drawn: no room for its text at W columns (check at width W lists it)` | The take at the width of the screen has no room for a note or a callout. |
 
 The `clipped` field has one of these messages.

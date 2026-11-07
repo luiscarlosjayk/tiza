@@ -1,0 +1,114 @@
+{
+  "schema": 2,
+  "source": {
+    "language": "rust",
+    "first_line": 1
+  },
+  "code": [
+    "fn main() {",
+    "    let s = String::from(\"hi\");",
+    "    let n = len(&s);",
+    "    println!(\"{s} has {n} bytes\");",
+    "}",
+    "",
+    "fn len(s: &String) -> usize {",
+    "    s.len()",
+    "}"
+  ],
+  "annotations": [
+    {
+      "id": "h1",
+      "step": 1,
+      "type": "highlight",
+      "span": {
+        "line": 3,
+        "start": 16,
+        "end": 18
+      },
+      "label": "a borrow",
+      "until": 1
+    },
+    {
+      "id": "m1",
+      "step": 1,
+      "type": "mark",
+      "kind": "read",
+      "span": {
+        "line": 7,
+        "start": 7,
+        "end": 8
+      },
+      "until": 2
+    },
+    {
+      "id": "b1",
+      "step": 1,
+      "type": "box",
+      "from_line": 7,
+      "to_line": 9,
+      "label": "len reads s",
+      "until": 2
+    },
+    {
+      "id": "r1",
+      "step": 2,
+      "type": "arrow",
+      "from": {
+        "line": 3,
+        "col": 17
+      },
+      "to": {
+        "line": 7,
+        "col": 7
+      },
+      "label": "lends",
+      "until": 2
+    },
+    {
+      "id": "n1",
+      "step": 2,
+      "type": "note",
+      "line": 2,
+      "text": "s owns its String",
+      "until": 3
+    },
+    {
+      "id": "c1",
+      "step": 3,
+      "type": "callout",
+      "from_line": 3,
+      "to_line": 3,
+      "text": "s.len() needs no function of its own.",
+      "title": "simpler",
+      "until": 3
+    },
+    {
+      "id": "s1",
+      "step": 3,
+      "type": "spotlight",
+      "from_line": 3,
+      "to_line": 4,
+      "ids": [
+        "n1"
+      ],
+      "until": 3
+    },
+    {
+      "id": "n2",
+      "step": 4,
+      "type": "note",
+      "line": 4,
+      "text": "to the last step"
+    }
+  ],
+  "step": 1,
+  "moves": [
+    {
+      "at_step": 3,
+      "action": "code.patch",
+      "op": "replace",
+      "find": "let n = len(&s);",
+      "content": "    let n = s.len();"
+    }
+  ]
+}

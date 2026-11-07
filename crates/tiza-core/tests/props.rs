@@ -94,7 +94,6 @@ fn shape_strategy(lines: u32) -> impl Strategy<Value = Shape> {
             from_line: Some(a.min(b)),
             to_line: Some(a.max(b)),
             ids: vec![],
-            until: None,
         }),
     ]
 }
@@ -103,11 +102,18 @@ fn doc_strategy() -> impl Strategy<Value = Document> {
     code_strategy().prop_flat_map(|code| {
         let d = Document::from_code(&code, "rs", None);
         let n = d.code.len() as u32;
-        prop::collection::vec((shape_strategy(n), 1u32..5), 0..8).prop_map(move |shapes| {
+        // An `until` for any shape, also one before its step (a file
+        // can have it; `check` reports it).
+        prop::collection::vec(
+            (shape_strategy(n), 1u32..5, prop::option::of(1u32..6)),
+            0..8,
+        )
+        .prop_map(move |shapes| {
             let mut d = d.clone();
-            for (i, (shape, step)) in shapes.into_iter().enumerate() {
+            for (i, (shape, step, until)) in shapes.into_iter().enumerate() {
                 // Shapes outside the text are rejected by `add`; that is fine.
                 let _ = d.add(Annotation {
+                    until,
                     id: format!("p{i}"),
                     step,
                     color: None,

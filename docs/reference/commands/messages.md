@@ -16,7 +16,9 @@ The commands are in [`:` commands](../commands.md).
 | `ID: note at LN` | `:note` added a note. |
 | `ID: callout at LA-B` | `:callout` added a callout. |
 | `ID: spotlight at step N` | `:spot` added a spotlight. |
-| `ID active until step N` | `:until` set the last step of a spotlight. |
+| `ID shows until step N` | `:until` set the last step that shows the annotation. When the step on screen does not show it, the reason follows in parentheses. |
+| `ID has no until now` | `:until ID -` removed the `until`. |
+| `ID has no until` | `:until ID -` got an annotation without `until`. Nothing changes. |
 | `style NAME defined (use it with :mark NAME …)` | `:style` defined or changed a style. |
 | `style NAME removed` | `:style NAME` removed a style. |
 | `ID updated` | `:label` changed a label. |
@@ -55,8 +57,7 @@ The commands are in [`:` commands](../commands.md).
 | `the note is empty` | `:note` got no text. |
 | `the callout text is empty` | `:callout` got no text. |
 | `unknown placement: use @below, @margin or @auto` | `:callout` got another `@` word. |
-| `ID is not a spotlight` | `:until` got an annotation that is not a spotlight. |
-| `ID: give until S or later, or remove it (until N is before step S: the spotlight never shows)` | `:until` got a step before the step of the spotlight, or `:step ID S`, `:set ID step=S` or `+` tried to move the step of a spotlight after its `until`. |
+| `ID: give until S or later, or remove it (until N is before step S: the TYPE never shows)` | `:until` got a step before the step of the annotation, or `:step ID S`, `:set ID step=S` or `+` tried to move the step of an annotation after its `until`. `TYPE` is the type of the annotation, for example `box`. |
 | `unknown mark kind (kinds: KINDS; or define one with :style, or use a glyph/emoji)` | `:mark` got a kind that it does not know. |
 | `a style needs at least a glyph` | `:style` defined a new style with no glyph, and `NAME` is not a built-in kind. |
 | `unknown style field (glyph, legend, color)` | `:style` got another key. |
@@ -220,7 +221,7 @@ A command with wrong arguments shows its usage:
 | `usage: :note L text  (L may be . for the cursor line)` | `:note` |
 | `usage: :callout A[-B] [@below\|@margin\|@auto] [title="…"] text   (or @'start'..@'end')   (ERROR)` | `:callout` |
 | `usage: :spot A-B [ID…]  \|  :spot ID…` | `:spot` |
-| `usage: :until ID N   (last step in which the spotlight stays active)` | `:until` |
+| `usage: :until ID N  \|  :until ID -   (the last step that shows it, or - to remove)` | `:until` |
 | `usage: :style NAME glyph=G legend="text" color=C   (:style NAME removes it)` | `:style` |
 | `usage: :label ID text` | `:label` |
 | `usage: :color ID name\|#rrggbb\|auto   (names: NAMES)` | `:color` |

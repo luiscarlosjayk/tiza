@@ -47,7 +47,8 @@ pub struct Finding {
     /// shows another file), `clipped_label`, `clipped_code` (code lines
     /// cut with `…`, one finding for each file and set of cut lines),
     /// `empty_step`, `effect` (the enter effect `draw` on a shape with no
-    /// stroke, or an effect that this version does not know), `until` (a spotlight's `until` before its `step`), and
+    /// stroke, or an effect that this version does not know), `until` (an `until` before its `step`, an error; a spotlight
+    /// whose `ids` names an annotation that has left, a warning), and
     /// `stale` (a live instance's move the code changed under).
     pub code: &'static str,
     /// The annotation id (`a3`) or the move (`move #2`, 1-based as in
@@ -442,8 +443,9 @@ fn check_text_as(
             return Report::new(frame, out, None, None);
         }
     };
-    let found = raw.get("schema").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
-    if found > SCHEMA_VERSION {
+    // In u64, as the loader compares: a cast would read 2^32 + 2 as 2.
+    let found = raw.get("schema").and_then(|v| v.as_u64()).unwrap_or(1);
+    if found > u64::from(SCHEMA_VERSION) {
         out.push(Finding::new(
             Level::Error,
             "schema",
@@ -453,10 +455,10 @@ fn check_text_as(
         ));
         return Report::new(frame, out, None, None);
     }
-    let migrated = crate::fs::MIGRATIONS.iter().any(|(from, _)| found <= *from);
+    let mut migrated = false;
     for (from, migrate) in crate::fs::MIGRATIONS {
-        if found <= *from {
-            migrate(&mut raw);
+        if found <= u64::from(*from) {
+            migrated |= migrate(&mut raw);
         }
     }
     // An effect of a newer Tiza: read as no effect, with a warning below.
@@ -1448,7 +1450,7 @@ impl<'a> Take<'a> {
                 } else {
                     std::borrow::Cow::Owned(doc.view_at(step).doc)
                 };
-                let labels = shown.annotations.iter().any(|a| a.step <= step);
+                let labels = shown.annotations.iter().any(|a| a.shown_at(step));
                 TakeStep {
                     step,
                     run,
@@ -1725,9 +1727,9 @@ fn check_loaded(
                     .line(anchor_line(&a.shape)),
             );
         }
-        // A spotlight active from its step to an `until` before it: at no
-        // step.
-        if let Some(text) = crate::model::until_before_step(a.step, &a.shape) {
+        // An annotation that shows from its step to an `until` before it:
+        // at no step.
+        if let Some(text) = crate::model::until_before_step(a.step, a.until, &a.shape) {
             bad.insert(a.id.clone());
             out.push(
                 Finding::new(Level::Error, "until", text)
@@ -1736,6 +1738,36 @@ fn check_loaded(
                     .file(a.file.clone())
                     .line(anchor_line(&a.shape)),
             );
+        } else if let Shape::Spotlight { ids, .. } = &a.shape {
+            // A spotlight that keeps in focus one that has left: nothing
+            // of it is on the screen, so its lines are not bright either.
+            let last = a.end().unwrap_or(a.step);
+            for id in ids {
+                let Some(target) = doc.find_annotation(id) else {
+                    continue;
+                };
+                if let Some(end) = target.end().filter(|_| target.left_at(last)) {
+                    let at = if target.step == end {
+                        format!("step {end}")
+                    } else {
+                        format!("steps {}-{end}", target.step)
+                    };
+                    out.push(
+                        Finding::new(
+                            Level::Warning,
+                            "until",
+                            format!(
+                                "ids names {id}, which shows only at {at}: \
+                                 the spotlight does not keep it in focus at step {last}"
+                            ),
+                        )
+                        .id(a.id.clone())
+                        .step(a.step)
+                        .file(a.file.clone())
+                        .line(anchor_line(&a.shape)),
+                    );
+                }
+            }
         }
         // An effect of a newer Tiza: the file opens, with no effect there.
         for (_, value) in doc.unknown_effects.0.iter().filter(|(id, _)| *id == a.id) {
@@ -1844,7 +1876,9 @@ fn check_loaded(
                 .skipped
                 .iter()
                 .any(|m| m.at_step == Some(u64::from(step)))
-            || (doc.spots_change_at(step) && !same_as_before(take, theme, width, step));
+            // Something leaves (a spotlight ends, an `until` passes) and the
+            // take shows it.
+            || (doc.leaves_at(step) && !same_as_before(take, theme, width, step));
         if !has {
             out.push(
                 Finding::new(
@@ -2009,7 +2043,7 @@ pub fn outside_windows_from(
         };
         for (i, (a, shape)) in doc.annotations.iter().zip(&shapes).enumerate() {
             let Some(shape) = shape else { continue };
-            if a.file != file || a.step > step || inside(shape) {
+            if a.file != file || !a.shown_at(step) || inside(shape) {
                 continue;
             }
             if !zoom && link.at_step > a.step {
@@ -2349,7 +2383,7 @@ fn take_saturation(take: &Take) -> usize {
             .shown
             .annotations
             .iter()
-            .filter(|a| a.step <= s.step)
+            .filter(|a| a.shown_at(s.step))
             .filter_map(|a| match &a.shape {
                 Shape::Callout {
                     from_line,
