@@ -357,6 +357,16 @@ fn with_no_save_a_scene_with_changes_waits_in_memory() {
     assert_eq!((scene_file(&live), step(&live)), ("own.tiza".into(), 2));
     assert!(has_note(&live), "the note waits in memory");
     assert!(live.with(|a| a.dirty && a.unsaved_summary().is_some()));
+    // The ways out name `:w PATH`: a talk refuses `:saveas`.
+    let bar = live.screen(100, 30);
+    assert!(bar.contains("unsaved (:w PATH"), "{bar}");
+    live.command("q");
+    let (msg, _) = live.message().unwrap();
+    assert!(
+        msg.contains(":w PATH writes a copy") && !msg.contains("saveas"),
+        "{msg}"
+    );
+    assert!(!live.with(|a| a.quit));
     live.command("undo");
     assert!(!has_note(&live), "u takes it back");
     live.command("redo");
@@ -501,6 +511,26 @@ fn the_talk_writes_where_it_is_and_opens_there_again() {
         "only `at` changes"
     );
     assert_eq!(raw["talk"]["scenes"][0], "intro.tiza");
+    // The layout of Tiza, in an order that reads well: `schema`, `talk`
+    // (`title`, `scenes`, `at` with `position`, `name`, `step`), then the
+    // keys that this version does not know.
+    let text = std::fs::read_to_string(&master).unwrap();
+    let mut from = 0;
+    for key in [
+        "\"schema\"",
+        "\"talk\"",
+        "\"title\"",
+        "\"scenes\"",
+        "\"at\"",
+        "\"position\"",
+        "\"name\"",
+        "\"step\"",
+        "\"kept\"",
+    ] {
+        let at = text[from..].find(key);
+        assert!(at.is_some(), "no {key} after byte {from} in:\n{text}");
+        from += at.unwrap() + key.len();
+    }
     let live = open(&dir, None, SessionStart::default());
     assert_eq!((scene_file(&live), step(&live)), ("again.tiza".into(), 2));
     // The countdown waits at a resumed step.

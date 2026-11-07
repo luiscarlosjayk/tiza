@@ -2436,8 +2436,9 @@ impl App {
             Err(e) => {
                 if self.save_error.is_none() {
                     self.error(format!(
-                        "read-only: could not save {}; :saveas PATH saves elsewhere",
-                        self.save_path.display()
+                        "read-only: could not save {}; {}",
+                        self.save_path.display(),
+                        self.save_elsewhere()
                     ));
                     self.save_warning_pending = true;
                 }
@@ -2707,6 +2708,16 @@ impl App {
             .then(|| format!("the code on screen in place of {name}"))
     }
 
+    /// How a message names a save to another file: `:saveas PATH`, or in
+    /// a talk, where the master names the file of each scene, `:w PATH`.
+    fn save_elsewhere(&self) -> &'static str {
+        if self.talk.is_some() {
+            ":w PATH writes a copy"
+        } else {
+            ":saveas PATH saves elsewhere"
+        }
+    }
+
     /// Quits unless there are unsaved changes: ones that could not be
     /// written, or ones made with autosave off (`force` ignores both), or
     /// stale moves (their marks are not saved).
@@ -2718,21 +2729,28 @@ impl App {
         if self.dirty {
             if self.save_error.is_some() {
                 self.error(format!(
-                    "unsaved (read-only): :q! quits without saving, :saveas PATH saves elsewhere ({})",
+                    "unsaved (read-only): :q! quits without saving, {} ({})",
+                    self.save_elsewhere(),
                     self.save_path.display()
                 ));
                 return;
             }
             if !self.autosave && self.no_save {
-                self.error(
-                    "unsaved changes (--no-save): :saveas PATH saves them elsewhere, :q! discards them",
-                );
+                let elsewhere = if self.talk.is_some() {
+                    ":w PATH writes a copy"
+                } else {
+                    ":saveas PATH saves them elsewhere"
+                };
+                self.error(format!(
+                    "unsaved changes (--no-save): {elsewhere}, :q! discards them"
+                ));
                 return;
             }
             if !self.autosave {
                 self.error(format!(
-                    "unsaved changes (autosave off): :w saves to {}, :saveas PATH saves elsewhere, :q! quits without saving",
-                    self.save_path.display()
+                    "unsaved changes (autosave off): :w saves to {}, {}, :q! quits without saving",
+                    self.save_path.display(),
+                    self.save_elsewhere()
                 ));
                 return;
             }
@@ -3284,8 +3302,9 @@ impl App {
             self.autosave = false;
             self.autosave_held = true;
             self.info(format!(
-                "another document loaded: autosave off (:w saves over {}, :saveas PATH saves elsewhere, :autosave on resumes)",
-                self.save_path.display()
+                "another document loaded: autosave off (:w saves over {}, {}, :autosave on resumes)",
+                self.save_path.display(),
+                self.save_elsewhere()
             ));
             if let Some(note) = unfollowed {
                 self.say_first(note);
@@ -3300,9 +3319,10 @@ impl App {
                     self.autosave = false;
                     self.autosave_held = true;
                     format!(
-                        "not saved, and autosave is off: {} (:w saves it embedded in {}, :saveas PATH saves elsewhere, :autosave on resumes)",
+                        "not saved, and autosave is off: {} (:w saves it embedded in {}, {}, :autosave on resumes)",
                         sent.edited.join("; "),
-                        self.save_path.display()
+                        self.save_path.display(),
+                        self.save_elsewhere()
                     )
                 } else {
                     format!("not saved: {} (shown embedded)", sent.edited.join("; "))

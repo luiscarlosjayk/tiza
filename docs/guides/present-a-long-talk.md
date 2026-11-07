@@ -91,7 +91,7 @@ tiza talk.tiza --present --scene move --step 9
 
 ## 6. Stop and continue later
 
-When Tiza closes, it writes the place in the talk into the master, as `talk.at`. The next `tiza talk.tiza` opens there. Tiza changes only `talk.at`: the other keys and the form of each entry stay as you wrote them.
+When Tiza closes, it writes the place in the talk into the master, as `talk.at`. The next `tiza talk.tiza` opens there. Tiza changes only `talk.at`. The other keys and the form of each entry stay, but Tiza writes the file in its own layout: `schema`, then `talk` with `title`, `scenes` and `at`, then the other keys. The first time, git thus shows a change of the layout.
 
 - With `--no-save`, Tiza does not write the master.
 - When the list of scenes changed on disk while the talk was open, Tiza does not write the master. It tells you on the terminal when it closes.
@@ -110,7 +110,7 @@ When Tiza closes, it writes the place in the talk into the master, as `talk.at`.
 ## Special cases
 
 - **`--theme-file` and `--lang`:** they do not work with a talk. Put the theme and the language in each scene.
-- **`:saveas`:** it does not work in a talk, because the master names the file of each scene. `:w PATH` writes a copy.
+- **`:saveas`:** it does not work in a talk, because the master names the file of each scene. `:w PATH` writes a copy. With `--no-save`, the status bar and `:q` tell you to use `:w PATH`.
 - **`tiza render` and `tiza check`:** they refuse a master. Give them a scene.
 - **`tiza next`, `tiza prev` and `tiza goto ID`:** they act on the live talk as `n`, `p` and `:goto ID` do. Thus `tiza next` on the last step of a scene goes to the next scene. `tiza goto ID` stays in the scene on screen.
 - **A scene file is not there, or Tiza cannot read it:** `tiza talk.tiza` does not open, and the message names the scene. Tiza does not read the file of a skipped scene, so that file can be missing.

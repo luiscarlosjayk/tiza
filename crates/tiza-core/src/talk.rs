@@ -441,10 +441,12 @@ pub fn save_at(path: &Path, scenes: &[SceneEntry], at: &At) -> Result<(), Error>
 }
 
 /// The one writer of a master: the file is read again, and only `key` of
-/// `talk` changes to `value` (the other keys, the form of each entry and
-/// the keys that this version does not know stay as they are). When the
-/// `scenes` on disk are not `scenes` any more (the master was edited while
-/// the talk ran), nothing is written: the error says so.
+/// `talk` (`title`, `scenes` or `at`) changes to `value`. The other keys,
+/// the form of each entry and the keys that this version does not know
+/// stay; the file is written in the layout of Tiza: `schema`, then `talk`
+/// (`title`, `scenes`, `at`), then the other keys. When the `scenes` on
+/// disk are not `scenes` any more (the master was edited while the talk
+/// ran), nothing is written: the error says so.
 pub fn update_talk(
     path: &Path,
     scenes: &[SceneEntry],
@@ -460,13 +462,61 @@ pub fn update_talk(
             "its list of scenes changed while the talk ran".into(),
         ));
     }
-    let talk = raw
-        .get_mut("talk")
-        .and_then(Value::as_object_mut)
-        .ok_or_else(|| Error::Invalid("`talk` must be an object with `scenes`".into()))?;
+    let Value::Object(mut top) = raw else {
+        return Err(Error::Invalid("a master must be a JSON object".into()));
+    };
+    let Some(Value::Object(mut talk)) = top.remove("talk") else {
+        return Err(Error::Invalid(
+            "`talk` must be an object with `scenes`".into(),
+        ));
+    };
+    if !matches!(key, "title" | "scenes" | "at") {
+        return Err(Error::Invalid(format!("talk: unknown key `{key}`")));
+    }
     talk.insert(key.into(), value);
-    let out = serde_json::to_string_pretty(&raw)?;
+    let at = talk.remove("at").map(|v| match At::deserialize(&v) {
+        Ok(at) => AtOut::Typed(at),
+        Err(_) => AtOut::Raw(v),
+    });
+    let out = MasterOut {
+        schema: top.remove("schema"),
+        talk: TalkOut {
+            title: talk.remove("title"),
+            scenes: talk.remove("scenes").unwrap_or(Value::Null),
+            at,
+        },
+        rest: top,
+    };
+    let out = serde_json::to_string_pretty(&out)?;
     crate::fs::write_atomically(path, out.as_bytes())
+}
+
+/// A master as [`update_talk`] writes it: its keys in this order, then the
+/// keys that this version does not know.
+#[derive(Serialize)]
+struct MasterOut {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    schema: Option<Value>,
+    talk: TalkOut,
+    #[serde(flatten)]
+    rest: serde_json::Map<String, Value>,
+}
+
+#[derive(Serialize)]
+struct TalkOut {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    title: Option<Value>,
+    scenes: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    at: Option<AtOut>,
+}
+
+/// `at` with its fields in their order (`position`, `name`, `step`).
+#[derive(Serialize)]
+#[serde(untagged)]
+enum AtOut {
+    Typed(At),
+    Raw(Value),
 }
 
 #[cfg(test)]

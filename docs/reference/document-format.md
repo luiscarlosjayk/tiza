@@ -1434,7 +1434,7 @@ Object. No default: the talk opens at step 0 of the first scene that shows.
 - **The name** of a scene follows the rules of the id of a step: one word, not digits only, and no `-` at the start. A file name that does not follow them, for example `07.tiza`, gives no name: use the position of that scene. Two scenes can have the same name.
 - `--scene X`, `:scene X` and `at` find a scene by its position or by its name. Digits only are a position. Other text is a name, and it finds the first scene that shows with that name.
 - `at` opens the scene at its `position` when that scene has the same name and shows. Else it opens the first scene that shows with that name. Else it opens the first scene that shows, at step 0.
-- When Tiza writes `at`, it changes only `talk.at`. The other keys and the form of each entry stay as they are in the file. When the list of scenes in the file changed while the talk was open, Tiza does not write `at`.
+- When Tiza writes `at`, it changes only `talk.at`. The other keys and the form of each entry stay. Tiza writes the file in its own layout: `schema`, then `talk` with `title`, `scenes` and `at`, then the other keys. When the list of scenes in the file changed while the talk was open, Tiza does not write `at`.
 - Each scene keeps its own `step`. A change in a scene saves the step that its file has, not the step on screen.
 - A file shows once in a talk. Two entries that name the same file are an error, also with other paths to it.
 - `tiza render`, `tiza check` and `scene put` refuse a master: give them a scene.

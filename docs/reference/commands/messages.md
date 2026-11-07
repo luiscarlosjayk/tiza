@@ -184,6 +184,8 @@ When `:q` refuses, the status bar shows one of these messages:
 | No-save mode | `unsaved changes (--no-save): :saveas PATH saves them elsewhere, :q! discards them` |
 | After a failed save | `unsaved (read-only): :q! quits without saving, :saveas PATH saves elsewhere (FILE)` |
 
+In a talk, these messages give `:w PATH writes a copy` in place of `:saveas PATH`, because a talk refuses `:saveas`. With `--no-save`, the message is `unsaved changes (--no-save): :w PATH writes a copy, :q! discards them`, and the status bar shows `unsaved (:w PATH · :q! discards)`.
+
 ## Messages of follow mode
 
 | Message | When |

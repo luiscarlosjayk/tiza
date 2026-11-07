@@ -996,9 +996,9 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
         ));
     } else if !app.autosave {
         // With `--no-save`, `:w` would write over the file opened: the
-        // ways out are `:saveas PATH` and `:q!`.
+        // ways out are `:saveas PATH` (`:w PATH` in a talk) and `:q!`.
         let text = match (app.dirty, app.no_save) {
-            (true, true) => NO_SAVE_HINTS[0],
+            (true, true) => no_save_hints(app)[0],
             (true, false) => "  unsaved (:w)",
             (false, true) => "  no-save",
             (false, false) => "  autosave off",
@@ -1144,7 +1144,7 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
     if let Some(i) = no_save_hint
         && lw(&left) + 1 + need.max(6) > width
     {
-        left[i] = Span::styled(NO_SAVE_HINTS[1], accent);
+        left[i] = Span::styled(no_save_hints(app)[1], accent);
     }
     // An error is about the key just pressed: when it does not fit, it
     // takes the room of the optional segments and of the step, and a
@@ -1263,11 +1263,18 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
 
 /// The save state with `--no-save` and changes: `:w` would write over the
 /// file opened, so it names `:saveas` and `:q!`; the short form for a
-/// narrow bar.
-const NO_SAVE_HINTS: [&str; 2] = [
-    "  unsaved (:saveas PATH · :q! discards)",
-    "  unsaved (:saveas · :q!)",
-];
+/// narrow bar. A talk refuses `:saveas`: there it names `:w PATH`, which
+/// writes a copy.
+fn no_save_hints(app: &App) -> [&'static str; 2] {
+    if app.talk.is_some() {
+        ["  unsaved (:w PATH · :q! discards)", "  unsaved (:w PATH · :q!)"]
+    } else {
+        [
+            "  unsaved (:saveas PATH · :q! discards)",
+            "  unsaved (:saveas · :q!)",
+        ]
+    }
+}
 
 /// The hint of a `v`/`V` selection, from the full form to the keys alone.
 const SELECT_HINTS: [&str; 4] = [
