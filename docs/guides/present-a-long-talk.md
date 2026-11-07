@@ -9,7 +9,8 @@ Use a talk when one document is not sufficient: for example, title slides withou
 ## 1. Plan the scenes
 
 - Make one `.tiza` file for each scene. A scene is a usual document: you open it, edit it, check it and export it alone. To make one, see [Animate an explanation](animate-an-explanation.md).
-- A scene keeps its own layout: arrow lanes, margin, line numbers, padding, theme and language. A title slide without line numbers can come before a scene of code with line numbers.
+- A scene keeps its own layout: arrow lanes, margin, line numbers, `center`, padding, theme and language. A title slide without line numbers can come before a scene of code with line numbers.
+- A title slide can have `"center": true`: it stays in the middle at each terminal size.
 - Keep the scenes in one folder next to the master. The paths of a scene (`code`, `code.link`, `views`) are relative to its own `.tiza` file.
 - The ids of annotations are for each scene. Two scenes can each have an `h1`.
 

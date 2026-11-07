@@ -41,7 +41,7 @@ The version of the format, `1` or `2`.
 
 - Tiza writes `2` only when the file uses a field of version 2: an `until` on an annotation that is not a spotlight, `center`, or `talk` (a [master](#talk)). A version that reads only `1` then says that the file is of a newer version.
 - Else Tiza writes `1`, so that Tiza 0.2.1 and earlier versions can open the file.
-- A version that reads only `1` does not open a file with `2`. Thus it does not show a box, an arrow or a note after its `until` by mistake.
+- A version that reads only `1` does not open a file with `2`. Thus it does not show such a file wrong, for example a box after its `until`, or centered code at the left.
 
 Integer. Required.
 
@@ -187,7 +187,7 @@ When `true`, Tiza puts the code in the middle of the code area. The code area is
 
 - Tiza puts the code of all the steps at the same place. It uses the widest step and the step with the most rows, with the line numbers, the arrows and the boxes. Spaces at the start and at the end of a line count. Thus the code does not move from one step to the next, or while a step types.
 - Code that is wider than the code area stays at the left, as without `center`. `tiza check` gives the warning `center`. Code that has more rows than the code area starts at the top.
-- In normal mode and in presentation mode, the line numbers start at the same column. The bottom row is for the status bar in normal mode, and for the step counter in presentation mode, also when the counter does not show.
+- Normal mode and presentation mode leave the same blank columns on the left. In normal mode, the arrow lanes and the box rails are those of the step on screen, as with `:layout dynamic`: at a step with fewer arrows or boxes, the code starts more to the left than in presentation mode. The bottom row is for the status bar in normal mode, and for the step counter in presentation mode, also when the counter does not show.
 - An export moves the code across the `--width`, but not down: an image has no screen height. With a `margin`, the image keeps the full `--width`, so the code is in its middle as on the screen. This is also true for a GIF, a video and a `.cast` recording. A `.tape` recording shows the TUI, so the code goes down as on the screen.
 - Tiza 0.2.1 and earlier versions do not open a document with `center`, because it has the schema `2`.
 

@@ -1,6 +1,6 @@
 # View commands
 
-Use these commands to change how Tiza shows the code. Tiza saves the theme, the title, the line numbers, the center, the padding and the margin in the document. Exports use the theme, the line numbers, the center and the margin. A Markdown export shows the title above the code. An SVG export writes it as the SVG title, which it does not draw.
+Use these commands to change how Tiza shows the code. Tiza saves the theme, the title, the line numbers, `center`, the padding and the margin in the document. Exports use the theme, the line numbers, `center` and the margin. A Markdown export shows the title above the code. An SVG export writes it as the SVG title, which it does not draw.
 
 Each image on this page is a frame of a `tiza render` export, except the images of `:focus`, `:pad` and `:layout`. The code is `examples/ownership.rs`. A frame shows only what an export draws, so some commands have no frame. An export does not draw the focus, the padding of the TUI or the layout of normal mode, so the images of these commands show the TUI.
 
@@ -112,7 +112,7 @@ Puts the code in the middle of the screen, or back at the top left.
 :center off
 ```
 
-For example, a title in the middle of 60 columns:
+For example, lines 1 to 3 of the code, without line numbers, in the middle of 60 columns:
 
 <!-- frame id=center-title code=examples/ownership.rs:1-3 width=60 -->
 ```
@@ -124,7 +124,7 @@ For example, a title in the middle of 60 columns:
 
 ### Notes on `:center`
 
-- The code of all the steps goes to the same place: Tiza uses the widest step and the step with the most rows. Spaces at the start and at the end of a line count. To start an animation at the left side of the screen, put spaces in the text. See [`center`](../document-format.md#top-level-fields).
+- The code of all the steps goes to the same place: Tiza uses the widest step and the step with the most rows. Spaces at the start and at the end of a line count. Thus a line that starts with spaces stays to the right of a line without them, and an animation keeps its path. See [`center`](../document-format.md#top-level-fields).
 - When the code is wider than the screen, it stays at the left. The reply of `:center on` then gives the width from which Tiza centers it.
 - An export centers the code across its width, but not down. With a margin, the image keeps its full width.
 - `:center` alone shows the current value. `u` undoes the change.
