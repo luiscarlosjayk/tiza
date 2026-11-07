@@ -16,71 +16,239 @@ tiza examples/ownership.rs.tiza --present   # open a document in presentation mo
 
 `FILE` is one of these:
 
-| Argument | What Tiza opens |
-|---|---|
-| `PATH` | The source file, or its document `PATH.tiza` when that file exists. |
-| `PATH:A-B` | Lines `A` to `B` of the source file, with their real line numbers. |
-| `PATH:A` | Line `A` of the source file. |
-| `NAME.tiza` | The document. |
-| `-` | Code or a document from standard input. |
+<dl>
+<dt><code>PATH</code></dt>
+<dd>
 
-- A range can also be `A..B`.
-- Without `FILE`, Tiza reads standard input when it is not a terminal.
-- Text on standard input that starts with `{` and contains `"schema"` is a document. Other text is code.
-- With a range, Tiza saves to `FILE.A-B.tiza`. When that file exists, Tiza opens it, as it opens `FILE.tiza` without a range, and says so on the status bar. Another range, such as `A-C`, is another document. See [Where the document goes](../concepts/privacy-and-network.md#where-the-document-goes).
-- A `.tiza` path with a range opens the document and ignores the range.
-- When Tiza clamps a range, it saves under the clamped lines. For example, `tiza three.txt:2..9` on a file of three lines saves to `three.txt.2-3.tiza`.
-- When a range goes past the end of the file, Tiza shows the lines that exist.
+The source file, or its document `PATH.tiza` when that file exists.
+
+</dd>
+<dt><code>PATH:A-B</code></dt>
+<dd>
+
+Lines `A` to `B` of the source file, with their real line numbers.
+
+A range can also be `A..B`.
+
+With a range, Tiza saves to `FILE.A-B.tiza`. When that file exists, Tiza opens it, as it opens `FILE.tiza` without a range, and says so on the status bar. Another range, such as `A-C`, is another document. See [Where the document goes](../concepts/privacy-and-network.md#where-the-document-goes).
+
+When Tiza clamps a range, it saves under the clamped lines. For example, `tiza three.txt:2..9` on a file of three lines saves to `three.txt.2-3.tiza`.
+
+When a range goes past the end of the file, Tiza shows the lines that exist.
+
+</dd>
+<dt><code>PATH:A</code></dt>
+<dd>
+
+Line `A` of the source file.
+
+</dd>
+<dt><code>NAME.tiza</code></dt>
+<dd>
+
+The document.
+
+A `.tiza` path with a range opens the document and ignores the range.
+
+</dd>
+<dt><code>-</code></dt>
+<dd>
+
+Code or a document from standard input.
+
+Text on standard input that starts with `{` and contains `"schema"` is a document. Other text is code.
+
+</dd>
+</dl>
+
+Without `FILE`, Tiza reads standard input when it is not a terminal.
 
 ## Commands
 
-| Command | What it does |
-|---|---|
-| `tiza [FILE]` | Opens the code or the document in the TUI. |
-| `tiza render [FILE]` | Exports a document, or what the live instance shows, without the TUI. |
-| `tiza check FILE` | Checks a document before you record, and writes nothing. |
-| `tiza config` | Shows the config file in use, each value with its source, the personal styles and the warnings of the file. |
-| `tiza mcp` | Starts the MCP server on standard input and output. |
-| `tiza scene get` | Prints the document of the live instance as JSON. |
-| `tiza scene list` | Prints the annotations of the live instance, one on each line. |
-| `tiza scene text` | Prints the take on screen as text. |
-| `tiza scene status` | Prints the status of the live instance as JSON. |
-| `tiza scene put FILE` | Replaces the document of the live instance with `FILE`. |
-| `tiza scene patch JSON` | Changes part of the document of the live instance. |
-| `tiza next` | Makes the live instance go to the next step. |
-| `tiza prev` | Makes the live instance go to the previous step. |
-| `tiza goto ID` | Makes the live instance go to a named step or to a step number. |
-| `tiza close` | Closes the live instance, as `:q` does, and waits until it exits. |
-| `tiza api METHOD [PARAMS]` | Calls one socket method and prints the JSON reply. |
-| `tiza schema [KIND]` | Prints a JSON Schema: `document` for the `.tiza` format, or `api` for the socket methods. `document` is the default. |
-| `tiza help [COMMAND]` | Prints the help of `tiza` or of a command. |
+<dl>
+<dt><code>tiza [FILE]</code></dt>
+<dd>
+
+Opens the code or the document in the TUI.
+
+</dd>
+<dt><code>tiza render [FILE]</code></dt>
+<dd>
+
+Exports a document, or what the live instance shows, without the TUI.
+
+For each flag of `tiza render`, see [Options of `tiza render`](exports.md#options-of-tiza-render).
+
+</dd>
+<dt><code>tiza check FILE</code></dt>
+<dd>
+
+Checks a document before you record, and writes nothing.
+
+`FILE` can be `-` for standard input. It can also be a source file that has a `.tiza` document next to it.
+
+See [Check before you record](../guides/check-before-you-record.md).
+
+</dd>
+<dt><code>tiza config</code></dt>
+<dd>
+
+Shows the config file in use, each value with its source, the personal styles and the warnings of the file.
+
+See [Config file](config.md#tiza-config).
+
+</dd>
+<dt><code>tiza mcp</code></dt>
+<dd>
+
+Starts the MCP server on standard input and output.
+
+See [Set up an agent](../agents/setup.md). The tools are in [MCP tools](mcp-tools.md).
+
+</dd>
+<dt><code>tiza scene get</code></dt>
+<dd>
+
+Prints the document of the live instance as JSON.
+
+</dd>
+<dt><code>tiza scene list</code></dt>
+<dd>
+
+Prints the annotations of the live instance, one on each line.
+
+</dd>
+<dt><code>tiza scene text</code></dt>
+<dd>
+
+Prints the take on screen as text.
+
+</dd>
+<dt><code>tiza scene status</code></dt>
+<dd>
+
+Prints the status of the live instance as JSON.
+
+</dd>
+<dt><code>tiza scene put FILE</code></dt>
+<dd>
+
+Replaces the document of the live instance with `FILE`.
+
+`FILE` can be `-` for standard input.
+
+</dd>
+<dt><code>tiza scene patch JSON</code></dt>
+<dd>
+
+Changes part of the document of the live instance.
+
+`JSON` is the text of the JSON, `-` for standard input or `@PATH` for a file.
+
+</dd>
+<dt><code>tiza next</code></dt>
+<dd>
+
+Makes the live instance go to the next step.
+
+</dd>
+<dt><code>tiza prev</code></dt>
+<dd>
+
+Makes the live instance go to the previous step.
+
+</dd>
+<dt><code>tiza goto ID</code></dt>
+<dd>
+
+Makes the live instance go to a named step or to a step number.
+
+</dd>
+<dt><code>tiza close</code></dt>
+<dd>
+
+Closes the live instance, as `:q` does, and waits until it exits.
+
+See [Close an instance](#close-an-instance).
+
+</dd>
+<dt><code>tiza api METHOD [PARAMS]</code></dt>
+<dd>
+
+Calls one socket method and prints the JSON reply.
+
+`PARAMS` is the text of the JSON, or `-` for standard input. Without `PARAMS`, Tiza sends `{}`.
+
+</dd>
+<dt><code>tiza schema [KIND]</code></dt>
+<dd>
+
+Prints a JSON Schema: `document` for the `.tiza` format, or `api` for the socket methods. `document` is the default.
+
+</dd>
+<dt><code>tiza help [COMMAND]</code></dt>
+<dd>
+
+Prints the help of `tiza` or of a command.
+
+</dd>
+</dl>
 
 - The live instance is the running TUI that agents and these commands talk to. See [Global flags](#global-flags).
-- For each flag of `tiza render`, see [Options of `tiza render`](exports.md#options-of-tiza-render).
-- `tiza check` is in [Check before you record](../guides/check-before-you-record.md).
-- `tiza config` is in [Config file](config.md#tiza-config).
-- `tiza mcp` is in [Set up an agent](../agents/setup.md). The tools are in [MCP tools](mcp-tools.md).
 - `tiza scene` and `tiza api` are in [Socket API](socket-api.md).
 - `tiza next`, `tiza prev` and `tiza goto` are in [Go to a named step](document-format.md#go-to-a-named-step).
-- `tiza close` is in [Close an instance](#close-an-instance).
 
 ### Options of the commands
 
-| Flag | Command | What it does |
-|---|---|---|
-| `--width N` | `tiza check` | Checks the labels and the code lines in a terminal of `N` columns, as the TUI shows them. The side padding comes off `N`: the `padding` of the document, else `pad` of the config file, else 1 column at each side. The default is `width` of the config file, else 100. |
-| `--json` | `tiza check` | Prints the findings as JSON. |
-| `--strict` | `tiza check` | Exits with code 1 also for warnings. |
-| `--width N` | `tiza scene text` | Prints the take at `N` columns, in place of the width of the screen. |
-| `--as-code` | `tiza scene put` | Shows a file that is not a document as code, and does not refuse it. |
-| `--out PATH` | `tiza schema` | Writes the schema to `PATH`, in place of standard output. |
-| `--force` | `tiza close` | Closes the live instance also when it has unsaved changes. The changes are lost. |
+<dl>
+<dt><code>--width N</code> of <code>tiza check</code></dt>
+<dd>
 
-- `N` in `--width N` is from 20 to 400.
-- `JSON` in `tiza scene patch` is the text of the JSON, `-` for standard input or `@PATH` for a file.
-- `PARAMS` in `tiza api` is the text of the JSON, or `-` for standard input. Without `PARAMS`, Tiza sends `{}`.
-- `FILE` in `tiza scene put` and `tiza check` can be `-` for standard input.
-- `tiza check` also takes a source file that has a `.tiza` document next to it.
+Checks the labels and the code lines in a terminal of `N` columns, as the TUI shows them. The side padding comes off `N`: the `padding` of the document, else `pad` of the config file, else 1 column at each side. The default is `width` of the config file, else 100.
+
+`N` is from 20 to 400.
+
+</dd>
+<dt><code>--json</code> of <code>tiza check</code></dt>
+<dd>
+
+Prints the findings as JSON.
+
+</dd>
+<dt><code>--strict</code> of <code>tiza check</code></dt>
+<dd>
+
+Exits with code 1 also for warnings.
+
+</dd>
+<dt><code>--width N</code> of <code>tiza scene text</code></dt>
+<dd>
+
+Prints the take at `N` columns, in place of the width of the screen.
+
+`N` is from 20 to 400.
+
+</dd>
+<dt><code>--as-code</code> of <code>tiza scene put</code></dt>
+<dd>
+
+Shows a file that is not a document as code, and does not refuse it.
+
+</dd>
+<dt><code>--out PATH</code> of <code>tiza schema</code></dt>
+<dd>
+
+Writes the schema to `PATH`, in place of standard output.
+
+</dd>
+<dt><code>--force</code> of <code>tiza close</code></dt>
+<dd>
+
+Closes the live instance also when it has unsaved changes. The changes are lost.
+
+</dd>
+</dl>
+
 
 For example:
 
@@ -95,30 +263,102 @@ tiza schema api --out api.schema.json
 
 These flags work with `tiza [FILE]`:
 
-| Flag | What it does |
-|---|---|
-| `--lang LANG` | Sets the language of the code. |
-| `--follow` | Starts follow mode. |
-| `--present` | Starts in presentation mode. |
-| `--step N` | Opens the document at step `N`. |
-| `--focus A-B` | Dims all the lines except `A` to `B`. |
-| `--theme NAME` | Sets the theme. See [Theme names](themes.md#theme-names). |
-| `--theme-file PATH` | Loads the theme tokens of a TOML file into the document. |
-| `--padding V[,H]` | Sets the blank cells around the code and its annotations for this session. |
-| `--mouse` | Starts with mouse capture on. |
-| `--no-save` | Starts in no-save mode. |
-| `--no-socket` | Starts without the socket, so agents and `tiza next` cannot reach this TUI. |
-| `-h` or `--help` | Prints the help. |
-| `-V` or `--version` | Prints the version and the commit. |
+<dl>
+<dt><code>--lang LANG</code></dt>
+<dd>
 
-- `LANG` is a language id, for example `rs`, `ts` or `py`, or a full name such as `rust`.
-- `--step N` after the last step opens the last step.
-- `--focus` also takes `A`, `A..B` or `A:B`. Press `Esc` to clear the focus.
-- `--padding V` sets `H` to two times `V`. Tiza does not save `--padding` in the document. `:pad` saves it.
-- Follow mode is in [Follow the editor](../guides/follow-the-editor.md).
-- The themes and `--theme-file` are in [Themes](themes.md).
-- Mouse capture is in [Use the mouse](../guides/use-the-mouse.md).
-- No-save mode is in [Saving](../concepts/saving.md).
+Sets the language of the code.
+
+`LANG` is a language id, for example `rs`, `ts` or `py`, or a full name such as `rust`.
+
+</dd>
+<dt><code>--follow</code></dt>
+<dd>
+
+Starts follow mode.
+
+See [Follow the editor](../guides/follow-the-editor.md).
+
+</dd>
+<dt><code>--present</code></dt>
+<dd>
+
+Starts in presentation mode.
+
+</dd>
+<dt><code>--step N</code></dt>
+<dd>
+
+Opens the document at step `N`.
+
+A step after the last step opens the last step.
+
+</dd>
+<dt><code>--focus A-B</code></dt>
+<dd>
+
+Dims all the lines except `A` to `B`.
+
+It also takes `A`, `A..B` or `A:B`. Press `Esc` to clear the focus.
+
+</dd>
+<dt><code>--theme NAME</code></dt>
+<dd>
+
+Sets the theme. See [Theme names](themes.md#theme-names).
+
+</dd>
+<dt><code>--theme-file PATH</code></dt>
+<dd>
+
+Loads the theme tokens of a TOML file into the document.
+
+See [Themes](themes.md).
+
+</dd>
+<dt><code>--padding V[,H]</code></dt>
+<dd>
+
+Sets the blank cells around the code and its annotations for this session.
+
+`--padding V` sets `H` to two times `V`. Tiza does not save `--padding` in the document. `:pad` saves it.
+
+</dd>
+<dt><code>--mouse</code></dt>
+<dd>
+
+Starts with mouse capture on.
+
+See [Use the mouse](../guides/use-the-mouse.md).
+
+</dd>
+<dt><code>--no-save</code></dt>
+<dd>
+
+Starts in no-save mode.
+
+See [Saving](../concepts/saving.md).
+
+</dd>
+<dt><code>--no-socket</code></dt>
+<dd>
+
+Starts without the socket, so agents and `tiza next` cannot reach this TUI.
+
+</dd>
+<dt><code>-h</code> or <code>--help</code></dt>
+<dd>
+
+Prints the help.
+
+</dd>
+<dt><code>-V</code> or <code>--version</code></dt>
+<dd>
+
+Prints the version and the commit.
+
+</dd>
+</dl>
 
 For example:
 
@@ -131,10 +371,20 @@ tiza src/main.rs --theme light --padding 1,4
 
 These flags work with each command:
 
-| Flag | What it does |
-|---|---|
-| `--socket PATH` | Uses the socket at `PATH`. |
-| `--session NAME` | Uses the socket of the session `NAME`. |
+<dl>
+<dt><code>--socket PATH</code></dt>
+<dd>
+
+Uses the socket at `PATH`.
+
+</dd>
+<dt><code>--session NAME</code></dt>
+<dd>
+
+Uses the socket of the session `NAME`.
+
+</dd>
+</dl>
 
 Tiza picks the socket from the first of these that is set:
 
@@ -177,24 +427,74 @@ Tiza keeps the language in the document. `:lang` saves it with autosave on. `--l
 
 `tiza check --json` prints this report.
 
-| Field | Meaning |
-|---|---|
-| `ok` | `true` when the check found no error. |
-| `errors` | The number of errors. |
-| `warnings` | The number of warnings. |
-| `width` | The columns of code of the check: the terminal less its side padding. |
-| `max_step` | The last step of the document. It is not there when the document does not load. |
-| `min_clean_width` | The narrowest width from which no label is cut, or `null`. |
-| `narrower` | The narrower widths that are clean too: `clean`, `code_fits_from` and `margin_from`. |
-| `terminal` | The terminal of the check: its `width`, the `padding` at each side, and `min_clean_width` and `narrower` in columns of the terminal. |
-| `findings` | The list of findings. |
+<dl>
+<dt><code>ok</code></dt>
+<dd>
 
-- `min_clean_width` and `narrower` are in columns of code. Give them to `tiza render --width`, which has no padding. To pick the width of the terminal, use the values in `terminal`.
-- The messages of the findings give the width of the terminal. A `clipped_code` message also gives the columns of code for `tiza render`.
-- `min_clean_width` is `null` when the document does not load, or when no width up to 400 shows each label.
-- `narrower` is there only when `width` is under `min_clean_width` and no label is cut at `width`.
-- Each finding has `level`, `code` and `message`. It also has `id`, `step`, `file`, `line` and `text` when they apply.
-- `file` names a linked file. `text` is the full text of a cut label, in a `clipped_label` finding.
+`true` when the check found no error.
+
+</dd>
+<dt><code>errors</code></dt>
+<dd>
+
+The number of errors.
+
+</dd>
+<dt><code>warnings</code></dt>
+<dd>
+
+The number of warnings.
+
+</dd>
+<dt><code>width</code></dt>
+<dd>
+
+The columns of code of the check: the terminal less its side padding.
+
+</dd>
+<dt><code>max_step</code></dt>
+<dd>
+
+The last step of the document. It is not there when the document does not load.
+
+</dd>
+<dt><code>min_clean_width</code></dt>
+<dd>
+
+The narrowest width from which no label is cut, or `null`.
+
+`min_clean_width` and `narrower` are in columns of code. Give them to `tiza render --width`, which has no padding. To pick the width of the terminal, use the values in `terminal`.
+
+`min_clean_width` is `null` when the document does not load, or when no width up to 400 shows each label.
+
+</dd>
+<dt><code>narrower</code></dt>
+<dd>
+
+The narrower widths that are clean too: `clean`, `code_fits_from` and `margin_from`.
+
+`narrower` is there only when `width` is under `min_clean_width` and no label is cut at `width`.
+
+</dd>
+<dt><code>terminal</code></dt>
+<dd>
+
+The terminal of the check: its `width`, the `padding` at each side, and `min_clean_width` and `narrower` in columns of the terminal.
+
+</dd>
+<dt><code>findings</code></dt>
+<dd>
+
+The list of findings.
+
+Each finding has `level`, `code` and `message`. It also has `id`, `step`, `file`, `line` and `text` when they apply.
+
+`file` names a linked file. `text` is the full text of a cut label, in a `clipped_label` finding.
+
+The messages of the findings give the width of the terminal. A `clipped_code` message also gives the columns of code for `tiza render`.
+
+</dd>
+</dl>
 
 The `code` of a finding is one of these:
 

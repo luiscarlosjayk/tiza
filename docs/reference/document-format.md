@@ -33,31 +33,152 @@ Two examples show moves and views:
 
 ## Top-level fields
 
-| Field | Type | Default | Meaning |
-|---|---|---|---|
-| `schema` | integer | Required | The version of the format, `1`. |
-| `source` | object | Required | The language and the first line of the code (see [`source`](#source)). |
-| `code` | array or object | Required | The embedded code as an array of lines, or a [file reference](#file-reference). |
-| `follows` | object | No default | A [file reference](#file-reference) to the file that follow mode reloads when the document has embedded code. |
-| `annotations` | array | `[]` | The list of [annotations](#annotations). |
-| `step` | integer | `1` | The step that the document opens at, from 0 to the last step. |
-| `moves` | array | `[]` | The list of [moves](#moves). |
-| `views` | object | `{}` | The code of each linked file that `:embed` stores, as an array of lines, with the `file` of its `code.link` as the key. |
-| `steps` | array | `[]` | The list of [named steps](#named-steps). |
-| `loop` | `true` or `false` | `false` | When `true`, the step after the last step is step 0. |
-| `styles` | object | `{}` | The styles of the document, a [mark style](#mark-style) for each name. |
-| `title` | string | No default | The title of the document. |
-| `theme` | `"dark"`, `"light"` or `"terminal"` | No default | The theme of the document. |
-| `theme_overrides` | object | No default | Colors that apply over the `[theme]` table of the config file (see [Theme overrides](#theme-overrides)). |
-| `padding` | array of two integers | `pad` of the config file, else `[0, 1]` | The blank rows and columns around the code on the screen, as `[vertical, horizontal]`. |
-| `margin` | integer | No default | The maximum width of the right margin in columns. In the right margin, a note, a label or a legend that is longer than the margin continues on the free rows under its line. When no row is free, a label of a line of code goes under the line, if it fits there whole. Otherwise, Tiza cuts it and ends it with `…`. |
-| `numbers` | `true` or `false` | `numbers` of the config file, else `true` | When `false`, Tiza does not show line numbers. |
+<dl>
+<dt><code>schema</code></dt>
+<dd>
 
-- `views` holds the full code of a linked file. The window stays in the move.
-- When a linked file is not in `views`, Tiza reads it from disk.
-- A saved `step` after the last step opens at the last step.
-- `terminal` uses the colors of the terminal. It works only in the TUI. An export uses `dark` or `light`.
-- Tiza ignores a top-level key that it does not know, and does not save it.
+The version of the format, `1`.
+
+Integer. Required.
+
+</dd>
+<dt><code>source</code></dt>
+<dd>
+
+The language and the first line of the code (see [`source`](#source)).
+
+Object. Required.
+
+</dd>
+<dt><code>code</code></dt>
+<dd>
+
+The embedded code as an array of lines, or a [file reference](#file-reference).
+
+Array or object. Required.
+
+</dd>
+<dt><code>follows</code></dt>
+<dd>
+
+A [file reference](#file-reference) to the file that follow mode reloads when the document has embedded code.
+
+Object. No default.
+
+</dd>
+<dt><code>annotations</code></dt>
+<dd>
+
+The list of [annotations](#annotations).
+
+Array. Default: `[]`.
+
+</dd>
+<dt><code>step</code></dt>
+<dd>
+
+The step that the document opens at, from 0 to the last step.
+
+A saved `step` after the last step opens at the last step.
+
+Integer. Default: `1`.
+
+</dd>
+<dt><code>moves</code></dt>
+<dd>
+
+The list of [moves](#moves).
+
+Array. Default: `[]`.
+
+</dd>
+<dt><code>views</code></dt>
+<dd>
+
+The code of each linked file that `:embed` stores, as an array of lines, with the `file` of its `code.link` as the key.
+
+It holds the full code of a linked file. The window stays in the move. When a linked file is not in `views`, Tiza reads it from disk.
+
+Object. Default: `{}`.
+
+</dd>
+<dt><code>steps</code></dt>
+<dd>
+
+The list of [named steps](#named-steps).
+
+Array. Default: `[]`.
+
+</dd>
+<dt><code>loop</code></dt>
+<dd>
+
+When `true`, the step after the last step is step 0.
+
+`true` | `false` (default)
+
+</dd>
+<dt><code>styles</code></dt>
+<dd>
+
+The styles of the document, a [mark style](#mark-style) for each name.
+
+Object. Default: `{}`.
+
+</dd>
+<dt><code>title</code></dt>
+<dd>
+
+The title of the document.
+
+String. No default.
+
+</dd>
+<dt><code>theme</code></dt>
+<dd>
+
+The theme of the document.
+
+`terminal` uses the colors of the terminal. It works only in the TUI. An export uses `dark` or `light`.
+
+`"dark"` | `"light"` | `"terminal"`. No default.
+
+</dd>
+<dt><code>theme_overrides</code></dt>
+<dd>
+
+Colors that apply over the `[theme]` table of the config file (see [Theme overrides](#theme-overrides)).
+
+Object. No default.
+
+</dd>
+<dt><code>padding</code></dt>
+<dd>
+
+The blank rows and columns around the code on the screen, as `[vertical, horizontal]`.
+
+Array of two integers. Default: `pad` of the config file, else `[0, 1]`.
+
+</dd>
+<dt><code>margin</code></dt>
+<dd>
+
+The maximum width of the right margin in columns. In the right margin, a note, a label or a legend that is longer than the margin continues on the free rows under its line. When no row is free, a label of a line of code goes under the line, if it fits there whole. Otherwise, Tiza cuts it and ends it with `…`.
+
+Integer. No default.
+
+</dd>
+<dt><code>numbers</code></dt>
+<dd>
+
+When `false`, Tiza does not show line numbers.
+
+`true` | `false`. Default: `numbers` of the config file, else `true`.
+
+</dd>
+</dl>
+
+Tiza ignores a top-level key that it does not know, and does not save it.
 
 ### `source`
 
@@ -197,12 +318,40 @@ A `callout` from [`:callout`](commands/annotate.md#callout), as its frame shows 
 
 #### `spotlight`
 
-| Field | Type | Default | Meaning |
-|---|---|---|---|
-| `from_line` | integer | Required when there are no `ids` | The first line that the spotlight does not dim. |
-| `to_line` | integer | `from_line` | The last line that the spotlight does not dim, not before `from_line`. |
-| `ids` | array of ids | Required when there is no `from_line`, else `[]` | The ids of annotations in the document that the spotlight does not dim, also outside its lines. |
-| `until` | integer | No default | The last step at which the spotlight is active. When `until` is before `step`, the spotlight never shows, and `tiza check` gives the error `until`. Tiza opens such a document. `:until`, `:step ID S`, `:set ID step=S`, the `+` key, `annotation.add`, and `annotation.update` with `step` or `shape` refuse such a spotlight. |
+<dl>
+<dt><code>from_line</code></dt>
+<dd>
+
+The first line that the spotlight does not dim.
+
+Integer. Required when there are no `ids`.
+
+</dd>
+<dt><code>to_line</code></dt>
+<dd>
+
+The last line that the spotlight does not dim, not before `from_line`.
+
+Integer. Default: `from_line`.
+
+</dd>
+<dt><code>ids</code></dt>
+<dd>
+
+The ids of annotations in the document that the spotlight does not dim, also outside its lines.
+
+Array of ids. Required when there is no `from_line`, else `[]`.
+
+</dd>
+<dt><code>until</code></dt>
+<dd>
+
+The last step at which the spotlight is active. When `until` is before `step`, the spotlight never shows, and `tiza check` gives the error `until`. Tiza opens such a document. `:until`, `:step ID S`, `:set ID step=S`, the `+` key, `annotation.add`, and `annotation.update` with `step` or `shape` refuse such a spotlight.
+
+Integer. No default.
+
+</dd>
+</dl>
 
 A `spotlight` from [`:spot`](commands/annotate.md#spot), as its frame shows it:
 
@@ -370,11 +519,32 @@ Each built-in kind has its own glyph, legend and color. A mark with no `label` s
 
 Each entry of `styles`, and the `style` of a mark, has these fields. The `style` of a mark replaces each field that it gives.
 
-| Field | Type | Default | Meaning |
-|---|---|---|---|
-| `glyph` | string | The glyph of the kind | The sign before the legend, which should be one or two columns wide. |
-| `legend` | string | The legend of the kind | The text after the glyph, followed by `: ` and the `label` of the mark. With an empty legend, the label comes after the glyph. |
-| `color` | string | The color of the kind | A [color name](#color-names) or `#rrggbb`. |
+<dl>
+<dt><code>glyph</code></dt>
+<dd>
+
+The sign before the legend, which should be one or two columns wide.
+
+String. Default: the glyph of the kind.
+
+</dd>
+<dt><code>legend</code></dt>
+<dd>
+
+The text after the glyph, followed by `: ` and the `label` of the mark. With an empty legend, the label comes after the glyph.
+
+String. Default: the legend of the kind.
+
+</dd>
+<dt><code>color</code></dt>
+<dd>
+
+A [color name](#color-names) or `#rrggbb`.
+
+String. Default: the color of the kind.
+
+</dd>
+</dl>
 
 ### Color names
 
@@ -517,24 +687,104 @@ A newer version of Tiza can write a move that this version does not know. The do
 
 ### Fields of a `code.patch` move
 
-| Field | Type | Default | Meaning |
-|---|---|---|---|
-| `op` | `"insert"`, `"replace"` or `"delete"` | Required | The change to make. |
-| `position` (insert) | string | Required when it is the target | For `insert`, the one line before which Tiza puts the content, up to one more than the last line. |
-| `position` (replace, delete) | string | Required when it is the target | For `replace` and `delete`, the line range, `"7"` or `"7-9"`. |
-| `after`, `before` | string | Required when it is the target | For `insert` only, a text in the line next to the new content. |
-| `find` | string | Required when it is the target | For `replace` and `delete` only, a text in the one line to change. |
-| `find_start`, `find_end` | string | Required together when they are the target | For `replace` and `delete` only, texts in the first line and the last line of the range. |
-| `occurrence` | integer | No default | The match of `find`, `after`, `before` or `find_start` to use, from 1. |
-| `end_occurrence` | integer | No default | The match of `find_end` to use, from 1. |
-| `content` | string | Required for `insert` and `replace` | The new lines, with `\n` between them. |
-| `typing` | `"instant"`, `"line"` or `"char"` | `"instant"` | How Tiza shows the new lines. |
-| `speed_ms` | integer | `120` for `line`, `25` for `char` | The milliseconds for each line or each character, at most 3,600,000. |
+<dl>
+<dt><code>op</code></dt>
+<dd>
 
-- Give exactly one target: `position`, `after`, `before`, `find`, or `find_start` with `find_end`.
-- An insert `position` is one line. Tiza refuses a range.
-- A `delete` has no `content`. Tiza ignores a `\n` at the end of `content`.
-- `find_end` must not come before `find_start`.
+The change to make.
+
+`"insert"` | `"replace"` | `"delete"`. Required.
+
+</dd>
+<dt><code>position</code> (insert)</dt>
+<dd>
+
+For `insert`, the one line before which Tiza puts the content, up to one more than the last line.
+
+An insert `position` is one line. Tiza refuses a range.
+
+String. Required when it is the target.
+
+</dd>
+<dt><code>position</code> (replace, delete)</dt>
+<dd>
+
+For `replace` and `delete`, the line range, `"7"` or `"7-9"`.
+
+String. Required when it is the target.
+
+</dd>
+<dt><code>after</code>, <code>before</code></dt>
+<dd>
+
+For `insert` only, a text in the line next to the new content.
+
+String. Required when it is the target.
+
+</dd>
+<dt><code>find</code></dt>
+<dd>
+
+For `replace` and `delete` only, a text in the one line to change.
+
+String. Required when it is the target.
+
+</dd>
+<dt><code>find_start</code>, <code>find_end</code></dt>
+<dd>
+
+For `replace` and `delete` only, texts in the first line and the last line of the range.
+
+`find_end` must not come before `find_start`.
+
+String. Required together when they are the target.
+
+</dd>
+<dt><code>occurrence</code></dt>
+<dd>
+
+The match of `find`, `after`, `before` or `find_start` to use, from 1.
+
+Integer. No default.
+
+</dd>
+<dt><code>end_occurrence</code></dt>
+<dd>
+
+The match of `find_end` to use, from 1.
+
+Integer. No default.
+
+</dd>
+<dt><code>content</code></dt>
+<dd>
+
+The new lines, with `\n` between them.
+
+A `delete` has no `content`. Tiza ignores a `\n` at the end of `content`.
+
+String. Required for `insert` and `replace`.
+
+</dd>
+<dt><code>typing</code></dt>
+<dd>
+
+How Tiza shows the new lines.
+
+`"instant"` (default) | `"line"` | `"char"`
+
+</dd>
+<dt><code>speed_ms</code></dt>
+<dd>
+
+The milliseconds for each line or each character, at most 3,600,000.
+
+Integer. Default: `120` for `line`, `25` for `char`.
+
+</dd>
+</dl>
+
+Give exactly one target: `position`, `after`, `before`, `find`, or `find_start` with `find_end`.
 
 Each image in this section is a real `tiza render` export of the document above it, from step 0 to step 1. The code is `docs/frames/ownership.rs`, a copy of `examples/ownership.rs`.
 
@@ -708,21 +958,62 @@ A highlight on `len(&t)` at step 1, and a `replace` of its line at step 2 with a
 
 `select` and a `rebind` entry use this object for one point of the code.
 
-| Field | Type | Default | Meaning |
-|---|---|---|---|
-| `find` | string | Required when there is no `line` | The text to find in the code. |
-| `occurrence` | integer | No default | The match of `find` to use, from 1. |
-| `line` | integer | Required when there is no `find` | The line of the point, or the line where `find` searches (see the list under this table). |
-| `col` | integer | Depends on the use (see the list under this table) | The grapheme of the point, counted from 0, at most the length of the line. |
-| `end` | integer | The end of the line | In a `rebind` `at` with `line`, the grapheme after the span, at most the length of the line. |
+<dl>
+<dt><code>find</code></dt>
+<dd>
 
-- In a `select`, `find` searches only `line` when the point has one. Otherwise it searches the whole code.
-- In a `select`, `find` must match exactly once, or the point must have `occurrence`.
-- In a `rebind` entry, `find` searches `line` first, and then the whole code.
-- In a `rebind` entry without `line`, `find` must match exactly once, or the point must have `occurrence`. With `line`, Tiza does not check the number of matches.
-- In a `select`, `find` in `from` starts at the start of the text, and `find` in `to` ends at the end of the text.
-- The edge of `find` that gives a column must be on the edge of a character (a grapheme). That is the start in the `from` of a `select` and the end in its `to`, the two edges in a `rebind` entry of a span, and the start in a `rebind` entry of an arrow end. For example, a joiner alone in `ad` U+200D `min` is an error. Put the whole character in `find`, or use `line` and `col`. The `at` of a note takes only the line, so there it is not an error. A document whose `select` or `rebind` entry has such a `find` does not open, and the error names the move. `tiza check` gives the same error.
-- In a `select` without `col`, `from` is the start of the line and `to` is the end of the line. In a `rebind` entry, the default `col` is 0.
+The text to find in the code.
+
+In a `select`, `find` searches only `line` when the point has one. Otherwise it searches the whole code.
+
+In a `select`, `find` must match exactly once, or the point must have `occurrence`.
+
+In a `rebind` entry, `find` searches `line` first, and then the whole code.
+
+In a `rebind` entry without `line`, `find` must match exactly once, or the point must have `occurrence`. With `line`, Tiza does not check the number of matches.
+
+In a `select`, `find` in `from` starts at the start of the text, and `find` in `to` ends at the end of the text.
+
+The edge of `find` that gives a column must be on the edge of a character (a grapheme). That is the start in the `from` of a `select` and the end in its `to`, the two edges in a `rebind` entry of a span, and the start in a `rebind` entry of an arrow end. For example, a joiner alone in `ad` U+200D `min` is an error. Put the whole character in `find`, or use `line` and `col`. The `at` of a note takes only the line, so there it is not an error. A document whose `select` or `rebind` entry has such a `find` does not open, and the error names the move. `tiza check` gives the same error.
+
+String. Required when there is no `line`.
+
+</dd>
+<dt><code>occurrence</code></dt>
+<dd>
+
+The match of `find` to use, from 1.
+
+Integer. No default.
+
+</dd>
+<dt><code>line</code></dt>
+<dd>
+
+The line of the point, or the line where `find` searches.
+
+Integer. Required when there is no `find`.
+
+</dd>
+<dt><code>col</code></dt>
+<dd>
+
+The grapheme of the point, counted from 0, at most the length of the line.
+
+In a `select` without `col`, `from` is the start of the line and `to` is the end of the line. In a `rebind` entry, the default `col` is 0.
+
+Integer. The default depends on the use.
+
+</dd>
+<dt><code>end</code></dt>
+<dd>
+
+In a `rebind` `at` with `line`, the grapheme after the span, at most the length of the line.
+
+Integer. Default: the end of the line.
+
+</dd>
+</dl>
 
 ### Several files
 
@@ -884,16 +1175,46 @@ For example:
 "steps": [{"step": 3, "id": "borrow", "title": "Shared borrow", "auto_advance_ms": 3000}]
 ```
 
-| Field | Type | Default | Meaning |
-|---|---|---|---|
-| `step` | integer | Required | The number of the step that the entry names, from 0 to 999. |
-| `id` | string | No default | The name that the goto commands use, under the `id` rules of this section. |
-| `title` | string | No default | The text that the status bar and `status` show. |
-| `auto_advance_ms` | integer | No default | The time in milliseconds before Tiza goes to the next step by itself, from 1 to 3,600,000. |
+<dl>
+<dt><code>step</code></dt>
+<dd>
 
-- An entry names its step by number, never by its place in the list. Thus `+` and `-` move an annotation to another step and change no entry.
-- Entries can skip steps. Tiza saves them sorted by `step`.
-- One step has one entry or none.
+The number of the step that the entry names, from 0 to 999.
+
+An entry names its step by number, never by its place in the list. Thus `+` and `-` move an annotation to another step and change no entry.
+
+Entries can skip steps. Tiza saves them sorted by `step`.
+
+One step has one entry or none.
+
+Integer. Required.
+
+</dd>
+<dt><code>id</code></dt>
+<dd>
+
+The name that the goto commands use, under the `id` rules of this section.
+
+String. No default.
+
+</dd>
+<dt><code>title</code></dt>
+<dd>
+
+The text that the status bar and `status` show.
+
+String. No default.
+
+</dd>
+<dt><code>auto_advance_ms</code></dt>
+<dd>
+
+The time in milliseconds before Tiza goes to the next step by itself, from 1 to 3,600,000.
+
+Integer. No default.
+
+</dd>
+</dl>
 
 An `id` must obey these rules. The error for each rule is in [Messages](#messages).
 
