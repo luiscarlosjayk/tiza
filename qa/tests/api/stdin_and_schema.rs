@@ -38,7 +38,7 @@ fn run_with_stdin(args: &[&str], input: &str) -> std::process::Output {
 #[test]
 fn schemas_are_printed_and_committed() {
     let doc: serde_json::Value = serde_json::from_str(&tiza_ok(&["schema", "document"])).unwrap();
-    assert_eq!(doc["title"], "Tiza document (.tiza)");
+    assert_eq!(doc["title"], "Tiza document or talk (.tiza)");
     let s = doc.to_string();
     for t in [
         "highlight",

@@ -368,6 +368,33 @@
       ],
       "type": "object"
     },
+    "At": {
+      "additionalProperties": false,
+      "description": "Where a talk was: the position of the scene (from 1), its name then\n(`None` when it had no name), and the step.",
+      "properties": {
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "position": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "step": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "position",
+        "step"
+      ],
+      "type": "object"
+    },
     "CodeSource": {
       "anyOf": [
         {
@@ -996,6 +1023,85 @@
       ],
       "type": "string"
     },
+    "Talk": {
+      "additionalProperties": false,
+      "description": "The `talk` of a master, for the JSON Schema of the format\n([`crate::schema::document_schema`]). [`Talk::from_value`] reads it.",
+      "properties": {
+        "at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/At"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Where the talk was when Tiza closed. Tiza writes it."
+        },
+        "scenes": {
+          "description": "The scenes, in the order of the talk: a path of a `.tiza` document,\nrelative to the master, or an object with `file`.",
+          "items": {
+            "$ref": "#/$defs/TalkScene"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "title": {
+          "description": "The title of the talk.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "scenes"
+      ],
+      "title": "Talk",
+      "type": "object"
+    },
+    "TalkScene": {
+      "anyOf": [
+        {
+          "description": "The path of a `.tiza` document, relative to the master.",
+          "pattern": "\\.tiza$",
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/TalkSceneEntry"
+        }
+      ],
+      "description": "An entry of `scenes`."
+    },
+    "TalkSceneEntry": {
+      "additionalProperties": false,
+      "description": "A scene with its options.",
+      "properties": {
+        "file": {
+          "description": "The path of a `.tiza` document, relative to the master.",
+          "pattern": "\\.tiza$",
+          "type": "string"
+        },
+        "name": {
+          "description": "The name of the scene, for `--scene` and `:scene`. Without it, the\nfile name up to the first dot.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "skip": {
+          "description": "`true` leaves the scene out of the talk. Tiza does not read its\nfile.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "file"
+      ],
+      "type": "object"
+    },
     "TextSpan": {
       "additionalProperties": false,
       "description": "A range within ONE line, in graphemes, exclusive end.",
@@ -1118,6 +1224,33 @@
   },
   "$id": "https://github.com/luiscarlosjayk/tiza/schema/tiza.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "not": {
+        "required": [
+          "talk"
+        ]
+      },
+      "required": [
+        "schema",
+        "source",
+        "code"
+      ],
+      "title": "document"
+    },
+    {
+      "not": {
+        "required": [
+          "code"
+        ]
+      },
+      "required": [
+        "schema",
+        "talk"
+      ],
+      "title": "talk"
+    }
+  ],
   "properties": {
     "annotations": {
       "default": [],
@@ -1219,6 +1352,10 @@
       "description": "Reusable mark styles defined by the author, referenced by name in `kind`.",
       "type": "object"
     },
+    "talk": {
+      "$ref": "#/$defs/Talk",
+      "description": "A talk: the scenes that this master plays, in place of `code`."
+    },
     "theme": {
       "anyOf": [
         {
@@ -1257,11 +1394,6 @@
       "type": "object"
     }
   },
-  "required": [
-    "schema",
-    "source",
-    "code"
-  ],
-  "title": "Tiza document (.tiza)",
+  "title": "Tiza document or talk (.tiza)",
   "type": "object"
 }
