@@ -342,3 +342,24 @@ fn a_label_that_goes_under_its_line_at_one_step_is_under_it_at_every_step() {
         );
     }
 }
+
+#[test]
+fn a_note_goes_under_its_line_when_the_offset_leaves_too_little_margin() {
+    // At 40 columns the block (2 + 14 + 2) goes 11 columns in. The margin
+    // on its right is then 11 columns: too narrow for a label, so the note
+    // goes under its line, as in the take of 29 columns without `center`.
+    // Without the offset, the margin would be 22 columns wide.
+    let doc = open(
+        "center-narrow-margin",
+        &FN,
+        json!({"center": true, "numbers": false, "annotations": [
+            {"id": "n1", "step": 1, "type": "note", "line": 2, "text": "x is one"}]}),
+    );
+    let l = take(&doc, 40, 1);
+    assert_eq!(l.left, 11);
+    assert!(
+        l.row_of_line[&3] > l.row_of_line[&2] + 1,
+        "the note is not under line 2"
+    );
+    assert_moved(&l, &take(&uncentered(&doc), 40 - 11, 1), 11, "40 columns");
+}

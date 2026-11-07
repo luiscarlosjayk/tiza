@@ -226,6 +226,41 @@ fn a_step_that_types_keeps_the_code_still() {
 }
 
 #[test]
+fn a_resize_while_a_step_types_takes_the_rows_of_the_take() {
+    // The rows of the take at 40 columns are first counted while the
+    // step types: they are those of the take (the note goes under its line
+    // at 40 columns), not those of the code being typed.
+    let doc = tiza_core::fs::parse_document(
+        &json!({"schema": 2, "source": {"language": "rs", "first_line": 1},
+            "code": FN, "center": true, "padding": [0, 0], "numbers": false, "step": 1,
+            "annotations": [{"id": "n1", "step": 1, "type": "note", "line": 2, "text": "x is one"}],
+            "moves": [{"at_step": 2, "action": "code.patch", "op": "insert", "after": "}",
+                       "content": "// two more\n// lines", "typing": "char", "speed_ms": 50}]})
+        .to_string(),
+        None,
+    )
+    .unwrap();
+    let mut a = App::new(doc, scratch("center-tui-typing-resize").join("doc.tiza"));
+    a.autosave = false;
+    a.set_present(true);
+    draw(&mut a, 80, 24);
+    a.next_step();
+    assert!(a.is_typing());
+    let mut now = Instant::now();
+    let mut frames = 0;
+    while a.is_typing() {
+        now += Duration::from_millis(10);
+        if a.typing_tick_at(now) {
+            frames += 1;
+            // Line 1, the note under line 2 and five lines of code: 6 rows.
+            let at40 = find(&draw(&mut a, 40, 24), "fn main() {").map(|p| p.1);
+            assert_eq!(at40, Some((23 - 6) / 2), "frame {frames}");
+        }
+    }
+    assert!(frames > 3);
+}
+
+#[test]
 fn a_document_taller_than_the_screen_starts_at_the_top() {
     let code: Vec<String> = (1..=40).map(|i| format!("let v{i} = {i};")).collect();
     let code: Vec<&str> = code.iter().map(String::as_str).collect();
