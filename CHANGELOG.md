@@ -4,6 +4,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 
 ## [Unreleased]
 
+### Changed
+- The reference of the command line and of the document format gives the options and the fields as lists, as the pages of the `:` commands do. Each note about one flag, command or field is under it, and a field gives its type and its default. See [Command line](docs/reference/cli.md) and [Document format](docs/reference/document-format.md).
+
 ## [0.2.1] - 2026-11-06
 
 ### Added
