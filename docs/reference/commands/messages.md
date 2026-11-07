@@ -136,6 +136,12 @@ In `is not in the code shown`, `FILE` can end with the lines on screen, for exam
 | `margin already auto` | The margin had no limit already. |
 | `margin auto (the right margin takes what the width leaves)` | `:margin` shows that the margin has no limit. |
 | `margin N (a longer note, label or legend continues on the free rows below, then goes under its line of code or is cut with …; :margin auto removes the cap)` | `:margin` shows the limit. |
+| `center on (saved in the document)` | `:center on` put the code in the middle of the screen. |
+| `center on (saved in the document); the content is N columns wide, so it is centered from width W (it stays at the left here)` | `:center on` set `center`, but the screen is too narrow for the code. |
+| `center off: the code starts at the top left (saved in the document)` | `:center off` put the code back at the top left. |
+| `center already on` or `center already off` | The document already sets that value. |
+| `center on` or `center off` | `:center` shows the state of `center`. |
+| `center on; the content is N columns wide, so it is centered from width W (it stays at the left here)` | `:center` shows the state of `center` on a screen that is too narrow for the code. |
 | `layout stable: the layout fits every step, as in presentation mode and exports` | `:layout stable` set the take as the layout. |
 | `layout dynamic: the layout fits the step on screen (exports use every step)` | `:layout dynamic` set the layout of the step on screen. |
 | `layout stable` or `layout dynamic` | `:layout` shows the layout. |
@@ -249,6 +255,7 @@ A command with wrong arguments shows its usage:
 | `usage: :pad V [H] \| :pad default   (blank cells around the drawing; :pad 0 0 removes it)` | `:pad` |
 | `` margin X: use `:margin N` (12-200 cells) or `:margin auto` `` | `:margin` |
 | `` numbers X: use `:numbers on` or `:numbers off` `` | `:numbers` |
+| `` center X: use `:center on` or `:center off` `` | `:center` |
 | `` layout X: use `:layout stable` or `:layout dynamic` `` | `:layout` |
 | `usage: :link path[:A-B]   (without a path, uses the source file)` | `:link` |
 | `usage: :scroll N \| @'text' \| ID \| annotation=ID  [occurrence=N] [align=top\|center\|bottom\|show]` | `:scroll` |

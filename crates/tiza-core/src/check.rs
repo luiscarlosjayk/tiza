@@ -1989,12 +1989,16 @@ fn check_loaded(
     // ---- a document with `center` that is too wide to be centered ----
     let cols = crate::layout::center_columns(&take.geometry);
     if doc.center && width.max(MIN_WIDTH) < cols {
+        let from = if cols <= MAX_WIDTH {
+            format!("content is centered from width {}", frame.from(cols))
+        } else {
+            format!("no width up to {MAX_WIDTH} centers the content")
+        };
         out.push(Finding::new(
             Level::Warning,
             "center",
             format!(
-                "content is centered from width {}: it is {cols} columns wide, and the code has {width} columns here, so it stays at the left",
-                frame.from(cols)
+                "{from}: it is {cols} columns wide, and the code has {width} columns here, so it stays at the left"
             ),
         ));
     }
