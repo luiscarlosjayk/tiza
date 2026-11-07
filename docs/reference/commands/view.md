@@ -120,7 +120,7 @@ For example, a title in the middle of 60 columns:
 :center on
 ```
 
-<img src="../../images/commands/center-title.webp" width="396" alt="Lines 1 to 3 with no line numbers, in the middle of the width of the frame.">
+<img src="../../images/commands/center-title.webp" width="520" alt="Lines 1 to 3 with no line numbers, in the middle of the width of the frame.">
 
 ### Notes on `:center`
 
