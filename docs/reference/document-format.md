@@ -883,7 +883,7 @@ With `"diff": true` on a `code.patch` move, the step of the move shows which lin
 - The `+` and the removed lines show only at the step of the move. At the step after it, they go away, and the lines under them move up. `tiza check` thus does not report that step as empty.
 - A `replace` often writes again the lines around the change. Tiza does not mark the lines at the start and at the end of a `replace` that are the same as before.
 - When a later move of the same step removes a line that the move wrote, that line has no `+`.
-- While the step types, the `+` and the removed lines do not show. They show when the typing ends.
+- While the step types or waits, the `+` and the removed lines do not show. They show when the typing or the `wait` ends. Then the lines above them do not move, and the lines under them move down.
 - In normal mode, the removed lines that come above the first line of the view stay above the view. Scroll up, or move the cursor to their line, to see them. In presentation mode, a view at the top of the code shows them, and a `scroll` move to their line shows them.
 - When a move of the document has `diff`, Tiza keeps a column of two cells for the `+` and the `−` at every step. Without line numbers, Tiza also keeps the column of the `▸` that marks the selected annotation, next to the sign. Thus the code does not move when a sign shows.
 - `tiza check` gives the warning `move` when a move with `diff` shows no `+` and no `−`. For example, the move writes the same lines again, or the lines that it writes or removes are outside the lines that its step shows.

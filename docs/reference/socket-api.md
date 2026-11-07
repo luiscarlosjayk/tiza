@@ -319,7 +319,7 @@ At the step of a `code.patch` move with `diff`, the screen also shows the lines 
 - `place` is `before` when the group is above line `line`. It is `after` for the group under the last line.
 - `lines` is the text of each removed line.
 - The list is empty at a step with no removed lines, and while the step types.
-- A `find` does not match a removed line. When the text of a `find` is only on a removed line, the error `text_not_found` says `that text is a removed line of the diff at step N`.
+- A `find` does not match a removed line. When the text of a `find` is only on a removed line, the error `text_not_found` says `that text is a removed line of the diff at step N`. The markers of a box (`find_start`, `find_end`) and the `find` of a move give the same error. For a move, step N is the step of the move.
 
 ### A `find` inside a character
 

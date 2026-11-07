@@ -275,3 +275,189 @@ fn a_view_on_the_first_row_shows_the_removed_lines_that_come_over_line_1() {
     assert_eq!(screen_row(&live, "let v1 = 1;"), Some(1));
     assert_eq!(screen_row(&live, "let v2 = 2;"), Some(2));
 }
+
+#[test]
+fn a_view_on_the_first_row_keeps_line_1_when_a_box_title_comes_over_it() {
+    // No diff: an agent adds a box on line 1 at the step on screen. Its
+    // title comes over line 1 above the view, and the code does not move.
+    let live = open("diff-tui-at-top-no-diff", json!([]), 1, true);
+    assert_eq!(screen_row(&live, "let v1 = 1;"), Some(0));
+    live.api_ok(
+        "annotation.add",
+        json!({"type": "box", "from_line": 1, "to_line": 2, "label": "top"}),
+    );
+    assert_eq!(screen_row(&live, "let v1 = 1;"), Some(0));
+    assert_eq!(screen_row(&live, "top"), None);
+}
+
+#[test]
+fn a_selection_to_the_last_line_tints_the_removed_lines_under_it() {
+    // A delete with diff of the last line: at step 1 it is a removed line
+    // under line 159.
+    let moves = json!([{"at_step": 1, "action": "code.patch", "op": "delete", "find": "let v160 = 160;", "diff": true}]);
+    let live = open("diff-tui-select-end", moves, 1, false);
+    let tint = live.with(|a| {
+        a.cursor_line = 158;
+        draw(a);
+        key(a, KeyCode::Char('V'));
+        key(a, KeyCode::Char('j'));
+        let b = draw(a);
+        let row = |text: &str| {
+            (0..ROWS)
+                .find(|&y| {
+                    let r: String = (0..COLS).map(|x| b[(x, y)].symbol()).collect();
+                    r.contains(text)
+                })
+                .unwrap()
+        };
+        let x = a.hit.code_x + 1;
+        let bg = |y: u16| b[(x, y)].bg;
+        (
+            bg(row("let v159 = 159;")),
+            bg(row("let v160 = 160;")),
+            bg(row("let v157 = 157;")),
+        )
+    });
+    assert_eq!(tint.1, tint.0, "the removed line under the last line");
+    assert_ne!(tint.2, tint.0, "line 157 is not selected");
+}
+
+#[test]
+fn a_view_on_a_removed_line_over_line_1_shows_the_box_title_that_takes_its_row() {
+    // Step 2 deletes v1 with diff: a removed line over line 1, on the first
+    // row of the view. Step 3 takes it away, and a box on lines 1-2 comes:
+    // its title takes the row, and line 1 stays on its row.
+    let boxed = json!([{"id": "bx", "step": 3, "type": "box", "from_line": 1, "to_line": 2, "label": "top"}]);
+    let moves = json!([{"at_step": 2, "action": "code.patch", "op": "delete", "find": "let v1 = 1;", "diff": true}]);
+    let live = open_with("diff-tui-at-top-then-box", boxed, moves, 2, true);
+    assert_eq!(screen_row(&live, "let v1 = 1;"), Some(0));
+    assert_eq!(screen_row(&live, "let v2 = 2;"), Some(1));
+    live.with(|a| key(a, KeyCode::Char('n')));
+    assert_eq!(live.with(|a| a.doc.step), 3);
+    assert_eq!(screen_row(&live, "top"), Some(0));
+    assert_eq!(screen_row(&live, "let v2 = 2;"), Some(1));
+}
+
+/// From step 0 in presentation mode, `n` to step 1 with `moves`: the rows
+/// of `texts` while the step types or waits, then when it ends.
+fn rows_through_step_1(
+    name: &str,
+    moves: serde_json::Value,
+    texts: [&'static str; 3],
+) -> [(Option<u16>, Option<u16>); 3] {
+    let live = open(name, moves, 0, true);
+    live.with(|a| key(a, KeyCode::Char('n')));
+    assert!(live.with(|a| a.is_typing()), "step 1 types or waits");
+    let during = texts.map(|t| screen_row(&live, t));
+    live.with(|a| key(a, KeyCode::Char('n')));
+    assert!(!live.with(|a| a.is_typing()));
+    let after = texts.map(|t| screen_row(&live, t));
+    [0, 1, 2].map(|i| (during[i], after[i]))
+}
+
+#[test]
+fn a_typed_replace_with_diff_keeps_the_lines_above_it_still() {
+    // The view is at the top. Step 1 types two lines in place of v10: when
+    // the typing ends, the removed line comes over them, and only the
+    // lines under it go down.
+    let moves = json!([{"at_step": 1, "action": "code.patch", "op": "replace", "find": "let v10 = 10;",
+        "content": "let a = 1;\nlet b = 2;", "typing": "line", "speed_ms": 3_600_000, "diff": true}]);
+    let [v1, v5, v11] = rows_through_step_1(
+        "diff-tui-typed-top",
+        moves,
+        ["let v1 = 1;", "let v5 = 5;", "let v11 = 11;"],
+    );
+    assert_eq!(v1, (Some(0), Some(0)), "line 1 stays on the first row");
+    assert_eq!(v5.0, v5.1, "a line above the change does not move");
+    assert_eq!(
+        v11.1,
+        v11.0.map(|r| r + 1),
+        "a line under the change goes down one row"
+    );
+}
+
+#[test]
+fn a_scroll_and_a_wait_before_a_delete_with_diff_keep_the_code_still() {
+    // Step 1: a `scroll` to line 45, a wait, then a delete of v40. When the
+    // wait ends, the removed line takes the row of v40, and no line moves.
+    let moves = json!([
+        {"at_step": 1, "action": "scroll", "line": 45},
+        {"at_step": 1, "action": "wait", "ms": 3_600_000},
+        {"at_step": 1, "action": "code.patch", "op": "delete", "find": "let v40 = 40;", "diff": true}
+    ]);
+    let [v39, v40, v41] = rows_through_step_1(
+        "diff-tui-scroll-wait",
+        moves,
+        ["let v39 = 39;", "let v40 = 40;", "let v41 = 41;"],
+    );
+    assert!(v39.0.is_some(), "line 39 in view");
+    assert_eq!(v39.0, v39.1);
+    assert_eq!(v40.0, v40.1, "the removed line takes the row of its line");
+    assert_eq!(v41.0, v41.1);
+}
+
+#[test]
+fn a_typed_replace_with_diff_in_a_centered_view_keeps_the_lines_above_it_still() {
+    // Step 1 centers the view on line 80; step 2 types two lines in place
+    // of v80. The lines above do not move when the typing starts or ends,
+    // and the removed line takes the row of v80.
+    let moves = json!([
+        {"at_step": 1, "action": "scroll", "line": 80, "align": "center"},
+        {"at_step": 2, "action": "code.patch", "op": "replace", "find": "let v80 = 80;",
+            "content": "let a = 1;\nlet b = 2;", "typing": "line", "speed_ms": 3_600_000, "diff": true}
+    ]);
+    let live = open("diff-tui-typed-center", moves, 0, true);
+    live.with(|a| key(a, KeyCode::Char('n')));
+    let (v79, v80) = (
+        screen_row(&live, "let v79 = 79;"),
+        screen_row(&live, "let v80 = 80;"),
+    );
+    assert!(v79.is_some(), "line 79 in view");
+    live.with(|a| key(a, KeyCode::Char('n')));
+    assert!(live.with(|a| a.is_typing()), "step 2 types");
+    assert_eq!(
+        screen_row(&live, "let v79 = 79;"),
+        v79,
+        "when the typing starts"
+    );
+    live.with(|a| key(a, KeyCode::Char('n')));
+    assert!(!live.with(|a| a.is_typing()));
+    assert_eq!(
+        screen_row(&live, "let v79 = 79;"),
+        v79,
+        "when the typing ends"
+    );
+    assert_eq!(screen_row(&live, "let v80 = 80;"), v80, "the removed line");
+}
+
+#[test]
+fn a_held_view_at_the_top_shows_the_removed_lines_over_line_1() {
+    // Step 1 deletes v1 with diff and adds a note on line 5: the view holds
+    // the note, from the top. The removed line over line 1 is in it.
+    let note = json!([{"id": "n5", "step": 1, "type": "note", "line": 5, "text": "five"}]);
+    let moves = json!([{"at_step": 1, "action": "code.patch", "op": "delete", "find": "let v1 = 1;", "diff": true}]);
+    let live = open_with("diff-tui-held-top", note, moves, 0, true);
+    live.with(|a| key(a, KeyCode::Char('n')));
+    assert_eq!(live.with(|a| a.doc.step), 1);
+    assert_eq!(screen_row(&live, "let v1 = 1;"), Some(0));
+    assert_eq!(screen_row(&live, "let v2 = 2;"), Some(1));
+}
+
+#[test]
+fn a_view_that_starts_on_a_line_that_the_next_step_removes_starts_on_its_removed_line() {
+    // Line 40 is the first row of the view; step 1 deletes it with diff.
+    // Its removed line takes its row, and the code does not move.
+    let moves = json!([{"at_step": 1, "action": "code.patch", "op": "delete", "find": "let v40 = 40;", "diff": true}]);
+    let live = open("diff-tui-top-removed", moves, 0, true);
+    let rows = live.with(|a| a.layout(usize::from(COLS)).row_of_line[&40]);
+    live.with(move |a| {
+        for _ in 0..rows {
+            key(a, KeyCode::Char('j'));
+        }
+    });
+    assert_eq!(screen_row(&live, "let v40 = 40;"), Some(0));
+    live.with(|a| key(a, KeyCode::Char('n')));
+    assert_eq!(live.with(|a| a.doc.step), 1);
+    assert_eq!(screen_row(&live, "let v40 = 40;"), Some(0));
+    assert_eq!(screen_row(&live, "let v41 = 41;"), Some(1));
+}

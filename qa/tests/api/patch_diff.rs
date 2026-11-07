@@ -108,3 +108,27 @@ fn a_find_of_a_removed_line_says_why_it_matches_nothing() {
     assert_eq!(e.code, "text_not_found");
     assert!(!e.message.contains("removed line"), "{}", e.message);
 }
+
+#[test]
+fn a_box_marker_or_a_move_find_of_a_removed_line_says_why_it_matches_nothing() {
+    let live = deleted("api-diff-find-markers");
+    let why = "that text is a removed line of the diff at step 1";
+    // A box from the removed line to line 3.
+    let r = live.api(
+        "annotation.add",
+        json!({"type": "box", "find_start": "b();", "find_end": "c();"}),
+    );
+    let e = r.error.expect("refused");
+    assert_eq!(e.code, "text_not_found", "{}", e.message);
+    assert!(e.message.contains(why), "{}", e.message);
+    // A second move of step 1, after the delete: its find is the removed
+    // line.
+    let r = live.api(
+        "move.add",
+        json!({"at_step": 1, "action": "code.patch", "op": "replace", "find": "b();",
+               "content": "d();"}),
+    );
+    let e = r.error.expect("refused");
+    assert_eq!(e.code, "text_not_found", "{}", e.message);
+    assert!(e.message.contains(why), "{}", e.message);
+}

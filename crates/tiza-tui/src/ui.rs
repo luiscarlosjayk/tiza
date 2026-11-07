@@ -318,14 +318,17 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         let sel_bg = rgb(th.tint(th.accent, 0.35));
         if let Some(Selection::Lines(a, b)) = sel {
             // The code rows of the lines, and the removed lines of a diff
-            // between them: those over the first line are not in it.
+            // between them: those over the first line are not in it, and
+            // those under the last line of the code are, with that line.
             let rows = (app.scroll..end).filter(|&r| match layout.rows[r] {
                 tiza_core::layout::Row::Code(l) => (a..=b).contains(&l),
-                tiza_core::layout::Row::Ghost {
-                    owner,
-                    below: false,
-                    ..
-                } => owner > a && owner <= b,
+                tiza_core::layout::Row::Ghost { owner, below, .. } => {
+                    if below {
+                        (a..=b).contains(&owner)
+                    } else {
+                        owner > a && owner <= b
+                    }
+                }
                 _ => false,
             });
             for row in rows {
