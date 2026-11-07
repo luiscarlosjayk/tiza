@@ -202,7 +202,9 @@ impl App {
 
     /// `p`, `:prev`, `step.prev` in a talk: to the nearest earlier step
     /// that does not advance by itself; with none (step 0, or an intro that
-    /// advances all the way), to the last step of the scene before.
+    /// advances all the way), to the last step of the scene before. In the
+    /// first scene there is none: one step back, and that step waits for
+    /// the next key (else it would advance again by itself).
     pub(super) fn prev_in_talk(&mut self, force: bool) -> Option<bool> {
         let t = self.talk.as_ref()?;
         let back = (0..self.doc.step)
@@ -211,7 +213,14 @@ impl App {
         Some(match (back, t.prev_shown()) {
             (Some(s), _) => self.step_to(s),
             (None, Some(to)) => self.enter_scene(to, Landing::Last, force, ":prev!"),
-            (None, None) => self.step_to(self.doc.step.saturating_sub(1)),
+            (None, None) => {
+                let from = self.doc.step;
+                let loud = self.step_to(from.saturating_sub(1));
+                if self.doc.step != from {
+                    self.step_ready_at = None;
+                }
+                loud
+            }
         })
     }
 
@@ -394,13 +403,18 @@ impl App {
         // The session's revision only grows: a reply about the scene of
         // before never names a revision of this one.
         next.revision += self.revision;
+        // About the scene on screen first: a narrow bar cuts the end.
+        let mut notes = Vec::new();
         if lost {
-            left.push(format!(
-                "changes to {to_label} are not kept: its files changed on disk"
+            notes.push(format!(
+                "{to_label}: changes not kept, its files changed on disk"
             ));
         }
         if !left.is_empty() {
-            let note = format!("left {here}: {}", left.join("; "));
+            notes.push(format!("left {here}: {}", left.join("; ")));
+        }
+        if !notes.is_empty() {
+            let note = notes.join("; ");
             if next.message.is_some() {
                 next.say_first(note);
             } else {

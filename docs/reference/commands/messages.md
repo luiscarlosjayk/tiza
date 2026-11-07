@@ -143,7 +143,8 @@ In `is not in the code shown`, `FILE` can end with the lines on screen, for exam
 | `supervised mode on (N pending)` or `supervised mode off (N pending)` | `:supervise` shows the state. |
 | `no agent changes wait` | `:review` found no change to show. |
 | `SCENE: changes not saved; :w saves them, CMD goes on without them` | In a talk, `n`, `p`, `:next`, `:prev` or `:scene` did not go to another scene, because autosave could not save the changes of the scene on screen. `CMD` is `:next!`, `:prev!` or `:scene! X`. |
-| `left SCENE: REASON` | In a talk, the scene changed, and the scene before left something behind. `REASON` is what the stale moves do the next time, the code of a follow pause that is not kept, or `changes to SCENE are not kept: its files changed on disk`. |
+| `left SCENE: REASON` | In a talk, the scene changed, and the scene before left something behind. `REASON` is what the stale moves do the next time, or the code of a follow pause that is not kept. |
+| `SCENE: changes not kept, its files changed on disk` | In a talk with `--no-save`, you came back to a scene whose changes waited in memory, but its files changed on disk. Tiza shows the files of the disk. |
 | `:scene works in a talk: open a master .tiza that lists the scenes` | `:scene` without a talk. |
 | `usage: :scene POSITION\|NAME [STEP]  (:scene! goes on without unsaved changes)` | `:scene` got no scene, or more than two words. |
 | `the talk has no scene N: it has scenes 1 to M` | `:scene N` got a position that is not in the talk. |

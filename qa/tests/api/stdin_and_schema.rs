@@ -194,6 +194,25 @@ fn examples_and_fixtures_match_the_schema_shape() {
         }
         let d: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
+        // A master: the schema has its `talk`, and each entry is a path
+        // or an object with `file`.
+        if let Some(talk) = d.get("talk") {
+            assert_eq!(
+                doc["properties"]["talk"]["$ref"],
+                "#/$defs/Talk",
+                "{}",
+                p.display()
+            );
+            for e in talk["scenes"].as_array().unwrap() {
+                assert!(
+                    e.is_string() || e["file"].is_string(),
+                    "{}: {e}",
+                    p.display()
+                );
+            }
+            n += 1;
+            continue;
+        }
         for a in d["annotations"].as_array().unwrap() {
             let t = a["type"].as_str().unwrap();
             assert!(

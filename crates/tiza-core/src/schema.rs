@@ -201,17 +201,50 @@ fn schema<T: JsonSchema>() -> Value {
     serde_json::to_value(schema_for!(T)).unwrap_or(Value::Null)
 }
 
-/// JSON Schema of the `.tiza` document.
+/// JSON Schema of a `.tiza` file: a document, or a master with `talk` in
+/// place of `code` (a talk). The properties of a document stay at the top;
+/// one of the two sets of required keys applies.
 pub fn document_schema() -> Value {
     let mut v = schema::<Document>();
-    if let Value::Object(m) = &mut v {
+    let mut talk = schema::<crate::talk::TalkSchema>();
+    if let (Value::Object(m), Value::Object(t)) = (&mut v, &mut talk) {
         m.insert(
             "$id".into(),
             Value::String("https://github.com/luiscarlosjayk/tiza/schema/tiza.schema.json".into()),
         );
         m.insert(
             "title".into(),
-            Value::String("Tiza document (.tiza)".into()),
+            Value::String("Tiza document or talk (.tiza)".into()),
+        );
+        let defs = m
+            .entry("$defs")
+            .or_insert_with(|| Value::Object(Default::default()));
+        if let (Value::Object(defs), Some(Value::Object(more))) = (defs, t.remove("$defs")) {
+            for (k, d) in more {
+                assert!(!defs.contains_key(&k), "two definitions named {k}");
+                defs.insert(k, d);
+            }
+        }
+        t.remove("$schema");
+        if let Some(Value::Object(defs)) = m.get_mut("$defs") {
+            defs.insert("Talk".into(), Value::Object(t.clone()));
+        }
+        if let Some(Value::Object(props)) = m.get_mut("properties") {
+            props.insert(
+                "talk".into(),
+                serde_json::json!({
+                    "$ref": "#/$defs/Talk",
+                    "description": "A talk: the scenes that this master plays, in place of `code`."
+                }),
+            );
+        }
+        let document = m.remove("required").unwrap_or(Value::Array(vec![]));
+        m.insert(
+            "oneOf".into(),
+            serde_json::json!([
+                {"title": "document", "required": document, "not": {"required": ["talk"]}},
+                {"title": "talk", "required": ["schema", "talk"], "not": {"required": ["code"]}}
+            ]),
         );
     }
     v

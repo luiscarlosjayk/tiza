@@ -39,7 +39,7 @@ Two examples show moves and views:
 
 The version of the format, `1` or `2`.
 
-- Tiza writes `2` only when the document uses a field of version 2: an `until` on an annotation that is not a spotlight.
+- Tiza writes `2` only when the file uses a field of version 2: an `until` on an annotation that is not a spotlight, or `talk` (a [master](#talk)). A version that reads only `1` then says that the file is of a newer version.
 - Else Tiza writes `1`, so that Tiza 0.2.1 and earlier versions can open the file.
 - A version that reads only `1` does not open a file with `2`. Thus it does not show a box, an arrow or a note after its `until` by mistake.
 
@@ -1438,6 +1438,7 @@ Object. No default: the talk opens at step 0 of the first scene that shows.
 - Each scene keeps its own `step`. A change in a scene saves the step that its file has, not the step on screen.
 - A file shows once in a talk. Two entries that name the same file are an error, also with other paths to it.
 - `tiza render`, `tiza check` and `scene put` refuse a master: give them a scene.
+- Tiza writes `"schema": 2` in a master. Tiza 0.2.1 and earlier versions do not know `talk`, so they refuse the file. Tiza opens a master with `"schema": 1` too.
 
 The errors of a master:
 

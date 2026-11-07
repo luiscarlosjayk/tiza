@@ -55,7 +55,7 @@ pub struct SceneEntry {
 
 /// Where a talk was: the position of the scene (from 1), its name then
 /// (`None` when it had no name), and the step.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct At {
     pub position: usize,
@@ -478,8 +478,9 @@ pub fn update_talk(
         Ok(at) => AtOut::Typed(at),
         Err(_) => AtOut::Raw(v),
     });
+    top.remove("schema");
     let out = MasterOut {
-        schema: top.remove("schema"),
+        schema: MASTER_SCHEMA,
         talk: TalkOut {
             title: talk.remove("title"),
             scenes: talk.remove("scenes").unwrap_or(Value::Null),
@@ -491,12 +492,58 @@ pub fn update_talk(
     crate::fs::write_atomically(path, out.as_bytes())
 }
 
+/// The version of the format that Tiza writes for a master. Tiza 0.2.1
+/// and earlier versions do not know `talk`: with `2` they say that the
+/// file is of a newer version, not that it is a broken document.
+pub const MASTER_SCHEMA: u32 = 2;
+
+/// The `talk` of a master, for the JSON Schema of the format
+/// ([`crate::schema::document_schema`]). [`Talk::from_value`] reads it.
+#[derive(schemars::JsonSchema)]
+#[schemars(rename = "Talk", deny_unknown_fields)]
+#[allow(dead_code)]
+pub struct TalkSchema {
+    /// The title of the talk.
+    title: Option<String>,
+    /// The scenes, in the order of the talk: a path of a `.tiza` document,
+    /// relative to the master, or an object with `file`.
+    #[schemars(length(min = 1))]
+    scenes: Vec<SceneSchema>,
+    /// Where the talk was when Tiza closed. Tiza writes it.
+    at: Option<At>,
+}
+
+/// An entry of `scenes`.
+#[derive(schemars::JsonSchema)]
+#[schemars(rename = "TalkScene", untagged)]
+#[allow(dead_code)]
+enum SceneSchema {
+    /// The path of a `.tiza` document, relative to the master.
+    Path(#[schemars(regex(pattern = r"\.tiza$"))] String),
+    Entry(SceneEntrySchema),
+}
+
+/// A scene with its options.
+#[derive(schemars::JsonSchema)]
+#[schemars(rename = "TalkSceneEntry", deny_unknown_fields)]
+#[allow(dead_code)]
+struct SceneEntrySchema {
+    /// The path of a `.tiza` document, relative to the master.
+    #[schemars(regex(pattern = r"\.tiza$"))]
+    file: String,
+    /// The name of the scene, for `--scene` and `:scene`. Without it, the
+    /// file name up to the first dot.
+    name: Option<String>,
+    /// `true` leaves the scene out of the talk. Tiza does not read its
+    /// file.
+    skip: Option<bool>,
+}
+
 /// A master as [`update_talk`] writes it: its keys in this order, then the
 /// keys that this version does not know.
 #[derive(Serialize)]
 struct MasterOut {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    schema: Option<Value>,
+    schema: u32,
     talk: TalkOut,
     #[serde(flatten)]
     rest: serde_json::Map<String, Value>,

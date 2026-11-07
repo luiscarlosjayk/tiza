@@ -180,9 +180,13 @@ fn an_intro_that_advances_by_itself_waits_when_p_comes_back_to_it() {
     let later = std::time::Instant::now() + std::time::Duration::from_secs(7200);
     assert!(!live.with(move |a| a.auto_advance_tick(later)));
     assert_eq!((scene_file(&live), step(&live)), ("intro.tiza".into(), 2));
-    // Each step of the intro advances by itself: `p` goes past all of them
-    // and stays at the start of the talk.
+    // The first scene: no scene before to go back to, so `p` goes one
+    // step back, and that step waits for the next key. Else it would
+    // advance again, and the talk would go on by itself.
     live.keys(&[KeyCode::Char('p')]);
+    assert_eq!((scene_file(&live), step(&live)), ("intro.tiza".into(), 1));
+    let later = std::time::Instant::now() + std::time::Duration::from_secs(7200);
+    assert!(!live.with(move |a| a.auto_advance_tick(later)));
     assert_eq!((scene_file(&live), step(&live)), ("intro.tiza".into(), 1));
     // `n` from the intro's start: its countdown runs again.
     live.command("scene 1");
@@ -496,6 +500,11 @@ fn scene_opens_a_scene_by_its_position_or_its_name() {
 fn the_talk_writes_where_it_is_and_opens_there_again() {
     let dir = talk_copy("talk-at");
     let master = dir.join("talk.tiza");
+    // A master that says version 1, as one written by hand.
+    let one = std::fs::read_to_string(&master)
+        .unwrap()
+        .replace("\"schema\": 2", "\"schema\": 1");
+    std::fs::write(&master, one).unwrap();
     let live = open(&dir, None, SessionStart::default());
     live.command("scene 6 2");
     assert_eq!(live.with(|a| a.save_talk_position()), None);
@@ -510,6 +519,9 @@ fn the_talk_writes_where_it_is_and_opens_there_again() {
         raw["kept"], "a key that this version does not know",
         "only `at` changes"
     );
+    // Version 2: a Tiza that does not know `talk` says that the file is
+    // newer, not that it is a broken document.
+    assert_eq!(raw["schema"], 2);
     assert_eq!(raw["talk"]["scenes"][0], "intro.tiza");
     // The layout of Tiza, in an order that reads well: `schema`, `talk`
     // (`title`, `scenes`, `at` with `position`, `name`, `step`), then the
