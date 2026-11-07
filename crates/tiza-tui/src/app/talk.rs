@@ -58,6 +58,9 @@ pub struct TalkState {
 struct Parked {
     history: History,
     fingerprint: Vec<u8>,
+    /// With `--no-save`, the document with the changes that were not
+    /// saved.
+    doc: Option<Document>,
 }
 
 impl TalkState {
@@ -244,7 +247,8 @@ impl App {
     }
 
     /// [`App::try_enter_scene`], with what stops it on the bar: `true`
-    /// when the bar says something loud (also a warning of the new scene).
+    /// when the bar says something (what stops it, or a note or a warning
+    /// of the new scene), which a command then does not cover.
     /// `forced` names the command that goes on without the changes that
     /// are not saved.
     pub fn enter_scene(
@@ -255,7 +259,7 @@ impl App {
         forced: &str,
     ) -> bool {
         match self.try_enter_scene(index, landing, force) {
-            Ok(()) => self.message.as_ref().is_some_and(|m| m.1),
+            Ok(()) => self.message.is_some(),
             Err(e) if e.code() == "unsaved_changes" => {
                 self.error(format!("{e}; :w saves them, {forced} goes on without them"));
                 true
@@ -269,9 +273,15 @@ impl App {
 
     /// Leaves the scene on screen for scene `index` of the talk, at
     /// `landing`. Changes that could not be saved stop it, unless `force`:
-    /// the error has the code `unsaved_changes`. A scene that does not load,
-    /// or a named step that it does not have, is an error that names the
-    /// scene. On an error nothing changes.
+    /// the error has the code `unsaved_changes`. With `--no-save` nothing
+    /// stops it: the scene, changes and undo, waits in memory until the
+    /// presenter comes back. A scene that does not load, or a named step
+    /// that it does not have, is an error that names the scene. On an
+    /// error nothing changes.
+    ///
+    /// The next scene is built first, with `self` as it is; only then do
+    /// the talk and the session move to it, in steps that cannot fail. Thus
+    /// a panic while the next scene opens leaves the scene on screen whole.
     pub fn try_enter_scene(
         &mut self,
         index: usize,
@@ -282,7 +292,10 @@ impl App {
             return Err(Error::Invalid("no talk is open".into()));
         };
         let here = scene_label(t.scene());
-        if !force && self.dirty && (self.save_error.is_some() || !self.autosave) {
+        // With `--no-save` the presenter chose not to save: the changes
+        // wait in memory.
+        let keep = self.no_save && self.dirty;
+        if !force && !keep && self.dirty && (self.save_error.is_some() || !self.autosave) {
             return Err(Error::Because {
                 message: format!("{here}: changes not saved"),
                 inner: Box::new(Error::UnsavedChanges),
@@ -301,8 +314,18 @@ impl App {
             what: scene_label(to),
             inner: Box::new(e),
         };
-        let mut doc = fs::load_document(&to.path).map_err(within)?;
-        let disk_step = doc.step;
+        let disk = fs::load_document(&to.path).map_err(within)?;
+        let disk_step = disk.step;
+        // What waits in memory for this scene: only while its files are
+        // the ones it was left with.
+        let parked = t.parked.get(&to.path);
+        let disk_fingerprint = parked.and_then(|_| fingerprint(&disk, &to.path));
+        let fresh = parked.filter(|p| disk_fingerprint.as_ref() == Some(&p.fingerprint));
+        let lost = parked.is_some_and(|p| p.doc.is_some()) && fresh.is_none();
+        let kept = fresh.and_then(|p| p.doc.clone());
+        let fresh = fresh.is_some();
+        let disk_json = kept.as_ref().and_then(|_| fs::document_json(&disk).ok());
+        let mut doc = kept.unwrap_or(disk);
         let step = match &landing {
             Landing::First => 0,
             Landing::Last => doc.max_step(),
@@ -310,78 +333,48 @@ impl App {
             Landing::Named(id) => doc.resolve_step(id).map_err(within)?,
         };
         let path = to.path.clone();
+        let to_label = scene_label(to);
         let notice = fs::open_notice(&doc);
+        let moved = step != doc.step;
         doc.step = step;
-        let sync = (step != disk_step)
-            .then(|| doc.sync_code_to_step())
-            .flatten();
-
-        // What this scene leaves behind, said once on the next one.
+        let sync = moved.then(|| doc.sync_code_to_step()).flatten();
+        // What the scene on screen leaves behind, said once on the next.
         let mut left = Vec::new();
         if let Some(s) = tiza_core::stale::close_summary(&self.doc) {
             left.push(s);
         }
-        if let Some(p) = self.pause_code_unsaved() {
+        if !keep && let Some(p) = self.pause_code_unsaved() {
             left.push(format!("{p} is not kept"));
         }
-        let mut talk = self.talk.take().expect("a talk");
-        let here_path = talk.scene().path.clone();
-        match fingerprint(&self.doc, &self.save_path).filter(|_| !self.dirty) {
-            Some(fingerprint) => {
-                let history = std::mem::take(&mut self.history);
-                talk.parked.insert(
-                    here_path,
-                    Parked {
-                        history,
-                        fingerprint,
-                    },
-                );
-            }
-            None => {
-                talk.parked.remove(&here_path);
-            }
+        // Its history waits while its files stay as they are on disk now.
+        let leave_fingerprint = (!self.dirty || keep)
+            .then(|| {
+                let on_disk = fs::load_document(&self.save_path).ok()?;
+                fingerprint(&on_disk, &self.save_path)
+            })
+            .flatten();
+        let follow_wanted = if self.source_file().is_some() {
+            self.follow.is_some()
+        } else {
+            t.follow_wanted
+        };
+        #[cfg(feature = "test-hooks")]
+        if crate::test_hook("talk:panic") {
+            panic!("TIZA_TEST_HOOK at a scene change");
         }
-        if self.source_file().is_some() {
-            talk.follow_wanted = self.follow.is_some();
-        }
-        let gone = "the scene changed before the review: the change was not applied";
-        for p in self.proposals.drain(..) {
-            let _ = p.reply.send(tiza_core::protocol::Response::err(
-                p.req.id,
-                "unavailable",
-                gone,
-            ));
-        }
-        self.checks
-            .drop_all("check: the scene changed before the check ended; ask again");
-        // The watcher of this scene lets go before the next one starts.
-        self.follow = None;
 
         let mut next = App::new(doc, path);
-        let restored = talk
-            .parked
-            .remove(&next.save_path)
-            .filter(|p| fingerprint(&next.doc, &next.save_path).as_ref() == Some(&p.fingerprint));
-        if let Some(p) = restored {
-            next.history = p.history;
-            next.mark_saved();
-        }
         next.disk_step = Some(disk_step);
         next.host_dark = self.host_dark;
         next.wide = self.wide;
-        next.osc = std::mem::take(&mut self.osc);
         next.size = self.size;
-        next.socket_path = self.socket_path.take();
-        next.image_exporter = self.image_exporter.take();
         next.supervised = self.supervised;
         next.next_proposal = self.next_proposal;
         next.decided = self.decided;
         next.layouts.set(self.layouts.get());
         next.geometries.set(self.geometries.get());
-        next.agent_deferred = std::mem::take(&mut self.agent_deferred);
         next.no_save = self.no_save;
-
-        let mut start = talk.start.clone();
+        let mut start = t.start.clone();
         start.present = self.present;
         start.mouse = self.mouse;
         start.padding = self.padding_override;
@@ -394,7 +387,7 @@ impl App {
         if let Some(dark) = self.host_dark {
             next.apply_host_dark(dark);
         }
-        start.follow = talk.follow_wanted && next.source_file().is_some();
+        start.follow = follow_wanted && next.source_file().is_some();
         crate::open_rest(&mut next, &start, notice.as_ref(), &[]);
         if let Some(e) = sync {
             next.error(format!("moves: {e}"));
@@ -405,6 +398,11 @@ impl App {
         // The session's revision only grows: a reply about the scene of
         // before never names a revision of this one.
         next.revision += self.revision;
+        if lost {
+            left.push(format!(
+                "changes to {to_label} are not kept: its files changed on disk"
+            ));
+        }
         if !left.is_empty() {
             let note = format!("left {here}: {}", left.join("; "));
             if next.message.is_some() {
@@ -413,6 +411,52 @@ impl App {
                 next.info(note);
             }
         }
+
+        // From here nothing fails: the talk and the session move.
+        let mut talk = self.talk.take().expect("a talk");
+        talk.follow_wanted = follow_wanted;
+        let here_path = talk.scene().path.clone();
+        let restored = talk.parked.remove(&next.save_path);
+        match leave_fingerprint {
+            Some(fingerprint) => {
+                let history = std::mem::take(&mut self.history);
+                let doc = keep.then(|| self.doc.clone());
+                talk.parked.insert(
+                    here_path,
+                    Parked {
+                        history,
+                        fingerprint,
+                        doc,
+                    },
+                );
+            }
+            None => {
+                talk.parked.remove(&here_path);
+            }
+        }
+        if let Some(p) = restored.filter(|_| fresh) {
+            next.history = p.history;
+            next.mark_saved();
+            if p.doc.is_some() {
+                // Not saved: what quitting compares with is the file.
+                next.dirty = true;
+                next.saved_json = disk_json;
+            }
+        }
+        let gone = "the scene changed before the review: the change was not applied";
+        for p in self.proposals.drain(..) {
+            let _ = p.reply.send(tiza_core::protocol::Response::err(
+                p.req.id,
+                "unavailable",
+                gone,
+            ));
+        }
+        self.checks
+            .drop_all("check: the scene changed before the check ended; ask again");
+        next.osc = std::mem::take(&mut self.osc);
+        next.socket_path = self.socket_path.take();
+        next.image_exporter = self.image_exporter.take();
+        next.agent_deferred = std::mem::take(&mut self.agent_deferred);
         crate::note_save_path(&next.save_path);
         talk.index = index;
         next.talk = Some(talk);

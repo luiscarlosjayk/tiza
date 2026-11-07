@@ -286,12 +286,9 @@ fn a_change_saves_the_scene_with_its_own_step() {
 
 #[test]
 fn changes_that_are_not_saved_stop_a_crossing_until_w_or_next_bang() {
-    let dir = talk_copy("talk-no-save");
-    let start = SessionStart {
-        no_save: true,
-        ..Default::default()
-    };
-    let live = open(&dir, Some("own"), start);
+    let dir = talk_copy("talk-autosave-off");
+    let live = open(&dir, Some("own"), SessionStart::default());
+    live.command("autosave off");
     let own = std::fs::read(dir.join("own.tiza")).unwrap();
     live.command("note 1 kept");
     live.keys(&[KeyCode::Char('n'), KeyCode::Char('n'), KeyCode::Char('n')]);
@@ -319,11 +316,66 @@ fn changes_that_are_not_saved_stop_a_crossing_until_w_or_next_bang() {
     assert_eq!(scene_file(&live), "again.tiza");
     assert_eq!(std::fs::read(dir.join("loop.tiza")).unwrap(), looped);
     assert_ne!(std::fs::read(dir.join("own.tiza")).unwrap(), own);
-    // `--no-save` stays for the session: a change in the new scene is not
+    // Autosave stays off for the session: a change in the new scene is not
     // saved either.
     let again = std::fs::read(dir.join("again.tiza")).unwrap();
     live.command("note 1 not saved");
     assert_eq!(std::fs::read(dir.join("again.tiza")).unwrap(), again);
+}
+
+#[test]
+fn with_no_save_a_scene_with_changes_waits_in_memory() {
+    let dir = talk_copy("talk-no-save");
+    let start = SessionStart {
+        no_save: true,
+        ..Default::default()
+    };
+    let live = open(&dir, Some("own"), start);
+    let own = std::fs::read(dir.join("own.tiza")).unwrap();
+    live.command("note 1 drawn live");
+    live.keys(&[KeyCode::Char('n'), KeyCode::Char('n'), KeyCode::Char('n')]);
+    assert_eq!(
+        scene_file(&live),
+        "loop.tiza",
+        "n crosses: --no-save chose not to save"
+    );
+    assert_eq!(std::fs::read(dir.join("own.tiza")).unwrap(), own);
+    let has_note = |live: &Live| {
+        live.with(|a| {
+            serde_json::to_string(&a.doc.annotations)
+                .unwrap()
+                .contains("drawn live")
+        })
+    };
+    assert!(!has_note(&live));
+    // Back: the scene as it was left, still not saved, and `u` undoes.
+    live.keys(&[KeyCode::Char('p')]);
+    assert_eq!((scene_file(&live), step(&live)), ("own.tiza".into(), 2));
+    assert!(has_note(&live), "the note waits in memory");
+    assert!(live.with(|a| a.dirty && a.unsaved_summary().is_some()));
+    live.command("undo");
+    assert!(!has_note(&live), "u takes it back");
+    live.command("redo");
+    assert!(has_note(&live));
+    // The file changes on disk while the scene waits: the disk wins, and
+    // the bar says it once.
+    live.command("scene loop");
+    let changed = String::from_utf8(own.clone())
+        .unwrap()
+        .replace("\"margin\": 20", "\"margin\": 22");
+    std::fs::write(dir.join("own.tiza"), &changed).unwrap();
+    live.command("scene own");
+    assert_eq!(scene_file(&live), "own.tiza");
+    assert!(!has_note(&live), "the file of the disk");
+    let (msg, _) = live.message().unwrap();
+    assert!(
+        msg.contains("not kept") && msg.contains("changed on disk"),
+        "{msg}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.join("own.tiza")).unwrap(),
+        changed
+    );
 }
 
 #[test]
