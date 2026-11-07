@@ -531,11 +531,14 @@ fn mouse_off_stays_off_in_the_next_scene_over_the_config() {
 fn n_on_the_last_step_of_the_last_scene_does_not_move_also_with_loop() {
     let dir = talk_copy("talk-last-loop");
     let last = dir.join("2024.tiza");
-    let looping = std::fs::read_to_string(&last)
-        .unwrap()
-        .replacen("\"step\": 0,", "\"step\": 0, \"loop\": true,", 1);
+    let looping = std::fs::read_to_string(&last).unwrap().replacen(
+        "\"step\": 0,",
+        "\"step\": 0, \"loop\": true,",
+        1,
+    );
     std::fs::write(&last, looping).unwrap();
-    let live = open(&dir, Some("2024"), SessionStart::default());
+    // A name of digits only is a number: open the scene by its place.
+    let live = open(&dir, Some("7"), SessionStart::default());
     assert!(live.with(|a| a.doc.looping));
     live.command("goto 1");
     live.keys(&[KeyCode::Char('n')]);
