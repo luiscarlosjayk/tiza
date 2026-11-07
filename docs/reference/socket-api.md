@@ -124,8 +124,8 @@ printf '%s\n' '{"id":1,"method":"annotation.add","params":{"type":"note","line":
 | Method | Params | What it does | MCP tool |
 |---|---|---|---|
 | `step.set` | `step` | Shows a step. In presentation mode, to the step on screen it does what `step.goto` does. | `set_step` |
-| `step.next` | None | Shows the next step. In a talk, after the last step it opens the next scene. | `next_step` |
-| `step.prev` | None | Shows the previous step. In a talk, before the first step it opens the scene before. | `prev_step` |
+| `step.next` | None | Shows the next step. In a talk, at the last step it opens step 0 of the next scene. | `next_step` |
+| `step.prev` | None | Shows the previous step. In a talk, at step 0 it opens the last step of the scene before. | `prev_step` |
 | `step.goto` | `id` | Goes to a named step or a step number, and applies every move up to that step. To the step on screen, it puts the cursor and the view back where the last `scroll`, `cursor` or `code.link` move up to that step puts them. | `goto_step` |
 
 ### Talk
@@ -137,7 +137,7 @@ printf '%s\n' '{"id":1,"method":"annotation.add","params":{"type":"note","line":
 | `talk.put` | `scenes`, `force` | Replaces the list of scenes: their order, `skip` and names. It writes the list in the master. | `set_talk_scenes` |
 | `talk.insert` | `file`, `at`, `scene`, `name`, `force` | Adds a scene to the list. With `scene`, it writes the file of the scene first. | `insert_scene` |
 
-A talk is a master `.tiza` that lists other `.tiza` files. See [Talk](#talk-methods) for the rules. The other methods act on the scene on screen.
+A talk is a master `.tiza` that lists other `.tiza` files. See [Talk methods](#talk-methods) for the rules. The other methods act on the scene on screen.
 
 ### Focus and pointer
 
@@ -421,13 +421,13 @@ A scene has a **position**, its place in the list of the master from 1. A skippe
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
-| `scene` | integer or string | Required | A position (`7` or `"7"`), or a name. A name goes to the first scene with that name. |
+| `scene` | integer or string | Required | A position (`7` or `"7"`), or a name. A name goes to the first scene that shows with that name. |
 | `step` | integer or string | `0` | A step number or a step `id` of that scene. |
 | `force` | boolean | `false` | `true` opens the scene also when the scene on screen has changes that Tiza could not save. They are lost. |
 
 - To the scene on screen, `talk.goto` goes to the step, as `step.goto` does.
 - A skipped scene, a position that is not in the list and a name that no scene has give `not_found`. The message gives the positions, the skipped scenes and the names.
-- Changes that Tiza could not save stop the change of scene with `unsaved_changes`. This occurs with `--no-save` or a read-only file. `step.next` and `step.prev` stop in the same way.
+- Changes that Tiza could not save stop the change of scene with `unsaved_changes`. This occurs with a read-only file or with `:autosave off`. `step.next` and `step.prev` stop in the same way. With `--no-save`, the change of scene goes on, and the changes wait in memory, as in [Present a long talk](../guides/present-a-long-talk.md).
 
 `talk.put` and `talk.insert`:
 

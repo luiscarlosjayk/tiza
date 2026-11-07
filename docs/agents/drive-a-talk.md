@@ -12,9 +12,9 @@ An agent can see the talk, go to a scene, and change the list, with no script.
 
 ## Go through the scenes
 
-- `next_step` after the last step of a scene opens the next scene that shows, at step 0. Its reply has `scene`. Look at it: step 0 of the next scene can look like the `loop` of a document.
+- `next_step` after the last step of a scene opens the next scene that shows, at step 0. Its reply has `scene`. Look at it: without `scene`, step 0 of the next scene looks like a `loop` back to step 0 of the same document.
 - `goto_scene` with `{"scene": 6}` or `{"scene": "move", "step": "borrow"}` opens a scene at a step. A position counts every entry from 1, also a skipped entry.
-- When the scene on screen has changes that Tiza could not save, these tools refuse with `unsaved_changes`. Ask the presenter to save with `:w`. Give `force: true` only when the presenter says that the changes can go.
+- When the scene on screen has changes that Tiza could not save (a read-only file, or `:autosave off`), these tools refuse with `unsaved_changes`. With `--no-save`, the scene changes, and the changes wait in memory. Ask the presenter to save with `:w`. Give `force: true` only when the presenter says that the changes can go.
 - The requests of one batch go in order. A request after a change of scene acts on the new scene.
 
 ## Change the list
