@@ -32,7 +32,11 @@ use tiza_core::fs::Opened;
 
 use crate::app::{App, Mode, MouseKind, MouseOutcome, Overlay, ViewEdge};
 
-pub struct RunOptions {
+/// What came at start for the whole session, from the flags and the config
+/// file: the same for every document that the session opens (each scene
+/// of a talk).
+#[derive(Clone, Default)]
+pub struct SessionStart {
     pub step: Option<u32>,
     pub theme: Option<tiza_core::ThemeName>,
     /// `--theme auto`: follow the terminal even when the document names a
@@ -51,22 +55,11 @@ pub struct RunOptions {
     /// one goes to the bar.
     pub config_warnings: Vec<String>,
     pub present: bool,
-    /// The local API server, which the binary started before it opened the
-    /// document (`None`: no local API).
-    pub ipc: Option<ipc::IpcServer>,
-    /// Why the binary could not start the local API server: on the bar.
-    pub ipc_error: Option<String>,
     pub focus: Option<(u32, u32)>,
     /// `--padding`: shown this session, never saved into the document.
     pub padding: Option<(u16, u16)>,
     /// `--follow`: reload when the source file changes on disk.
     pub follow: bool,
-    /// Renders a canvas as SVG/PNG/WebP for `:export`; the TUI crate does not link
-    /// the image stack, so the binary provides it (`None`: text formats only).
-    pub image_exporter: Option<app::ImageExporter>,
-    /// `--smoke`: draw one frame and exit (CI check that the terminal setup,
-    /// `/dev/tty` with piped stdin included, starts and restores cleanly).
-    pub smoke: bool,
     /// `--mouse`: start with mouse capture on (`:mouse on` toggles it live).
     pub mouse: bool,
     /// `--no-save`: never autosave the sidecar (`:w` still saves).
@@ -75,6 +68,21 @@ pub struct RunOptions {
     /// step counter of presentation mode for this session. `None`: the
     /// config file decides, else it shows.
     pub counter: Option<bool>,
+}
+
+pub struct RunOptions {
+    pub start: SessionStart,
+    /// The local API server, which the binary started before it opened the
+    /// document (`None`: no local API).
+    pub ipc: Option<ipc::IpcServer>,
+    /// Why the binary could not start the local API server: on the bar.
+    pub ipc_error: Option<String>,
+    /// Renders a canvas as SVG/PNG/WebP for `:export`; the TUI crate does not link
+    /// the image stack, so the binary provides it (`None`: text formats only).
+    pub image_exporter: Option<app::ImageExporter>,
+    /// `--smoke`: draw one frame and exit (CI check that the terminal setup,
+    /// `/dev/tty` with piped stdin included, starts and restores cleanly).
+    pub smoke: bool,
 }
 
 /// How the TUI ended.
@@ -86,20 +94,20 @@ pub enum Exit {
     Signal(i32),
 }
 
-/// Starts the TUI with an opened document. Returns when it closes.
-pub fn run(opened: Opened, opts: RunOptions) -> io::Result<Exit> {
-    let mut app = App::new(opened.document, opened.save_path);
-    app.config_defaults = opts.config_defaults;
-    app.personal_styles = opts.personal_styles;
+/// The steps of opening a document before Tiza asks the terminal about
+/// its colours: the config, autosave and the theme.
+fn open_theme(app: &mut App, start: &SessionStart) {
+    app.config_defaults = start.config_defaults;
+    app.personal_styles = start.personal_styles.clone();
     // Before any start-up step that could save (`--theme-file` does):
     // with `--no-save`, nothing is written. `autosave = false` in the
     // config file is `:autosave off`.
-    app.autosave = !opts.no_save && app.config_defaults.autosave != Some(false);
-    app.no_save = opts.no_save;
+    app.autosave = !start.no_save && app.config_defaults.autosave != Some(false);
+    app.no_save = start.no_save;
     app.layout_stable = app.config_defaults.layout == Some(tiza_core::config::LayoutMode::Stable);
-    app.config_overrides = opts.config_overrides;
+    app.config_overrides = start.config_overrides.clone();
     app.rebuild_theme();
-    if let Some(path) = &opts.theme_file {
+    if let Some(path) = &start.theme_file {
         // Not an edit that `u` takes back, as for `--theme`.
         match app.load_theme_file(path, false) {
             Ok(m) => app.info(m),
@@ -107,34 +115,24 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<Exit> {
         }
         app.dirty = false;
     }
-    if let Some(t) = opts.theme {
+    if let Some(t) = start.theme {
         app.set_theme_name(t, true);
     }
-    if opts.theme_auto {
+    if start.theme_auto {
         app.theme_follow_host();
     }
-    // The host's appearance, and how wide it draws the glyphs of Tiza's own
-    // text: asked before crossterm owns the input, one `COLOR_QUERY_WAIT`
-    // with no answer and about three at most, silent fallback to dark and
-    // to the glyphs as they are. The colours only for a theme that follows
-    // the terminal; the probe always. Keys typed meanwhile were read with
-    // the answers: handled before the first frame.
-    let start_up = appearance::query_host(app.theme_auto || app.theme.is_terminal());
-    // From here the keys come from Tiza's own non-blocking open of the
-    // terminal: a half sequence at the end of a read (`ESC [`) waits in
-    // crossterm for the next key, and the loop and the API go on.
-    let _ = appearance::own_nonblocking_input();
-    if let Some(host) = start_up.host {
-        app.set_host(host);
-    }
-    app.wide = start_up.wide;
-    let early: Vec<_> = start_up
-        .typed
-        .iter()
-        .flat_map(|p| early_keys::keys(p))
-        .collect();
-    let (owed, cut_answer, query_size) = (start_up.owed, start_up.cut, start_up.size);
-    if let Some(s) = opts.step {
+}
+
+/// The steps of opening a document after the terminal answered: the step,
+/// presentation mode, what the bar says about the load, and follow.
+/// `config_warnings`: what the config file had wrong, said once.
+fn open_rest(
+    app: &mut App,
+    start: &SessionStart,
+    notice: Option<&String>,
+    config_warnings: &[String],
+) {
+    if let Some(s) = start.step {
         app.set_step(s);
         // The step it opens at shows its final drawing, with no enter
         // effect, as when the document opens at its own step: also after
@@ -144,31 +142,27 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<Exit> {
             t.then_effect = false;
         }
     }
-    app.present = opts.present;
+    app.present = start.present;
     app.reveal_at_open();
-    app.focus = opts.focus;
-    app.padding_override = opts.padding;
-    app.image_exporter = opts.image_exporter;
+    app.focus = start.focus;
+    app.padding_override = start.padding;
     // The flag wins over the config file; the config over the built-in.
-    app.mouse = opts.mouse || app.config_defaults.mouse == Some(true);
+    app.mouse = start.mouse || app.config_defaults.mouse == Some(true);
     // Here the flag wins both ways: `--counter` shows it over `counter =
     // false`.
-    app.counter = opts.counter.or(app.config_defaults.counter).unwrap_or(true);
+    app.counter = start.counter.or(app.config_defaults.counter).unwrap_or(true);
     // A bad entry of the config file was ignored: the first one on the
     // bar, file name, line and key first (the binary printed every one on
     // stderr with the full path), and how many there are: a cut keeps the
     // count and `tiza config` whole. The notice of the document comes
     // before it, never under it.
-    let config_warning = opts.config_warnings.first().map(|first| {
-        format!(
-            "{first}{}",
-            ui::config_warnings_tail(opts.config_warnings.len())
-        )
-    });
+    let config_warning = config_warnings
+        .first()
+        .map(|first| format!("{first}{}", ui::config_warnings_tail(config_warnings.len())));
     // The effects and the moves this version does not know: their names
     // went to stderr as the TUI started; the bar says it in a few words, so
     // it fits.
-    let notice = opened.notice.as_ref().map(|n| {
+    let notice = notice.map(|n| {
         match (
             tiza_core::fs::not_known_notice(&app.doc),
             tiza_core::fs::not_known_short(&app.doc),
@@ -200,7 +194,7 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<Exit> {
         app.info(after_short(format!("{}: {}", r.place(), r.message())));
     }
     app.show_unknown_effects(std::time::Instant::now());
-    if opts.follow {
+    if start.follow {
         match app.set_follow(true) {
             // At a step with a patch applied follow starts paused: said
             // unless the bar already has something from the load.
@@ -209,6 +203,49 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<Exit> {
             Err(e) => app.error(e.to_string()),
         }
     }
+}
+
+/// The steps of [`run`] that need no terminal, in its order: what a test
+/// that drives an [`App`] without a terminal opens with, so that it sees
+/// the document as `tiza FILE` shows it.
+pub fn open_without_terminal(app: &mut App, start: &SessionStart) {
+    open_theme(app, start);
+    open_rest(app, start, None, &start.config_warnings);
+}
+
+/// Starts the TUI with an opened document. Returns when it closes.
+pub fn run(opened: Opened, opts: RunOptions) -> io::Result<Exit> {
+    let mut app = App::new(opened.document, opened.save_path);
+    let start = &opts.start;
+    open_theme(&mut app, start);
+    // The host's appearance, and how wide it draws the glyphs of Tiza's own
+    // text: asked before crossterm owns the input, one `COLOR_QUERY_WAIT`
+    // with no answer and about three at most, silent fallback to dark and
+    // to the glyphs as they are. The colours only for a theme that follows
+    // the terminal; the probe always. Keys typed meanwhile were read with
+    // the answers: handled before the first frame.
+    let start_up = appearance::query_host(app.theme_auto || app.theme.is_terminal());
+    // From here the keys come from Tiza's own non-blocking open of the
+    // terminal: a half sequence at the end of a read (`ESC [`) waits in
+    // crossterm for the next key, and the loop and the API go on.
+    let _ = appearance::own_nonblocking_input();
+    if let Some(host) = start_up.host {
+        app.set_host(host);
+    }
+    app.wide = start_up.wide;
+    let early: Vec<_> = start_up
+        .typed
+        .iter()
+        .flat_map(|p| early_keys::keys(p))
+        .collect();
+    let (owed, cut_answer, query_size) = (start_up.owed, start_up.cut, start_up.size);
+    app.image_exporter = opts.image_exporter;
+    open_rest(
+        &mut app,
+        start,
+        opened.notice.as_ref(),
+        &start.config_warnings,
+    );
 
     // The binary installed them before it started the socket, so that a
     // signal never leaves the socket behind: this call only reads them.

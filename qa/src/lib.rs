@@ -452,6 +452,7 @@ impl Live {
         let log = Arc::clone(&steps);
         let join = std::thread::spawn(move || {
             let mut app = App::new(doc, save_path);
+            tiza_tui::open_without_terminal(&mut app, &tiza_tui::SessionStart::default());
             let server = tiza_tui::ipc::start(&sock).expect("socket");
             app.socket_path = Some(server.path.clone());
             // See [`Live::steps`]: noted on this thread after each call that
