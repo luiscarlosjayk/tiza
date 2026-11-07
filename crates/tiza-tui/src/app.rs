@@ -393,6 +393,20 @@ struct RequestState {
     /// `step_ready_at`, so with the effect gone and `step_ready_at` back the
     /// auto-advance would never start.
     effect: Option<EffectState>,
+    /// `talk.put` and `talk.insert` only: the list of the talk and the
+    /// bytes of the master, which they write.
+    talk_list: Option<TalkList>,
+}
+
+/// What `talk.put` and `talk.insert` change of a talk, for a panic after
+/// they wrote the master. The scenes keep no document: the change of
+/// scene reads the file again.
+struct TalkList {
+    master: PathBuf,
+    bytes: Option<Vec<u8>>,
+    entries: Vec<tiza_core::talk::SceneEntry>,
+    scenes: Vec<tiza_core::talk::TalkScene>,
+    index: usize,
 }
 
 /// The fields of [`crate::follow::Follow`] that a load writes, and the
@@ -409,7 +423,28 @@ struct FollowLoaded {
 }
 
 impl RequestState {
-    fn take(app: &App) -> RequestState {
+    fn take(app: &App, method: &str) -> RequestState {
+        let talk_list = matches!(method, "talk.put" | "talk.insert")
+            .then_some(app.talk.as_ref())
+            .flatten()
+            .map(|t| TalkList {
+                master: t.loaded.path.clone(),
+                bytes: std::fs::read(&t.loaded.path).ok(),
+                entries: t.loaded.talk.scenes.clone(),
+                scenes: t
+                    .loaded
+                    .scenes
+                    .iter()
+                    .map(|s| tiza_core::talk::TalkScene {
+                        position: s.position,
+                        name: s.name.clone(),
+                        path: s.path.clone(),
+                        skip: s.skip,
+                        doc: None,
+                    })
+                    .collect(),
+                index: t.index,
+            });
         RequestState {
             doc: app.doc.clone(),
             save_path: app.save_path.clone(),
@@ -462,6 +497,7 @@ impl RequestState {
             screen_via_history: app.screen_via_history,
             pause_embedded: app.pause_embedded.clone(),
             effect: app.effect.as_ref().map(EffectState::copy),
+            talk_list,
         }
     }
 
@@ -529,6 +565,17 @@ impl RequestState {
         app.pause = self.pause;
         app.follow_failed = self.follow_failed;
         app.clamp_cursor();
+        if let (Some(l), Some(t)) = (self.talk_list, app.talk.as_mut()) {
+            t.loaded.talk.scenes = l.entries;
+            t.loaded.scenes = l.scenes;
+            t.index = l.index;
+            if let Some(bytes) = l.bytes
+                && std::fs::read(&l.master).ok().as_ref() != Some(&bytes)
+                && let Err(e) = tiza_core::talk::write_master(&l.master, &bytes)
+            {
+                app.error(format!("the master is not put back: {e}"));
+            }
+        }
     }
 }
 
@@ -884,6 +931,13 @@ pub struct App {
     /// The talk this scene is in (a master `.tiza`), or `None` for a
     /// document opened alone.
     pub talk: Option<Box<TalkState>>,
+    /// How many times the talk went to another scene: the change of scene
+    /// replaces the whole App, so a request that panics after it has
+    /// nothing of the scene of before to put back.
+    scene_generation: u64,
+    /// The scene file that the `talk.insert` being answered wrote: a panic
+    /// after it removes the file again.
+    talk_created: Option<PathBuf>,
     /// In a talk, the step that the file of the scene holds: a save writes
     /// it, never the step on screen (the master keeps the position).
     disk_step: Option<u32>,
@@ -1003,6 +1057,8 @@ impl App {
             agent_notice: None,
             agent_deferred: Vec::new(),
             talk: None,
+            scene_generation: 0,
+            talk_created: None,
             disk_step: None,
             autosave_held: false,
         };
@@ -8682,18 +8738,29 @@ impl App {
         let mutating = !READ_ONLY_METHODS.contains(&method.as_str());
         // A read-only method changes nothing to put back (and `status` is
         // polled often: no copy of the document for it).
-        let before = mutating.then(|| RequestState::take(self));
+        let before = mutating.then(|| RequestState::take(self, &method));
         let revision = self.revision;
+        let generation = self.scene_generation;
+        self.talk_created = None;
         let was = ANSWERING.with(|a| a.replace(true));
         let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.answer(req)));
         ANSWERING.with(|a| a.set(was));
+        let created = self.talk_created.take();
         if let Ok(resp) = r {
             return resp;
         }
-        if let Some(before) = before {
+        // The talk went to another scene before the panic: the App is the
+        // one of the new scene, whole (the change of scene cannot fail once
+        // it replaces the App). Nothing goes back, and nothing is saved here,
+        // outside the guard: a save that did not happen waits as a change.
+        let crossed = self.scene_generation != generation;
+        if !crossed && let Some(before) = before {
             before.restore(self);
         }
-        if self.revision != revision {
+        if !crossed && let Some(path) = created {
+            let _ = std::fs::remove_file(path);
+        }
+        if !crossed && self.revision != revision {
             // The request saved or announced a change that is gone now:
             // a new revision, and the file as the document is again. With
             // no save (autosave off), nothing on disk changed: the document
@@ -8714,12 +8781,17 @@ impl App {
         let known = tiza_core::protocol::METHODS.iter().any(|m| m.0 == method);
         let what = if known { method.as_str() } else { "request" };
         let log = self.log_request_panic(what);
+        let scene = self
+            .talk
+            .as_ref()
+            .filter(|_| crossed)
+            .map(|t| talk::scene_label(t.scene()));
         let msg = format!(
             "{what}: a bug in Tiza stopped this request (a panic){}; please report it{}",
-            if mutating {
-                ", and nothing of it was kept"
-            } else {
-                ""
+            match &scene {
+                Some(s) => format!(" after the talk went to {s}; the scene on screen is {s}"),
+                None if mutating => ", and nothing of it was kept".into(),
+                None => String::new(),
             },
             match &log {
                 Some(p) => format!(" (details in {})", p.display()),

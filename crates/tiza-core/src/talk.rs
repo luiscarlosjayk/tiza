@@ -538,6 +538,13 @@ fn same_list(raw: &Value, scenes: &[SceneEntry]) -> Result<(), Error> {
     Ok(())
 }
 
+/// Writes `bytes` as the master at `path`, in one step (a temporary file
+/// and a rename): to put back a master that a request wrote before it
+/// failed.
+pub fn write_master(path: &Path, bytes: &[u8]) -> Result<(), Error> {
+    crate::fs::write_atomically(path, bytes)
+}
+
 /// [`Error::Conflict`] when the list of scenes of the master on disk is
 /// not `scenes` any more: what [`update_talk`] checks, before a change
 /// that writes another file first (`talk.insert` with a new scene).

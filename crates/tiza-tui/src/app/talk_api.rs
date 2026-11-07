@@ -198,6 +198,7 @@ impl App {
             talk::check_list_on_disk(&t.loaded.path, &t.loaded.talk.scenes)?;
         }
         talk::create_scene_file(&target, scene)?;
+        self.talk_created = Some(target.clone());
         match self.put_list(new, p.force) {
             Ok(removed) => self.talk_reply(removed, Some(p.file)),
             Err(e) => {

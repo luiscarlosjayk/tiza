@@ -541,7 +541,14 @@ impl App {
         crate::note_save_path(&next.save_path);
         talk.index = index;
         next.talk = Some(talk);
+        next.scene_generation = self.scene_generation + 1;
         *self = next;
+        // Test hook, only with the `test-hooks` feature: a panic when the
+        // App is the one of the next scene, before the save below.
+        #[cfg(feature = "test-hooks")]
+        if crate::test_hook("talk:panic-after") {
+            panic!("TIZA_TEST_HOOK after a scene change");
+        }
         // Changes that waited in memory, after `:autosave on`: saved now,
         // as autosave does.
         if self.autosave && self.dirty && self.save_error.is_none() {

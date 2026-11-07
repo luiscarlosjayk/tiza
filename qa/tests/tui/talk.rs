@@ -1006,19 +1006,60 @@ print("EXIT", s.finish(10), flush=True)
     );
 }
 
-/// A panic in `talk.goto` while the next scene opens (`talk:panic`), and
-/// a panic in `talk.put` (`request:talk.put`): the request gets an error,
-/// the scene on screen and the whole talk stay, the master keeps its
-/// bytes, and the socket answers.
+/// A panic in a request of a talk leaves the talk whole, and the reply
+/// says where the talk is:
+/// - in `talk.goto` while the next scene opens (`talk:panic`): the scene
+///   on screen stays;
+/// - in `talk.goto` after the talk went to the next scene, before its save
+///   (`talk:panic-after`): the next scene stays, with its own document,
+///   file and place, and `q` writes that place;
+/// - in `talk.put` and `talk.insert` after they wrote the master
+///   (`request:…`): the master gets its bytes back, the list in memory too,
+///   and the file that `talk.insert` wrote is gone.
 #[test]
-fn pty_a_panic_in_talk_goto_or_talk_put_leaves_the_talk_whole() {
+fn pty_a_panic_in_a_request_of_a_talk_leaves_the_talk_whole() {
     let reorder = json!({"scenes": ["borrow.tiza", "intro.tiza", {"file": "own.tiza", "name": "own"},
         {"file": "not-shown.tiza", "skip": true}, "loop.tiza", {"file": "again.tiza", "name": "borrow"}, "2024.tiza"]});
-    for (hook, method, params) in [
-        ("talk:panic", "talk.goto", json!({"scene": "loop"})),
-        ("request:talk.put", "talk.put", reorder),
+    let insert = json!({"file": "extra.tiza", "at": 2,
+        "scene": {"schema": 2, "code": ["z = 3"], "annotations": []}});
+    let goto = json!({"scene": "loop"});
+    // The hook, the request, and the scene on screen after it: its place,
+    // its step, a line of its code and its file.
+    for (hook, method, params, want, code, file) in [
+        (
+            "talk:panic",
+            "talk.goto",
+            &goto,
+            [3, 2],
+            "let d = c;",
+            "own.tiza",
+        ),
+        (
+            "talk:panic-after",
+            "talk.goto",
+            &goto,
+            [5, 0],
+            "x = 1",
+            "loop.tiza",
+        ),
+        (
+            "request:talk.put",
+            "talk.put",
+            &reorder,
+            [3, 2],
+            "let d = c;",
+            "own.tiza",
+        ),
+        (
+            "request:talk.insert",
+            "talk.insert",
+            &insert,
+            [3, 2],
+            "let d = c;",
+            "own.tiza",
+        ),
     ] {
-        let dir = talk_copy(&format!("talk-pty-panic-{method}"));
+        let dir = talk_copy(&format!("talk-pty-panic-{}", hook.replace(':', "-")));
         let steps = format!(
             r##"
 ok = ok and until([3, 2], "--scene own --step 2")
@@ -1026,7 +1067,10 @@ before = open("talk.tiza", "rb").read()
 rc, reply = api({method:?}, json.loads({params:?}))
 print("CALL", json.dumps([rc, reply]), flush=True)
 print("HERE", json.dumps(here()), flush=True)
+print("CODE", json.dumps(answer("code.get").get("text")), flush=True)
+print("FILE", os.path.basename(answer("status").get("document") or ""), flush=True)
 print("SAME", open("talk.tiza", "rb").read() == before, flush=True)
+print("NEW", os.path.exists("extra.tiza"), flush=True)
 talk = answer("talk.get")
 print("TALK", json.dumps([talk.get("position"), len(talk.get("scenes", []))]), flush=True)
 print("PATH", ok, flush=True)
@@ -1041,18 +1085,38 @@ print("EXIT", s.finish(10), flush=True)
             hook,
             &steps,
         );
-        assert!(out.contains("PATH True"), "{method}:\n{out}");
+        assert!(out.contains("PATH True"), "{hook}:\n{out}");
         let call: serde_json::Value = serde_json::from_str(text_after(&out, "CALL")).unwrap();
-        assert_ne!(call[0], 0, "{method} fails: {out}");
+        assert_ne!(call[0], 0, "{hook}: the request fails: {out}");
         let here: serde_json::Value = serde_json::from_str(text_after(&out, "HERE")).unwrap();
-        assert_eq!(here, json!([3, 2]), "{method}: {out}");
+        assert_eq!(here, json!(want), "{hook}: {out}");
+        let shown: serde_json::Value = serde_json::from_str(text_after(&out, "CODE")).unwrap();
+        assert!(shown.to_string().contains(code), "{hook}: {out}");
+        assert_eq!(text_after(&out, "FILE"), file, "{hook}: {out}");
         assert!(
             out.contains("SAME True"),
-            "{method}: the master changed: {out}"
+            "{hook}: the master changed: {out}"
+        );
+        assert!(
+            out.contains("NEW False"),
+            "{hook}: the new scene file stays: {out}"
         );
         let talk: serde_json::Value = serde_json::from_str(text_after(&out, "TALK")).unwrap();
-        assert_eq!(talk, json!([3, 7]), "{method}: {out}");
-        assert!(out.contains("EXIT 0\n"), "{method}: {out}");
+        assert_eq!(talk, json!([want[0], 7]), "{hook}: {out}");
+        assert!(out.contains("EXIT 0\n"), "{hook}: {out}");
+        let at = &master_json(&dir)["talk"]["at"];
+        assert_eq!(
+            at["position"], want[0],
+            "{hook}: q writes the place on screen: {out}"
+        );
+        assert_eq!(at["step"], want[1], "{hook}: {out}");
+        if hook == "talk:panic-after" {
+            let reply = call[1].as_str().unwrap_or_default();
+            assert!(
+                reply.contains("after the talk went to scene 5 (loop)"),
+                "{hook}: the reply names the scene on screen: {out}"
+            );
+        }
     }
 }
 
