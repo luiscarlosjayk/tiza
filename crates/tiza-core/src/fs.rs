@@ -1090,7 +1090,7 @@ pub const MIGRATIONS: &[(u32, Migration)] = &[(1, from_1_to_2)];
 /// keeps its line.
 pub type Migration = fn(&mut serde_json::Value) -> bool;
 
-/// Schema 2 only adds fields (`until` on every annotation): a schema-1
+/// Schema 2 only adds fields (`until` on every annotation, `center`): a schema-1
 /// document is a schema-2 document as it is.
 fn from_1_to_2(_: &mut serde_json::Value) -> bool {
     false

@@ -110,6 +110,9 @@ pub struct Layout {
     pub canvas: Canvas,
     pub rows: Vec<Row>,
     pub row_of_line: BTreeMap<u32, usize>,
+    /// The blank columns on the left of a document with `center`
+    /// ([`center_left`]): the gutter starts here. 0 without `center`.
+    pub left: usize,
     pub code_x: usize,
     /// When a code line is clipped: the layout width from which every code
     /// line fits, from the sum that decides the clip (line numbers, arrow
@@ -274,6 +277,12 @@ pub struct StableGeometry {
     /// The labels that go under their line, for each width the take was
     /// laid out at with this geometry.
     pinned: Arc<Mutex<BTreeMap<PinKey, Arc<Pinned>>>>,
+    /// Whether the take has a label: without one, nothing goes under its
+    /// line, and [`Pinned`] needs no layout.
+    labels: bool,
+    /// The rows of the take ([`StableGeometry::center_rows`]), for each
+    /// width.
+    rows: Arc<Mutex<BTreeMap<PinKey, usize>>>,
 }
 
 impl PartialEq for StableGeometry {
@@ -315,11 +324,16 @@ static PINNED: Mutex<Vec<PinEntry>> = Mutex::new(Vec::new());
 /// A take's hash and options, and its [`Pinned`].
 type PinEntry = ((u64, PinKey), Arc<Pinned>);
 
+/// The rows of a take ([`StableGeometry::center_rows`]), by the same key as
+/// [`PINNED`]: each tick of a typing computes the geometry again, and finds
+/// them here. The last 16 are kept.
+static ROWS: Mutex<Vec<((u64, PinKey), usize)>> = Mutex::new(Vec::new());
+
 impl StableGeometry {
     /// The labels of the take that go under their line at `opts`'s width:
     /// the take is laid out once at each step where something changes.
     fn pinned(&self, theme: &Theme, opts: &LayoutOptions) -> Arc<Pinned> {
-        let Some(take) = &self.take else {
+        let Some(take) = self.take.as_ref().filter(|_| self.labels) else {
             return Arc::default();
         };
         let key: PinKey = (
@@ -374,6 +388,79 @@ impl StableGeometry {
     }
 }
 
+impl StableGeometry {
+    /// The rows of the take at `opts`'s width: the most that a step where
+    /// something changes draws, with the labels that go under their line.
+    /// The take shows no step live, so the code being typed does not count,
+    /// and the options are those of a take (stable, no focus, no pointer, no
+    /// typing): one number for every frame of a document with `center`. 0
+    /// for a geometry with no take (a document without `center` or labels).
+    pub fn center_rows(&self, theme: &Theme, opts: &LayoutOptions) -> usize {
+        let Some(take) = &self.take else {
+            return 0;
+        };
+        let key: PinKey = (
+            opts.width,
+            opts.margin_cap,
+            opts.line_numbers,
+            opts.tab_width,
+        );
+        if let Some(r) = self.rows.lock().ok().and_then(|m| m.get(&key).copied()) {
+            return r;
+        }
+        let global = (self.take_hash, key);
+        let cached = ROWS
+            .lock()
+            .ok()
+            .and_then(|c| c.iter().find(|(k, _)| *k == global).map(|(_, r)| *r));
+        let rows = cached.unwrap_or_else(|| {
+            let base = LayoutOptions {
+                focus: None,
+                pointer: None,
+                typing: false,
+                stable: true,
+                ..*opts
+            };
+            let pinned = self.pinned(theme, &base);
+            let rows = take
+                .change_steps(take.max_step())
+                .into_iter()
+                .map(|step| {
+                    let o = LayoutOptions { step, ..base };
+                    let paint = Paint {
+                        code: false,
+                        spare: None,
+                        typed: None,
+                    };
+                    layout_core(
+                        take,
+                        theme,
+                        &o,
+                        Some(self),
+                        paint,
+                        false,
+                        Some(step),
+                        &pinned,
+                    )
+                    .rows
+                    .len()
+                })
+                .max()
+                .unwrap_or(0);
+            if let Ok(mut c) = ROWS.lock() {
+                c.retain(|(k, _)| *k != global);
+                c.insert(0, (global, rows));
+                c.truncate(16);
+            }
+            rows
+        });
+        if let Ok(mut m) = self.rows.lock() {
+            m.insert(key, rows);
+        }
+        rows
+    }
+}
+
 /// Sizes the lanes, the box band and the code column for every step of
 /// `doc` at once (moves included): what `layout` uses when
 /// `opts.stable` is set. Public so a recorder can check that its frames
@@ -419,6 +506,13 @@ pub fn stable_geometry(doc: &Document, opts: &LayoutOptions) -> StableGeometry {
                     .max()
                     .unwrap_or(0),
             );
+            // With `center`, the gutter too: a step that types its tenth
+            // line has two digits from its first frame, so the code does
+            // not move.
+            if opts.line_numbers && doc.center {
+                let last = d.source.first_line + (full.len() as u32).saturating_sub(1);
+                g.num_w = g.num_w.max(last.max(1).to_string().len() + 2);
+            }
         }
         if opts.line_numbers {
             g.num_w = g.num_w.max(d.last_line().to_string().len() + 2);
@@ -458,8 +552,9 @@ pub fn stable_geometry(doc: &Document, opts: &LayoutOptions) -> StableGeometry {
         .collect();
     let (lanes, count) = assign_lanes(&mut spans);
     g.lane_count = count;
-    // A take with no label has nothing to put under its line.
-    if doc.annotations.iter().any(|a| has_label(&a.shape)) {
+    // A take with no label has nothing to put under its line; a take with
+    // `center` needs its rows ([`StableGeometry::center_rows`]).
+    if doc.center || doc.annotations.iter().any(|a| has_label(&a.shape)) {
         use std::hash::{Hash, Hasher};
         let mut take = doc.clone();
         if !take.moves.is_empty() {
@@ -482,11 +577,35 @@ pub fn stable_geometry(doc: &Document, opts: &LayoutOptions) -> StableGeometry {
         }
         g.take_hash = h.finish();
         g.take = Some(Arc::new(take));
+        g.labels = doc.annotations.iter().any(|a| has_label(&a.shape));
     }
     for (i, (id, ..)) in arrow_span.into_iter().enumerate() {
         g.lane_of.insert(id, lanes[i]);
     }
     g
+}
+
+/// The blank columns on the left of a document with `center` at `width`:
+/// the block of the take (the gutter, the arrow lanes, the box rails and
+/// the widest code line of every step, spaces included) goes to the middle.
+/// The text itself is centered, and the rails of a box, which are at least
+/// 10 columns apart, never go off the right side. A block wider than
+/// `width` gets 0: it stays at the left, as without `center`.
+pub fn center_left(g: &StableGeometry, width: usize) -> usize {
+    let width = width.max(MIN_WIDTH);
+    let sides = g.num_w + 2 * g.lane_count + g.box_depth + 2 + 1 + g.box_depth + 1;
+    let block = sides + g.code_full_w;
+    let rails = sides + g.code_full_w.max(10);
+    match width.checked_sub(rails) {
+        Some(room) => ((width - block) / 2).min(room),
+        None => 0,
+    }
+}
+
+/// The columns from which [`center_left`] centers the block of the take
+/// (it is 0 below them): the block with the rails of its boxes.
+pub fn center_columns(g: &StableGeometry) -> usize {
+    g.num_w + 2 * g.lane_count + 2 * g.box_depth + 4 + g.code_full_w.max(10)
 }
 
 /// Glyph of the underline emphasis, on the virtual row under the code:
@@ -806,7 +925,9 @@ fn layout_run(
 ) -> Layout {
     let owned;
     let geometry = match geometry {
-        None if opts.stable => {
+        // `center` reads the geometry of the take also on the authoring
+        // screen, which is not stable: one offset for every step.
+        None if opts.stable || doc.center => {
             owned = stable_geometry(doc, opts);
             Some(&owned)
         }
@@ -852,6 +973,10 @@ fn layout_core(
         &projected
     };
     let arrow_slots = arrow_slots(full, theme, opts, shown_file.as_ref());
+    let left = match geometry {
+        Some(g) if full.center => center_left(g, opts.width),
+        _ => 0,
+    };
     // An empty label is no label: no lone `·`, no `warning:` with nothing
     // after it, no gap in a border, and it is not a second label of its line.
     let filled;
@@ -876,6 +1001,7 @@ fn layout_core(
         spot_step,
         pinned: pinned.ids.clone(),
         arrow_slots,
+        left,
     };
     // Whether a margin block fits, and which rows it covers, is only known
     // once the rows exist, so the rows are planned again while a plan finds
@@ -1064,6 +1190,9 @@ struct Shared {
     /// The place in the automatic palette of each arrow without a color
     /// ([`arrow_slots`]).
     arrow_slots: std::collections::HashMap<String, usize>,
+    /// The blank columns on the left ([`center_left`]): one value for every
+    /// pass of the layout, `Pinned` included.
+    left: usize,
 }
 
 /// The place in the automatic palette of each arrow without a color: its
@@ -1390,7 +1519,7 @@ fn layout_pass(
     }
     .max(stable.as_ref().map_or(0, |g| g.lane_count));
     let arrow_w = lane_bound * 2;
-    let code_x_est = num_w + arrow_w + box_depth + 2;
+    let code_x_est = shared.left + num_w + arrow_w + box_depth + 2;
     let code_w = code_full_w
         .min(width.saturating_sub(code_x_est + box_depth + 1))
         .max(10);
@@ -1818,7 +1947,7 @@ fn layout_pass(
     let arrow_w = lane_count * 2;
 
     // ---- final positions ----
-    let arrow_x0 = num_w;
+    let arrow_x0 = shared.left + num_w;
     let box_x0 = arrow_x0 + arrow_w;
     let code_x = box_x0 + box_depth + 2;
     let code_w = code_full_w
@@ -2277,7 +2406,7 @@ fn layout_pass(
             };
             if opts.line_numbers {
                 let n = format!("{:>w$}", line, w = num_w - 1);
-                canvas.put_str(0, y, &n, base.fg(theme.muted));
+                canvas.put_str(shared.left, y, &n, base.fg(theme.muted));
             }
             // A view with no loaded lines (a linked file a caller did not load)
             // draws an empty row, never an index out of bounds.
@@ -3057,6 +3186,7 @@ fn layout_pass(
             rows,
             code_w,
             row_of_line,
+            left: shared.left,
             code_x,
             code_needs: (code_full_w > code_w).then_some(code_x + code_full_w + box_depth + 1),
             labels_in_margin,

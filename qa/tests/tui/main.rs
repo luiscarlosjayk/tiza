@@ -10,6 +10,7 @@ mod bar_keeps_messages;
 mod bar_paths;
 mod bar_warnings;
 mod box_border_rows;
+mod center;
 mod close_instance;
 mod closed_terminal;
 mod color_query_after_resize;

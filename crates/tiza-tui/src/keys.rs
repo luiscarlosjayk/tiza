@@ -461,6 +461,10 @@ pub const HELP: &[(Section, &[Row])] = &[
                 desc: "Show or hide the line numbers.",
             },
             Command {
+                syntax: ":center on|off",
+                desc: "Put the code in the middle of the screen.",
+            },
+            Command {
                 syntax: ":pad {V} {H}|default",
                 desc: "Set the blank cells around the drawing.",
             },

@@ -913,6 +913,10 @@
                 },
                 "type": "array"
               },
+              "center": {
+                "description": "The code goes to the middle of the code area: one offset for all the\nsteps, from the widest and tallest step. Content that does not fit\nstays at the left and the top, as without `center`.",
+                "type": "boolean"
+              },
               "code": {
                 "$ref": "#/$defs/CodeSource",
                 "description": "How the code is stored in the file: embedded (array of lines) or a\nreference to a file (`{\"file\": \"src/main.rs\", \"lines\": \"12-48\"}`)."
@@ -977,7 +981,7 @@
                 ]
               },
               "schema": {
-                "description": "The version of the format: 2 when the document has an `until` on an\nannotation that is not a spotlight, else 1.",
+                "description": "The version of the format: 2 when the document has an `until` on an\nannotation that is not a spotlight, or `center`, else 1.",
                 "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
@@ -3872,6 +3876,10 @@
                 },
                 "type": "array"
               },
+              "center": {
+                "description": "The code goes to the middle of the code area: one offset for all the\nsteps, from the widest and tallest step. Content that does not fit\nstays at the left and the top, as without `center`.",
+                "type": "boolean"
+              },
               "code": {
                 "$ref": "#/$defs/CodeSource",
                 "description": "How the code is stored in the file: embedded (array of lines) or a\nreference to a file (`{\"file\": \"src/main.rs\", \"lines\": \"12-48\"}`)."
@@ -3936,7 +3944,7 @@
                 ]
               },
               "schema": {
-                "description": "The version of the format: 2 when the document has an `until` on an\nannotation that is not a spotlight, else 1.",
+                "description": "The version of the format: 2 when the document has an `until` on an\nannotation that is not a spotlight, or `center`, else 1.",
                 "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
@@ -4780,7 +4788,7 @@
       }
     },
     {
-      "description": "Partial change: step, theme, padding, title, steps (the whole named-steps list), loop, numbers, margin, styles (merged by name) and annotations merged by id (last write wins; `{\"id\": …, \"deleted\": true}` removes one); unknown keys are rejected. An annotation that exists keeps the `step` it is sent with, and without `step` or `file` it keeps its step or its file. `file: null` is the main file for an id that exists, and the file shown at its step for a new id",
+      "description": "Partial change: step, theme, padding, title, steps (the whole named-steps list), loop, numbers, margin, center, styles (merged by name) and annotations merged by id (last write wins; `{\"id\": …, \"deleted\": true}` removes one); unknown keys are rejected. An annotation that exists keeps the `step` it is sent with, and without `step` or `file` it keeps its step or its file. `file: null` is the main file for an id that exists, and the file shown at its step for a new id",
       "method": "scene.patch",
       "params": {
         "$defs": {
@@ -4875,6 +4883,13 @@
             "items": true,
             "type": [
               "array",
+              "null"
+            ]
+          },
+          "center": {
+            "description": "`center` on or off: the code goes to the middle of the screen\n(saved in the document).",
+            "type": [
+              "boolean",
               "null"
             ]
           },
@@ -6678,7 +6693,7 @@
             "description": "One problem `check` found.",
             "properties": {
               "code": {
-                "description": "Stable kind, for scripts: `schema`, `code`, `link`, `duplicate_id`,\n`unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,\n`steps`, `unanchored`, `outside_window` (outside the `code.link`\nwindow of a step that shows its file), `not_shown` (its own step\nshows another file), `clipped_label`, `clipped_code` (code lines\ncut with `…`, one finding for each file and set of cut lines),\n`empty_step`, `effect` (the enter effect `draw` on a shape with no\nstroke, or an effect that this version does not know), `until` (an `until` before its `step`, an error; a spotlight\nwhose `ids` names an annotation that has left, a warning), and\n`stale` (a live instance's move the code changed under).",
+                "description": "Stable kind, for scripts: `schema`, `code`, `link`, `duplicate_id`,\n`unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,\n`steps`, `unanchored`, `outside_window` (outside the `code.link`\nwindow of a step that shows its file), `not_shown` (its own step\nshows another file), `clipped_label`, `clipped_code` (code lines\ncut with `…`, one finding for each file and set of cut lines),\n`empty_step`, `effect` (the enter effect `draw` on a shape with no\nstroke, or an effect that this version does not know), `until` (an `until` before its `step`, an error; a spotlight\nwhose `ids` names an annotation that has left, a warning), `center`\n(a document with `center` that is too wide to be centered at the\nwidth of the check), and `stale` (a live instance's move the code\nchanged under).",
                 "type": "string"
               },
               "file": {

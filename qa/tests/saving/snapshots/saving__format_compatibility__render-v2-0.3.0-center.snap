@@ -1,0 +1,11 @@
+---
+source: qa/tests/saving/format_compatibility.rs
+expression: out
+---
+                        ╭─ a slice in, a slice out ──────────────────────────╮
+                      1 │  fn first_word(s: &str) -> &str {                  │
+                      2 │      let end = s.find(' ').unwrap_or(s.len());     │
+                        │  ┆ the first space, or the end                     │
+                      3 │      &s[..end] // the bytes before the first space │ ┆ a part of s, with
+                      4 │  }                                                 │   no copy
+                        ╰────────────────────────────────────────────────────╯

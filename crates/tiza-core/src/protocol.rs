@@ -867,6 +867,10 @@ pub struct PatchParams {
     /// `loop` on or off.
     #[serde(default, rename = "loop", skip_serializing_if = "Option::is_none")]
     pub looping: Option<bool>,
+    /// `center` on or off: the code goes to the middle of the screen
+    /// (saved in the document).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub center: Option<bool>,
 }
 
 /// Distinguishes an absent field (`None`) from an explicit `null`
@@ -1255,7 +1259,7 @@ pub const METHODS: &[(&str, &str)] = &[
     ),
     (
         "scene.patch",
-        "Partial change: step, theme, padding, title, steps (the whole named-steps list), loop, numbers, margin, styles (merged by name) and annotations merged by id (last write wins; `{\"id\": …, \"deleted\": true}` removes one); unknown keys are rejected. An annotation that exists keeps the `step` it is sent with, and without `step` or `file` it keeps its step or its file. `file: null` is the main file for an id that exists, and the file shown at its step for a new id",
+        "Partial change: step, theme, padding, title, steps (the whole named-steps list), loop, numbers, margin, center, styles (merged by name) and annotations merged by id (last write wins; `{\"id\": …, \"deleted\": true}` removes one); unknown keys are rejected. An annotation that exists keeps the `step` it is sent with, and without `step` or `file` it keeps its step or its file. `file: null` is the main file for an id that exists, and the file shown at its step for a new id",
     ),
     (
         "move.add",

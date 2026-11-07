@@ -1259,6 +1259,10 @@
       },
       "type": "array"
     },
+    "center": {
+      "description": "The code goes to the middle of the code area: one offset for all the\nsteps, from the widest and tallest step. Content that does not fit\nstays at the left and the top, as without `center`.",
+      "type": "boolean"
+    },
     "code": {
       "$ref": "#/$defs/CodeSource",
       "description": "How the code is stored in the file: embedded (array of lines) or a\nreference to a file (`{\"file\": \"src/main.rs\", \"lines\": \"12-48\"}`)."
@@ -1323,7 +1327,7 @@
       ]
     },
     "schema": {
-      "description": "The version of the format: 2 when the document has an `until` on an\nannotation that is not a spotlight, else 1.",
+      "description": "The version of the format: 2 when the document has an `until` on an\nannotation that is not a spotlight, or `center`, else 1.",
       "format": "uint32",
       "minimum": 0,
       "type": "integer"

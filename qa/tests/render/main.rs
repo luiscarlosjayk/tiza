@@ -7,6 +7,7 @@ mod border_styles;
 mod box_border_rows;
 mod box_title_row;
 mod callouts;
+mod center;
 mod chunked_highlighting;
 mod config_defaults;
 mod config_file;

@@ -101,7 +101,7 @@ fn selection_use(name: &str) -> Option<SelectionUse> {
         | "spot" | "spotlight" | "callout" | "co" | "set" | "follow" | "until" | "clear"
         | "del" | "delete" | "rm" | "color" | "col" | "label" | "step" | "s" | "next" | "goto"
         | "prev" | "next!" | "prev!" | "scene" | "scene!" | "focus" | "f" | "theme" | "t"
-        | "present" | "p" | "lang" | "title" | "margin" | "numbers" | "nums" | "pad"
+        | "present" | "p" | "lang" | "title" | "margin" | "numbers" | "nums" | "center" | "pad"
         | "padding" | "layout" | "autosave" | "scroll" => Ignores,
         _ => return None,
     })
@@ -1414,9 +1414,22 @@ impl App {
                 (tiza_core::layout::layout_with(doc, theme, opts, g), None)
             }
         };
-        if !opts.stable {
+        // `center` reads the take's geometry also on the authoring screen,
+        // which is not stable: one offset for every step.
+        if !opts.stable && !doc.center {
             return run(None);
         }
+        let g = self.take_geometry(doc, opts);
+        run(Some(&g))
+    }
+
+    /// The take's geometry of `doc` (the open document) with `opts`,
+    /// computed once per change ([`App::geometry`]).
+    fn take_geometry(
+        &self,
+        doc: &Document,
+        opts: &LayoutOptions,
+    ) -> std::cell::Ref<'_, tiza_core::layout::StableGeometry> {
         let key = GeometryKey {
             revision: self.revision,
             moves: doc.moves.len(),
@@ -1436,8 +1449,83 @@ impl App {
             let g = tiza_core::layout::stable_geometry(doc, opts);
             *self.geometry.borrow_mut() = Some((key, g));
         }
-        let cache = self.geometry.borrow();
-        run(cache.as_ref().map(|(_, g)| g))
+        std::cell::Ref::map(self.geometry.borrow(), |c| {
+            &c.as_ref().expect("the geometry was just computed").1
+        })
+    }
+
+    /// Why a document with `center` is not centered on this screen: its
+    /// content is wider than the code area. `None` when it fits, or
+    /// without `center`.
+    fn center_room(&self) -> Option<String> {
+        if !self.doc.center {
+            return None;
+        }
+        let width = self.screen_width();
+        let cols = {
+            let opts = self.layout_options(width);
+            tiza_core::layout::center_columns(&self.take_geometry(&self.doc, &opts))
+        };
+        (width.max(tiza_core::layout::MIN_WIDTH) < cols).then(|| {
+            format!(
+                "; the content is {cols} columns wide, so it is centered from width {} (it stays at the left here)",
+                self.columns_for(cols)
+            )
+        })
+    }
+
+    /// Where the code goes in a terminal of `area`: inside the padding, and
+    /// with `center`, `dy` rows lower ([`App::center_rows_down`]). The one
+    /// count of the height of the code: `ui::draw` draws into it, and
+    /// [`App::screen_height`] is its height.
+    pub fn code_area(&self, area: ratatui::layout::Rect) -> ratatui::layout::Rect {
+        let status_h = self.status_rows();
+        let (pad_v, pad_h) = crate::ui::clamp_padding(
+            self.effective_padding(),
+            (area.width, area.height),
+            status_h,
+        );
+        let mut rect = ratatui::layout::Rect {
+            x: area.x + pad_h,
+            y: area.y + pad_v,
+            width: area.width.saturating_sub(pad_h * 2),
+            height: area
+                .height
+                .saturating_sub(status_h)
+                .saturating_sub(pad_v * 2),
+        };
+        let dy = self.center_rows_down(area, rect.width);
+        rect.y += dy;
+        rect.height = rect.height.saturating_sub(dy);
+        rect
+    }
+
+    /// The rows a document with `center` goes down in a terminal of `area`
+    /// whose code is `width` columns: half of what the rows of the take
+    /// leave of a fixed height, which keeps the row at the bottom (the
+    /// status bar, or the step counter and the chip of presentation mode)
+    /// also when nothing shows there, so the code does not move when the
+    /// counter comes or goes. 0 without `center`, or when the take is
+    /// taller.
+    fn center_rows_down(&self, area: ratatui::layout::Rect, width: u16) -> u16 {
+        if !self.doc.center || area.width == 0 || area.height == 0 {
+            return 0;
+        }
+        let (pad_v, _) =
+            crate::ui::clamp_padding(self.effective_padding(), (area.width, area.height), 1);
+        // The row at the bottom: the bar in normal mode; in presentation
+        // mode, the counter's row, which a padding at the bottom holds.
+        let bottom = if self.present {
+            u16::from(pad_v == 0)
+        } else {
+            1
+        };
+        let fixed = usize::from(area.height.saturating_sub(bottom).saturating_sub(pad_v * 2));
+        let opts = self.layout_options(usize::from(width));
+        let rows = self
+            .take_geometry(&self.doc, &opts)
+            .center_rows(&self.theme, &opts);
+        u16::try_from(fixed.saturating_sub(rows) / 2).unwrap_or(0)
     }
 
     /// The width the screen lays the code out at: the terminal of the last
@@ -2276,9 +2364,10 @@ impl App {
         if cols == 0 || rows == 0 {
             return 0;
         }
-        let status_h = self.status_rows();
-        let (pad_v, _) = crate::ui::clamp_padding(self.effective_padding(), (cols, rows), status_h);
-        usize::from(rows.saturating_sub(status_h).saturating_sub(pad_v * 2))
+        usize::from(
+            self.code_area(ratatui::layout::Rect::new(0, 0, cols, rows))
+                .height,
+        )
     }
 
     /// How far `J` and `K` go: half the rows of the code on screen
@@ -3658,6 +3747,9 @@ impl App {
         if let Some(mut steps) = p.steps {
             tiza_core::steps::normalize(&mut steps)?;
             d.steps = steps;
+        }
+        if let Some(c) = p.center {
+            d.center = c;
         }
         if let Some(l) = p.looping {
             d.looping = l;
@@ -6519,6 +6611,7 @@ impl App {
         "note",
         "pad",
         "numbers",
+        "center",
         "margin",
         "present",
         "prev",
@@ -7348,6 +7441,34 @@ impl App {
                     }
                     other => Err(Error::Invalid(format!(
                         "numbers {other}: use `:numbers on` or `:numbers off`"
+                    ))),
+                },
+                "center" => match rest.trim() {
+                    "" => Ok(format!(
+                        "center {}{}",
+                        if self.doc.center { "on" } else { "off" },
+                        self.center_room().unwrap_or_default()
+                    )),
+                    "on" | "yes" | "off" | "no" => {
+                        let on = matches!(rest.trim(), "on" | "yes");
+                        if self.doc.center == on {
+                            return Ok(format!("center already {}", if on { "on" } else { "off" }));
+                        }
+                        self.history.record(&self.doc, "center");
+                        self.doc.center = on;
+                        self.touch();
+                        Ok(if on {
+                            format!(
+                                "center on (saved in the document){}",
+                                self.center_room().unwrap_or_default()
+                            )
+                        } else {
+                            "center off: the code starts at the top left (saved in the document)"
+                                .into()
+                        })
+                    }
+                    other => Err(Error::Invalid(format!(
+                        "center {other}: use `:center on` or `:center off`"
                     ))),
                 },
                 "pad" | "padding" => {

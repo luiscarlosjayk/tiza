@@ -39,7 +39,7 @@ Two examples show moves and views:
 
 The version of the format, `1` or `2`.
 
-- Tiza writes `2` only when the file uses a field of version 2: an `until` on an annotation that is not a spotlight, or `talk` (a [master](#talk)). A version that reads only `1` then says that the file is of a newer version.
+- Tiza writes `2` only when the file uses a field of version 2: an `until` on an annotation that is not a spotlight, `center`, or `talk` (a [master](#talk)). A version that reads only `1` then says that the file is of a newer version.
 - Else Tiza writes `1`, so that Tiza 0.2.1 and earlier versions can open the file.
 - A version that reads only `1` does not open a file with `2`. Thus it does not show a box, an arrow or a note after its `until` by mistake.
 
@@ -178,6 +178,20 @@ Integer. No default.
 When `false`, Tiza does not show line numbers.
 
 `true` | `false`. Default: `numbers` of the config file, else `true`.
+
+</dd>
+<dt><code>center</code></dt>
+<dd>
+
+When `true`, Tiza puts the code in the middle of the code area. The code area is the screen less the padding.
+
+- Tiza puts the code of all the steps at the same place. It uses the widest step and the step with the most rows, with the line numbers, the arrows and the boxes. Spaces at the start and at the end of a line count. Thus the code does not move from one step to the next, or while a step types.
+- Code that is wider than the code area stays at the left, as without `center`. `tiza check` gives the warning `center`. Code that has more rows than the code area starts at the top.
+- Normal mode and presentation mode put the code at the same column. The bottom row is for the status bar in normal mode, and for the step counter in presentation mode, also when the counter does not show.
+- An export moves the code across the `--width`, but not down: an image has no screen height. This is also true for a GIF, a video and a `.cast` recording. A `.tape` recording shows the TUI, so the code goes down as on the screen.
+- Tiza 0.2.1 and earlier versions do not open a document with `center`, because it has the schema `2`.
+
+`true` | `false`. Default: `false`.
 
 </dd>
 </dl>

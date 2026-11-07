@@ -2,6 +2,7 @@
 //! the `.tiza` format and its compatibility.
 
 mod autosave_and_failures;
+mod center;
 mod document_robustness;
 mod examples_stay_untouched;
 mod format_compatibility;

@@ -127,18 +127,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     let base = Style::default().fg(rgb(th.fg)).bg(rgb(th.bg));
     frame.buffer_mut().set_style(area, base);
 
-    let status_h = app.status_rows();
-    let (pad_v, pad_h) =
-        clamp_padding(app.effective_padding(), (area.width, area.height), status_h);
-    let canvas_area = Rect {
-        x: area.x + pad_h,
-        y: area.y + pad_v,
-        width: area.width.saturating_sub(pad_h * 2),
-        height: area
-            .height
-            .saturating_sub(status_h)
-            .saturating_sub(pad_v * 2),
-    };
+    let canvas_area = app.code_area(area);
 
     // A motion the pointer has not seen yet (mouse, agent): follow it.
     app.sync_pointer();
@@ -364,7 +353,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
                 && srow < end
             {
                 frame.buffer_mut().set_string(
-                    canvas_area.x,
+                    canvas_area.x + layout.left as u16,
                     canvas_area.y + (srow - app.scroll) as u16,
                     "▸",
                     Style::default()
@@ -375,10 +364,14 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
             }
             // The cursor line: its number in the accent color, bold, with no
             // glyph of its own so the gutter keeps every digit.
-            let gutter_w = (layout.code_x as u16).min(canvas_area.width);
+            // With `center`, the gutter starts `left` columns in.
+            let left = (layout.left as u16).min(canvas_area.width);
+            let gutter_w = (layout.code_x as u16)
+                .min(canvas_area.width)
+                .saturating_sub(left);
             frame.buffer_mut().set_style(
                 Rect {
-                    x: canvas_area.x,
+                    x: canvas_area.x + left,
                     y,
                     width: gutter_w,
                     height: 1,

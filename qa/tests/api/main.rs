@@ -3,6 +3,7 @@
 
 mod annotation_effect;
 mod annotation_until;
+mod center;
 mod clear_and_put_validation;
 mod error_values;
 mod file_not_shown;

@@ -48,8 +48,10 @@ pub struct Finding {
     /// cut with `…`, one finding for each file and set of cut lines),
     /// `empty_step`, `effect` (the enter effect `draw` on a shape with no
     /// stroke, or an effect that this version does not know), `until` (an `until` before its `step`, an error; a spotlight
-    /// whose `ids` names an annotation that has left, a warning), and
-    /// `stale` (a live instance's move the code changed under).
+    /// whose `ids` names an annotation that has left, a warning), `center`
+    /// (a document with `center` that is too wide to be centered at the
+    /// width of the check), and `stale` (a live instance's move the code
+    /// changed under).
     pub code: &'static str,
     /// The annotation id (`a3`) or the move (`move #2`, 1-based as in
     /// `move.list`) the finding is about.
@@ -1984,6 +1986,18 @@ fn check_loaded(
             .line(lines.first().copied()),
         );
     }
+    // ---- a document with `center` that is too wide to be centered ----
+    let cols = crate::layout::center_columns(&take.geometry);
+    if doc.center && width.max(MIN_WIDTH) < cols {
+        out.push(Finding::new(
+            Level::Warning,
+            "center",
+            format!(
+                "content is centered from width {}: it is {cols} columns wide, and the code has {width} columns here, so it stays at the left",
+                frame.from(cols)
+            ),
+        ));
+    }
     widest_clipped(take, theme).map_or(Some(MIN_WIDTH), clean_above)
 }
 
@@ -2435,16 +2449,26 @@ fn take_saturation(take: &Take) -> usize {
             .max(blocks + 14)
             .max(blocks + 3 + longest);
     }
-    let open = margin_x + room + 2;
-    let capped = doc
+    // The margin the take needs: `room` and its gap, or the cap and one.
+    let need = doc
         .margin
-        .map_or(open, |cap| open.min(margin_x + usize::from(cap) + 1));
-    capped.clamp(MIN_WIDTH, MAX_WIDTH)
+        .map_or(room + 2, |cap| (room + 2).min(usize::from(cap) + 1));
+    if !doc.center {
+        return (margin_x + need).clamp(MIN_WIDTH, MAX_WIDTH);
+    }
+    // With `center`, the blank columns on the left take half of what the
+    // block leaves: the first width at which the margin on the right has
+    // `need` cells. What is left of a width never gets smaller at a wider
+    // one.
+    (margin_x + need..=MAX_WIDTH)
+        .find(|&w| w - crate::layout::center_left(g, w) >= margin_x + need)
+        .unwrap_or(MAX_WIDTH)
+        .clamp(MIN_WIDTH, MAX_WIDTH)
 }
 
 /// Two layouts of one step at two widths draw the same take: the same rows
 /// and labels, the same cells, and only blank columns on the right of the
-/// wider one.
+/// wider one, and, with `center`, on its left ([`crate::layout::Layout::left`]).
 fn same_take(a: &crate::layout::Layout, b: &crate::layout::Layout, theme: &Theme) -> bool {
     let (narrow, wide) = if a.canvas.width <= b.canvas.width {
         (a, b)
@@ -2455,17 +2479,22 @@ fn same_take(a: &crate::layout::Layout, b: &crate::layout::Layout, theme: &Theme
         style: theme.base(),
         ..Default::default()
     };
+    let Some(shift) = wide.left.checked_sub(narrow.left) else {
+        return false;
+    };
     narrow.rows == wide.rows
         && narrow.row_of_line == wide.row_of_line
-        && narrow.code_x == wide.code_x
+        && narrow.code_x - narrow.left == wide.code_x - wide.left
         && narrow.code_needs == wide.code_needs
         && narrow.labels_in_margin == wide.labels_in_margin
         && narrow.clipped_labels == wide.clipped_labels
         && narrow.canvas.height == wide.canvas.height
         && (0..wide.canvas.height).all(|y| {
-            (0..wide.canvas.width).all(|x| match narrow.canvas.get(x, y) {
-                Some(c) => wide.canvas.get(x, y) == Some(c),
-                None => wide.canvas.get(x, y) == Some(&blank),
+            (0..wide.canvas.width).all(|x| {
+                match x.checked_sub(shift).and_then(|n| narrow.canvas.get(n, y)) {
+                    Some(c) => wide.canvas.get(x, y) == Some(c),
+                    None => wide.canvas.get(x, y) == Some(&blank),
+                }
             })
         })
 }

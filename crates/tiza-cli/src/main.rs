@@ -393,7 +393,7 @@ enum SceneCmd {
         as_code: bool,
     },
     /// Partial change: JSON (`-` = stdin, `@file` = a file) with step, theme,
-    /// padding, title, steps, loop, numbers, margin, styles and/or
+    /// padding, title, steps, loop, numbers, margin, center, styles and/or
     /// annotations merged by id
     Patch { json: String },
 }

@@ -131,13 +131,24 @@ fn widest_clipping(doc: &tiza_core::Document) -> Option<usize> {
 }
 
 /// Two layouts draw the same take: the same rows, labels and text, the
-/// wider one only blank on the right.
+/// wider one only blank on the right, and with `center` also on the left
+/// (its `left` columns).
 fn same_take(a: &tiza_core::layout::Layout, b: &tiza_core::layout::Layout) -> Result<(), String> {
     let text = |l: &tiza_core::layout::Layout| {
         l.canvas
             .to_plain_text()
             .lines()
-            .map(|r| r.trim_end().to_string())
+            .map(|r| {
+                if r.chars().take(l.left).all(|c| c == ' ') {
+                    r.chars()
+                        .skip(l.left)
+                        .collect::<String>()
+                        .trim_end()
+                        .to_string()
+                } else {
+                    format!("(not blank in the {} columns on the left) {r}", l.left)
+                }
+            })
             .collect::<Vec<_>>()
     };
     if a.rows != b.rows {
@@ -149,7 +160,8 @@ fn same_take(a: &tiza_core::layout::Layout, b: &tiza_core::layout::Layout) -> Re
             a.clipped_labels, b.clipped_labels
         ));
     }
-    if (a.labels_in_margin, a.code_needs, a.code_x) != (b.labels_in_margin, b.code_needs, b.code_x)
+    if (a.labels_in_margin, a.code_needs, a.code_x - a.left)
+        != (b.labels_in_margin, b.code_needs, b.code_x - b.left)
     {
         return Err("margin, code or code column differ".into());
     }

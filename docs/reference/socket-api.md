@@ -189,7 +189,7 @@ The arguments of the MCP tools are in [Arguments](mcp-tools.md#arguments). The s
 - Tiza migrates a document with an older `schema`, as it does for a file. When Tiza saves the document, and in the copy of `scene.get`, it writes the lowest schema that the document needs. See [`schema`](document-format.md#top-level-fields).
 - The presenter can undo a `scene.put` with `u`. The undo also gives back the step.
 - For the save rules, see [Agents and saving](../concepts/saving.md#agents-and-saving).
-- `scene.patch` takes these fields: `step`, `theme`, `padding`, `title`, `numbers`, `margin`, `styles`, `annotations`, `steps` and `loop`.
+- `scene.patch` takes these fields: `step`, `theme`, `padding`, `title`, `numbers`, `margin`, `center`, `styles`, `annotations`, `steps` and `loop`.
 - A `step` after the last step becomes the last step.
 - `padding`, `title` and `margin` take `null`, which gives back the default.
 - `styles` merges the styles by name. A style with the same name replaces the old one.

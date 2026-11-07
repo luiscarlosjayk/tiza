@@ -23,7 +23,7 @@ Each command adds one annotation at the step on screen. The status bar shows its
 | [Annotation commands](commands/annotate.md) | `:mark`, `:hl`, `:arrow`, `:box`, `:note`, `:callout`, `:spot`, `:until`, `:style` |
 | [Change commands](commands/change.md) | `:label`, `:color`, `:set`, `:step ID N`, `:del`, `:clear` |
 | [Step and file commands](commands/steps-and-files.md) | `:step`, `:next`, `:prev`, `:goto`, `:link`, `:ref`, `:embed`, `:scroll`, `:follow` |
-| [View commands](commands/view.md) | `:focus`, `:theme`, `:lang`, `:title`, `:numbers`, `:pad`, `:margin`, `:layout`, `:mouse` |
+| [View commands](commands/view.md) | `:focus`, `:theme`, `:lang`, `:title`, `:numbers`, `:center`, `:pad`, `:margin`, `:layout`, `:mouse` |
 | [Export and agent commands](commands/export-and-agents.md) | `:export`, `:supervise`, `:review` |
 | [Save, quit, panel and undo commands](commands/save-and-quit.md) | `:w`, `:saveas`, `:wq`, `:q`, `:autosave`, `:list`, `:present`, `:help`, `:undo`, `:redo` |
 | [Command messages](commands/messages.md) | The messages and the errors of all the commands |
@@ -102,6 +102,8 @@ Some values also have another word:
 | `:autosave off` | `:autosave no` |
 | `:numbers on` | `:numbers yes` |
 | `:numbers off` | `:numbers no` |
+| `:center on` | `:center yes` |
+| `:center off` | `:center no` |
 | `:margin auto` | `:margin off` or `:margin none` |
 | `:pad default` | `:pad reset` |
 | `:layout stable` | `:layout take` |

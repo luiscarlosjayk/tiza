@@ -104,7 +104,7 @@ pub struct Document {
     // In memory a loaded document has `SCHEMA_VERSION`; a document that
     // goes out (a save, `scene.get`) has `Document::schema_needed`.
     /// The version of the format: 2 when the document has an `until` on an
-    /// annotation that is not a spotlight, else 1.
+    /// annotation that is not a spotlight, or `center`, else 1.
     pub schema: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
@@ -196,6 +196,11 @@ pub struct Document {
     /// `n` (and an `auto_advance_ms`) past the last step goes back to step 0.
     #[serde(default, rename = "loop", skip_serializing_if = "std::ops::Not::not")]
     pub looping: bool,
+    /// The code goes to the middle of the code area: one offset for all the
+    /// steps, from the widest and tallest step. Content that does not fit
+    /// stays at the left and the top, as without `center`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub center: bool,
     /// The `effect` values of the file that this version does not know
     /// ([`crate::fs::parse_document`]). Never serialized.
     #[serde(skip)]
@@ -1181,6 +1186,7 @@ impl Document {
             theme_overrides: None,
             steps: Vec::new(),
             looping: false,
+            center: false,
             unknown_effects: UnknownEffects::default(),
             newer_moves: NewerMoves::default(),
         }
@@ -1279,12 +1285,13 @@ impl Document {
     /// Schema 2 is the schema of every new field of Tiza 0.3: a later
     /// field of 0.3 adds its test here, with the same number.
     pub fn schema_needed(&self) -> u32 {
-        // Schema 1 has `until` only on a spotlight.
+        // Schema 1 has `until` only on a spotlight, and no `center`: Tiza
+        // 0.2.1 ignores both without a warning and draws them wrong.
         let until = self
             .annotations
             .iter()
             .any(|a| a.until.is_some() && !matches!(a.shape, Shape::Spotlight { .. }));
-        if until { 2 } else { 1 }
+        if until || self.center { 2 } else { 1 }
     }
 
     // ---- moves (ADR 0007) and views ----
