@@ -880,7 +880,7 @@ With `"diff": true` on a `code.patch` move, the step of the move shows which lin
 - A `replace` often writes again the lines around the change. Tiza does not mark the lines at the start and at the end of a `replace` that are the same as before.
 - When a later move of the same step removes a line that the move wrote, that line has no `+`.
 - While the step types, the `+` does not show. It shows when the typing ends.
-- When a move of the document has `diff`, Tiza keeps a column of two cells for the `+` at every step. With no line numbers, Tiza also keeps the cell of the cursor next to it. Thus the code does not move when the `+` shows.
+- When a move of the document has `diff`, Tiza keeps a column of two cells for the `+` at every step. Without line numbers, Tiza also keeps the column of the `▸` that marks the selected annotation, next to the `+`. Thus the code does not move when the `+` shows.
 - A `diff` shows only the lines that a move writes. It does not show the lines that a move removes.
 - `tiza check` gives the warning `move` when a move with `diff` shows no `+`. For example, the move writes the same lines again, it only removes lines, or the lines that it writes are outside the lines that its step shows.
 - A document with `diff` has the schema `2`. Tiza 0.2.1 and earlier versions do not open it.
