@@ -41,7 +41,7 @@ The version of the format, `1` or `2`.
 
 - Tiza writes `2` only when the document uses a field of version 2: an `until` on an annotation that is not a spotlight.
 - Else Tiza writes `1`, so that Tiza 0.2.1 and earlier versions can open the file.
-- A version that reads only `1` does not open a file with `2`. Thus it does not show a box, an arrow or a note at steps after its `until`.
+- A version that reads only `1` does not open a file with `2`. Thus it does not show a box, an arrow or a note after its `until` by mistake.
 
 Integer. Required.
 
@@ -384,8 +384,8 @@ Each value has this meaning:
 #### Rules for annotations
 
 - An annotation shows from its `step` to its `until`. Without `until`, it shows to the last step. A spotlight without `until` is active only at its `step`.
-- After its `until`, the annotation is not drawn, and it does not get a lane, a color or a place in the margin. At that step, `tiza check` does not report it as `(unanchored)` or outside its window.
-- A step at which only an annotation goes is not a step with nothing new.
+- After its `until`, the annotation is not drawn, and it does not get a lane, a color or a place in the margin. At those steps, `tiza check` does not report it as `(unanchored)` or outside its window.
+- A step at which only an annotation goes is not an empty step, unless its take is the same as the take of the step before.
 - When `until` is before `step`, the annotation never shows, and `tiza check` gives the error `until`. Tiza opens such a document. `:until`, `:step ID S`, `:set ID step=S`, the `+` key, `annotation.add`, and `annotation.update` with `step`, `until` or `shape` refuse such an annotation.
 - A spotlight does not keep in focus an annotation of its `ids` after the `until` of that annotation. `tiza check` gives a warning for it.
 - A spotlight dims the code outside its lines. It does not dim the code of the annotations in its `ids`.

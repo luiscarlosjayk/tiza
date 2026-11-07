@@ -499,7 +499,7 @@ This frame is animated, from step 1 to step 3. The box `a1` starts at step 1, an
 
 <img src="../../images/commands/until-box.webp" width="380" alt="At steps 1 and 2, a box with the label borrow goes around lines 6 and 7. At step 2 the note t is still here comes in under line 8. At step 3 the box is not there, and the note t owns its String comes in under line 6.">
 
-A spotlight. This frame is animated, from step 1 to step 3. The spotlight `a1` starts at step 1, and `:until a1 2` keeps it active at step 2. At step 3 it is not active:
+For a spotlight, this frame is animated, from step 1 to step 3. The spotlight `a1` starts at step 1, and `:until a1 2` keeps it active at step 2. At step 3 it is not active:
 
 <!-- frame id=until-default code=examples/ownership.rs:6-8 animate=1 -->
 ```

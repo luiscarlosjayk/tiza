@@ -360,6 +360,7 @@ The `hidden` field has one of these messages.
 | `it lost its anchor at step N (unanchored: no line of it survived a patch)` | A move removed every line of the annotation. |
 | `it shows only at step N` | The step on screen is after the `until` of the annotation, here `N`. A spotlight without `until` shows only at its step. |
 | `it shows only at steps A-B` | The step on screen is after the `until` of the annotation, here `B`. |
+| `it never shows (until N is before step S)` | The annotation is from a file and its `until` is before its `step`. `tiza check` gives the error `until`. |
 | `it is not drawn: no room for its text at W columns (check at width W lists it)` | The take at the width of the screen has no room for a note or a callout. |
 
 The `clipped` field has one of these messages.
