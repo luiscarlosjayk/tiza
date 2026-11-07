@@ -52,6 +52,9 @@ struct Cli {
     /// Start in presentation mode (no UI)
     #[arg(long)]
     present: bool,
+    /// The scene of a talk (a master .tiza) to open: its position or its name. Without it, the talk opens where it was left
+    #[arg(long)]
+    scene: Option<String>,
     /// Focus a range of lines on open (A-B)
     #[arg(long)]
     focus: Option<String>,
@@ -2139,8 +2142,13 @@ fn close(path: &Path, origin: &socket::Origin, force: bool) -> anyhow::Result<()
 
 fn run_tui(cli: Cli, socket_path: PathBuf, origin: &socket::Origin) -> anyhow::Result<()> {
     let opened = match cli.file.as_deref() {
-        Some(f) if f != "-" => fs::open(f).with_context(|| format!("could not open {f}"))?,
-        explicit => {
+        Some(f) if f != "-" => {
+            match fs::open_any(f).with_context(|| format!("could not open {f}"))? {
+                fs::OpenedAny::Document(o) => Ok(*o),
+                fs::OpenedAny::Talk(t) => Err(t),
+            }
+        }
+        explicit => Ok({
             if explicit.is_none() && std::io::stdin().is_terminal() {
                 bail!(
                     "give a file (tiza src/main.rs:12-48) or pipe code through stdin (pbpaste | tiza --lang rs)"
@@ -2149,10 +2157,20 @@ fn run_tui(cli: Cli, socket_path: PathBuf, origin: &socket::Origin) -> anyhow::R
             let mut text = String::new();
             std::io::stdin().read_to_string(&mut text)?;
             fs::from_stdin(&text, None).map_err(|e| anyhow::anyhow!("{e}"))?
-        }
+        }),
     };
-    let mut opened = opened;
-    override_language(&mut opened.document, cli.lang.as_deref());
+    match &opened {
+        Ok(_) if cli.scene.is_some() => {
+            bail!("--scene opens a scene of a talk: give a master .tiza that lists the scenes")
+        }
+        Err(_) if cli.theme_file.is_some() => bail!(
+            "--theme-file does not work with a talk: put the theme in each scene (`:theme`, or `theme` in its .tiza)"
+        ),
+        Err(_) if cli.lang.is_some() => {
+            bail!("--lang does not work with a talk: each scene names its own language")
+        }
+        _ => {}
+    }
     let config = load_config();
     // The bar tells about a file that is there; a `$TIZA_CONFIG` that names
     // no file (what tests and scripts use for «no config») is said on
@@ -2189,6 +2207,35 @@ fn run_tui(cli: Cli, socket_path: PathBuf, origin: &socket::Origin) -> anyhow::R
         Some(f) => Some(tiza_tui::app::parse_range(f).map_err(|e| anyhow::anyhow!("{e}"))?),
         None => None,
     };
+    let start = tiza_tui::SessionStart {
+        step: cli.step,
+        theme: cli.theme.and_then(ThemeArg::fixed),
+        theme_auto: cli.theme == Some(ThemeArg::Auto),
+        theme_file: cli.theme_file.clone(),
+        config_overrides: config.theme,
+        config_defaults: config.defaults,
+        personal_styles: config.styles,
+        config_warnings: bar_warnings,
+        present: cli.present,
+        focus,
+        padding,
+        mouse: cli.mouse,
+        follow: cli.follow,
+        no_save: cli.no_save,
+        counter: match (cli.counter, cli.no_counter) {
+            (true, _) => Some(true),
+            (_, true) => Some(false),
+            _ => None,
+        },
+    };
+    let (app, notice) = match opened {
+        Ok(mut o) => {
+            override_language(&mut o.document, cli.lang.as_deref());
+            (tiza_tui::app::App::new(o.document, o.save_path), o.notice)
+        }
+        Err(talk) => tiza_tui::app::App::first_scene(talk, &start, cli.scene.as_deref())
+            .map_err(|e| anyhow::anyhow!("{e}"))?,
+    };
     if !std::io::stdout().is_terminal() {
         bail!("the TUI needs a terminal on stdout; use `tiza render` for text output");
     }
@@ -2208,33 +2255,14 @@ fn run_tui(cli: Cli, socket_path: PathBuf, origin: &socket::Origin) -> anyhow::R
     // The effects and the moves this version does not know, by name, where
     // they stay after the TUI ends (the bar says it in short; presentation
     // mode has no bar).
-    if let Some(line) = fs::not_known_notice(&opened.document) {
+    if let Some(line) = fs::not_known_notice(&app.doc) {
         eprintln!("tiza: {}", tiza_core::printable::printable_line(&line));
     }
-    let exit = tiza_tui::run(
-        opened,
+    let exit = tiza_tui::run_app(
+        app,
+        notice,
         tiza_tui::RunOptions {
-            start: tiza_tui::SessionStart {
-                step: cli.step,
-                theme: cli.theme.and_then(ThemeArg::fixed),
-                theme_auto: cli.theme == Some(ThemeArg::Auto),
-                theme_file: cli.theme_file.clone(),
-                config_overrides: config.theme,
-                config_defaults: config.defaults,
-                personal_styles: config.styles,
-                config_warnings: bar_warnings,
-                present: cli.present,
-                focus,
-                padding,
-                mouse: cli.mouse,
-                follow: cli.follow,
-                no_save: cli.no_save,
-                counter: match (cli.counter, cli.no_counter) {
-                    (true, _) => Some(true),
-                    (_, true) => Some(false),
-                    _ => None,
-                },
-            },
+            start,
             ipc,
             ipc_error,
             image_exporter: Some(Box::new(image_exporter)),
