@@ -765,6 +765,39 @@ fn saveas_does_not_work_in_a_talk() {
 }
 
 #[test]
+fn in_a_talk_the_messages_of_scene_put_name_w_path_not_saveas() {
+    let dir = talk_copy("talk-put-messages");
+    let live = open(&dir, Some("borrow"), SessionStart::default());
+    let names_w_path = |live: &Live| {
+        let (msg, _) = live.message().unwrap();
+        assert!(
+            msg.contains(":w PATH writes a copy") && !msg.contains("saveas"),
+            "{msg}"
+        );
+        msg
+    };
+    // The same scene, with code that differs from its file: not saved.
+    let mut scene = live.api_ok("scene.get", json!({}));
+    scene["document"]["code"][0] = json!("// edited");
+    live.api_ok("scene.put", json!({"document": scene["document"]}));
+    let msg = names_w_path(&live);
+    assert!(msg.starts_with("not saved, and autosave is off"), "{msg}");
+    // Another document: autosave stops.
+    live.command("autosave on");
+    let other = json!({
+        "schema": 1,
+        "source": {"language": "rs", "path": "elsewhere.rs"},
+        "code": ["fn elsewhere() {}"]
+    });
+    live.api_ok("scene.put", json!({"document": other}));
+    let msg = names_w_path(&live);
+    assert!(
+        msg.contains("another document loaded: autosave off"),
+        "{msg}"
+    );
+}
+
+#[test]
 fn a_crossing_answers_what_waits_and_the_revision_grows() {
     let dir = talk_copy("talk-session");
     let live = open(&dir, Some("own"), SessionStart::default());
