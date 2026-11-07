@@ -227,13 +227,13 @@ fn a_step_that_types_keeps_the_code_still() {
 
 #[test]
 fn a_resize_while_a_step_types_takes_the_rows_of_the_take() {
-    // The rows of the take at 40 columns are first counted while the
-    // step types: they are those of the take (the note goes under its line
-    // at 40 columns), not those of the code being typed.
+    // The rows of the take at 40 columns are first counted while step 2
+    // types: they are those of the take, with the note that step 2 shows
+    // under its line at 40 columns when it ends, not those of the frame.
     let doc = tiza_core::fs::parse_document(
         &json!({"schema": 2, "source": {"language": "rs", "first_line": 1},
             "code": FN, "center": true, "padding": [0, 0], "numbers": false, "step": 1,
-            "annotations": [{"id": "n1", "step": 1, "type": "note", "line": 2, "text": "x is one"}],
+            "annotations": [{"id": "n1", "step": 2, "type": "note", "line": 2, "text": "x is one"}],
             "moves": [{"at_step": 2, "action": "code.patch", "op": "insert", "after": "}",
                        "content": "// two more\n// lines", "typing": "char", "speed_ms": 50}]})
         .to_string(),
