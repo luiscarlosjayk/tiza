@@ -33,6 +33,13 @@ struct Cli {
     /// `mouse = true` in config.toml turns it on for every session.
     #[arg(long)]
     mouse: bool,
+    /// Hide the step counter of presentation mode for this session; the last row is code again.
+    /// `counter = false` in config.toml hides it for every session.
+    #[arg(long, overrides_with = "counter")]
+    no_counter: bool,
+    /// Show the step counter of presentation mode, also when config.toml sets `counter = false`
+    #[arg(long, overrides_with = "no_counter")]
+    counter: bool,
     /// Initial presentation step
     #[arg(long)]
     step: Option<u32>,
@@ -1295,7 +1302,7 @@ fn config_report(cfg: &tiza_core::config::Config) -> String {
     let d = &cfg.defaults;
     let on = |b: bool| if b { "on" } else { "off" }.to_string();
     let (pv, ph) = tiza_core::layout::DEFAULT_PADDING;
-    let rows: [(&str, Option<String>, String); 7] = [
+    let rows: [(&str, Option<String>, String); 8] = [
         (
             "pad",
             d.pad.map(|(v, h)| format!("{v} {h}")),
@@ -1303,6 +1310,7 @@ fn config_report(cfg: &tiza_core::config::Config) -> String {
         ),
         ("numbers", d.numbers.map(on), on(true)),
         ("mouse", d.mouse.map(on), on(false)),
+        ("counter", d.counter.map(on), on(true)),
         ("autosave", d.autosave.map(on), on(true)),
         (
             "layout",
@@ -2224,6 +2232,11 @@ fn run_tui(cli: Cli, socket_path: PathBuf, origin: &socket::Origin) -> anyhow::R
             mouse: cli.mouse,
             follow: cli.follow,
             no_save: cli.no_save,
+            counter: match (cli.counter, cli.no_counter) {
+                (true, _) => Some(true),
+                (_, true) => Some(false),
+                _ => None,
+            },
         },
     )?;
     // The terminal is back, the exit save is done and the socket is gone:

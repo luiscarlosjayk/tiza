@@ -71,6 +71,10 @@ pub struct RunOptions {
     pub mouse: bool,
     /// `--no-save`: never autosave the sidecar (`:w` still saves).
     pub no_save: bool,
+    /// `--counter` (`Some(true)`) or `--no-counter` (`Some(false)`): the
+    /// step counter of presentation mode for this session. `None`: the
+    /// config file decides, else it shows.
+    pub counter: Option<bool>,
 }
 
 /// How the TUI ended.
@@ -147,6 +151,9 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<Exit> {
     app.image_exporter = opts.image_exporter;
     // The flag wins over the config file; the config over the built-in.
     app.mouse = opts.mouse || app.config_defaults.mouse == Some(true);
+    // Here the flag wins both ways: `--counter` shows it over `counter =
+    // false`.
+    app.counter = opts.counter.or(app.config_defaults.counter).unwrap_or(true);
     // A bad entry of the config file was ignored: the first one on the
     // bar, file name, line and key first (the binary printed every one on
     // stderr with the full path), and how many there are: a cut keeps the

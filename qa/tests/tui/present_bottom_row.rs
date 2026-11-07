@@ -168,6 +168,49 @@ fn with_the_counter_off_the_code_has_the_last_row() {
     assert_eq!(live.with(|a| a.screen_height()), usize::from(ROWS));
 }
 
+/// With the counter turned off (`counter = false`, `--no-counter`), a
+/// document of 5 steps is as one of a single step: at step 5 and at step
+/// 0, the last line of code is on the last row, and no count shows.
+#[test]
+fn a_hidden_counter_gives_its_row_back_to_the_code() {
+    for step in [5, 0] {
+        let live = open(&format!("counter-hidden-{step}"), 5, step);
+        let last = rendered(&live, LINES);
+        live.with(|a| a.counter = false);
+        let screen = after_keys(&live, &[KeyCode::Char('G')]);
+        let all = screen.join("\n");
+        assert_eq!(screen[usize::from(ROWS) - 1], last, "step {step}:\n{all}");
+        assert!(!all.contains(&format!("{step}/5")), "step {step}:\n{all}");
+        assert_eq!(live.with(|a| a.screen_height()), usize::from(ROWS));
+    }
+}
+
+/// The result of a `:` command shows on the last row for its time, with
+/// the counter hidden too. It covers the last row of code and moves no
+/// line, so the take does not jump; after it, the row is code again.
+#[test]
+fn a_message_covers_the_last_row_and_the_code_stays_in_place() {
+    let live = open("counter-hidden-message", 5, 5);
+    live.with(|a| a.counter = false);
+    let before = after_keys(&live, &[KeyCode::Char('G')]);
+    let mut keys: Vec<KeyCode> = ":goto 4".chars().map(KeyCode::Char).collect();
+    keys.push(KeyCode::Enter);
+    let with_message = after_keys(&live, &keys);
+    let all = with_message.join("\n");
+    let shown = live.with(|a| a.present_message.clone());
+    let (said, _) = shown.expect("a message after :goto");
+    assert!(with_message[usize::from(ROWS) - 1].contains(&said), "{all}");
+    let code = usize::from(ROWS) - 1;
+    assert_eq!(
+        with_message[..code],
+        before[..code],
+        "the code moved:\n{all}"
+    );
+    live.with(|a| a.present_message_until = None);
+    let after = after_keys(&live, &[]);
+    assert_eq!(after, before, "{}", after.join("\n"));
+}
+
 /// Supervised mode on, and a change of an agent parked for review: on the
 /// TUI thread at once, with its reply waiting on the receiver.
 fn propose(live: &Live) -> std::sync::mpsc::Receiver<tiza_core::protocol::Response> {
@@ -191,12 +234,14 @@ const CHIP: &str = "⏸ 1 to review · :review";
 
 /// AC1 for the chip, with a change of an agent waiting for review: in a
 /// document of one step at step 1 (no counter), the chip is alone on the
-/// last row; at step 5 of 5, the counter is on the same row, at the right.
-/// The last line of code is whole on the row above it.
+/// last row; at step 5 of 5, the counter is on the same row, at the right,
+/// unless it is hidden. The last line of code is whole on the row above it.
 #[test]
 fn the_review_chip_has_a_row_of_its_own() {
-    for (steps, counter) in [(1, None), (5, Some("5/5"))] {
-        let live = open(&format!("chip-row-{steps}"), steps, steps);
+    for (steps, counter, shown) in [(1, None, true), (5, Some("5/5"), true), (5, None, false)] {
+        let live = open(&format!("chip-row-{steps}-{shown}"), steps, steps);
+        // A hidden counter does not hide the chip: an agent waits.
+        live.with(move |a| a.counter = shown);
         let last = rendered(&live, LINES);
         let _reply = propose(&live);
         let screen = after_keys(&live, &[KeyCode::Char('G')]);

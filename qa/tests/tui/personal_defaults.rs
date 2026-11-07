@@ -132,3 +132,78 @@ fn numbers_on_or_off_writes_the_document_also_when_the_value_is_in_effect() {
         assert!(m.contains("already"), "{case}, again: {m}");
     }
 }
+
+/// The real binary in presentation mode on a pty of 80×30, at step 2 of
+/// 3, with 40 lines of code: with the counter, its row is the last one and
+/// line 29 is the last line on the screen; without it, line 30 is on the
+/// last row. Each case is `(config file, flags, counter shown)`: the
+/// config turns it off, `--counter` wins over the config, `--no-counter`
+/// alone turns it off, and of the two flags the last one wins.
+#[test]
+fn the_config_hides_the_counter_and_a_flag_wins_over_it() {
+    let dir = tiza_qa::scratch("config-counter");
+    let doc = json!({
+        "schema": 1, "source": {"language": "rs", "first_line": 1},
+        "code": (1..=40).map(|n| format!("let v{n:02} = {n};")).collect::<Vec<_>>(),
+        "annotations": (1..=3).map(|s| json!({"id": format!("h{s}"), "step": s,
+            "type": "highlight", "span": {"line": s, "start": 4, "end": 7}})).collect::<Vec<_>>(),
+        "step": 2, "padding": [0, 1]
+    });
+    std::fs::write(dir.join("doc.tiza"), doc.to_string()).unwrap();
+    let off = "[defaults]\ncounter = false\n";
+    let cases: &[(&str, &[&str], bool)] = &[
+        ("", &[], true),
+        (off, &[], false),
+        (off, &["--counter"], true),
+        ("", &["--no-counter"], false),
+        ("", &["--no-counter", "--counter"], true),
+        ("", &["--counter", "--no-counter"], false),
+    ];
+    let body = r##"
+import json
+binary, cwd, cases = sys.argv[1], sys.argv[2], json.loads(sys.argv[3])
+os.chdir(cwd)
+for i, (cfg, flags, shown) in enumerate(cases):
+    with open("cfg.toml", "w") as f:
+        f.write(cfg)
+    env = dict(os.environ, TERM="xterm-256color", TIZA_CONFIG=os.path.abspath("cfg.toml"))
+    argv = [binary, "--theme", "dark", "--no-socket", "--no-save", "--present", *flags, "doc.tiza"]
+    s = Pty(argv, 30, 80, env=env, ctty=True, raw=True)
+    term = Term(30, 80, cpr=False)
+    seen = [0]
+    def last(out):
+        term.feed(out[seen[0]:])
+        seen[0] = len(out)
+        return term.lines()[-1]
+    want = (lambda row: row.rstrip().endswith("2/3")) if shown else (lambda row: "let v30" in row)
+    ok = s.wait_for(lambda out: want(last(out)), 10, f"case {i}")
+    last(s.out)
+    print(f"CASE{i}", ok, json.dumps(term.lines()), flush=True)
+    s.send(b":q!\r")
+    print(f"EXIT{i}", s.finish(10), flush=True)
+"##;
+    let script = format!("{}\n{body}", tiza_qa::WIDETERM);
+    let out = tiza_qa::pty_script(
+        &dir,
+        "counter.py",
+        &script,
+        &[
+            tiza_qa::bin().to_str().unwrap(),
+            dir.to_str().unwrap(),
+            &serde_json::to_string(cases).unwrap(),
+        ],
+    );
+    for (i, (cfg, flags, shown)) in cases.iter().enumerate() {
+        let line = field(&out, &format!("CASE{i}"));
+        let (ok, screen) = line.split_once(' ').unwrap();
+        let rows: Vec<String> = serde_json::from_str(screen).unwrap();
+        let case = format!("{cfg:?} {flags:?}, counter {shown}");
+        assert_eq!(ok, "True", "{case}:\n{}", rows.join("\n"));
+        // The other row: line 30 never under the counter, and no count
+        // over line 30.
+        let bottom = &rows[29];
+        assert_eq!(bottom.contains("let v30"), !shown, "{case}: {bottom:?}");
+        assert_eq!(bottom.contains("2/3"), *shown, "{case}: {bottom:?}");
+        assert_eq!(field(&out, &format!("EXIT{i}")), "0", "{case}: {out}");
+    }
+}

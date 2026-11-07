@@ -39,7 +39,7 @@ tiza examples/ownership.rs.tiza --present --step 0 --no-save
 
 Step 3 of `examples/ownership.rs.tiza` in presentation mode: an image of the TUI in a real terminal of 100 columns and 30 rows, with the Menlo font.
 
-Presentation mode hides the status bar and the cursor. The last row shows the step counter at the right, for example `3/6` for step 3 of 6. `P` starts and stops presentation mode, also when you opened the document without `--present`.
+Presentation mode hides the status bar and the cursor. The last row shows the step counter at the right, for example `3/6` for step 3 of 6. To record a take without it, add `--no-counter` to the command, or set `counter = false` in the [config file](../reference/config.md). Then the last row shows code. `P` starts and stops presentation mode, also when you opened the document without `--present`.
 
 ## 4. Go through the steps
 

@@ -332,6 +332,20 @@ Starts with mouse capture on.
 See [Use the mouse](../guides/use-the-mouse.md).
 
 </dd>
+<dt><code>--no-counter</code></dt>
+<dd>
+
+Hides the step counter of presentation mode for this session. Then the last row shows code.
+
+`counter = false` in the config file hides it for every session. See [Config file](config.md#which-value-wins).
+
+</dd>
+<dt><code>--counter</code></dt>
+<dd>
+
+Shows the step counter of presentation mode, also when the config file sets `counter = false`.
+
+</dd>
 <dt><code>--no-save</code></dt>
 <dd>
 

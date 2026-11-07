@@ -704,6 +704,9 @@ pub struct App {
     /// `:w` would write over that file, so the bar and `:q` point at
     /// `:saveas PATH` and `:q!`. A `:saveas` or `:autosave on` ends it.
     pub no_save: bool,
+    /// Presentation mode draws its step counter (`counter = false` in the
+    /// config file or `--no-counter` turn it off, `--counter` on).
+    pub counter: bool,
     /// The file the code was last read from (`code: {file}` when opened or
     /// at the last put): a put that sent other code leaves the document
     /// embedded in memory, and a later put of that file's code makes it a
@@ -933,6 +936,7 @@ impl App {
             size: (80, 24),
             socket_path: None,
             autosave: true,
+            counter: true,
             no_save: false,
             reference,
             frozen_views,
@@ -2280,9 +2284,10 @@ impl App {
     }
 
     /// Presentation mode draws the step counter: with more than one step,
-    /// and on step 0 (also of a document of one step).
+    /// and on step 0 (also of a document of one step), unless the
+    /// presenter turned it off. Then its row is code again.
     pub fn present_counter_shown(&self) -> bool {
-        self.doc.step_total(self.doc.step) > 1 || self.doc.step == 0
+        self.counter && (self.doc.step_total(self.doc.step) > 1 || self.doc.step == 0)
     }
 
     /// A step change in presentation mode, before the moves of the new
