@@ -5832,11 +5832,12 @@ impl App {
                 st
             }
         };
-        // Only in the tests' build: the watchers in this process and the
-        // message on the bar.
+        // Only in the tests' build: the watchers in this process, what
+        // watches the file, and the message on the bar.
         #[cfg(feature = "test-hooks")]
         {
             st["watchers"] = json!(crate::follow::live_watchers());
+            st["watching"] = json!(self.follow.as_ref().map(|f| f.watching()));
             st["bar"] = json!(self.message.as_ref().map(|m| m.0.clone()));
             st["test_scene"] = json!(self.talk.as_ref().map(|t| {
                 let s = t.scene();

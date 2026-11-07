@@ -358,10 +358,6 @@ impl App {
         } else {
             t.follow_wanted
         };
-        #[cfg(feature = "test-hooks")]
-        if crate::test_hook("talk:panic") {
-            panic!("TIZA_TEST_HOOK at a scene change");
-        }
 
         let mut next = App::new(doc, path);
         next.disk_step = Some(disk_step);
@@ -410,6 +406,13 @@ impl App {
             } else {
                 next.info(note);
             }
+        }
+
+        // Test hook, only with the `test-hooks` feature: a panic when the
+        // next scene is whole, before anything moves.
+        #[cfg(feature = "test-hooks")]
+        if crate::test_hook("talk:panic") {
+            panic!("TIZA_TEST_HOOK at a scene change");
         }
 
         // From here nothing fails: the talk and the session move.

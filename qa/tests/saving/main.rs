@@ -11,4 +11,5 @@ mod quit_writes_nothing;
 mod range_documents;
 mod relative_paths;
 mod schema_needed;
+mod talk_open;
 mod write_to_another_folder;

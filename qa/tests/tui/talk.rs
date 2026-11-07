@@ -9,6 +9,10 @@
 //! - AC4 A crossing loses no change: changes that could not be saved stop
 //!   it until `:w` or `:next!`, and the file of a scene keeps its own step.
 //! - AC5 The talk opens again where it was left (`at` in the master).
+//! - AC6 On the real binary in a pty: the keys cross scenes; `q`, Ctrl-C
+//!   and SIGTERM write `at`; a read-only master plays and the terminal
+//!   says that `at` is not saved; a panic while the next scene opens
+//!   leaves the scene on screen, and the socket answers.
 
 use std::path::{Path, PathBuf};
 
@@ -575,4 +579,188 @@ fn a_crossing_answers_what_waits_and_the_revision_grows() {
         .unwrap();
     assert!(after > before, "{before} then {after}");
     assert!(live.with(|a| a.supervised), "supervised mode stays on");
+}
+
+// ---- The real binary on a pty ----
+
+/// The prelude of the pty scripts of a talk: `api`, `here()` (the
+/// position of the scene on screen and its step) and `until(want)`.
+const PTY_PRELUDE: &str = r##"
+import json
+binary, cwd = sys.argv[1], sys.argv[2]
+os.chdir(cwd)
+def api(method, params=None):
+    r = subprocess.run([binary, "--socket", "s.sock", "api", method, json.dumps(params or {})],
+                       capture_output=True, text=True, timeout=10)
+    return r.returncode, r.stdout + r.stderr
+def answer(method):
+    rc, out = api(method)
+    return json.loads(out) if rc == 0 else {}
+def here():
+    scene = answer("follow.status").get("test_scene") or {}
+    return [scene.get("position"), answer("status").get("step")]
+def until(want, what, timeout=10):
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        if here() == want:
+            return True
+        s.settle(0.05)
+    print("WAIT_TIMEOUT", what, json.dumps(here()), flush=True)
+    return False
+def tail():
+    left = s.out.rfind(b"\x1b[?1049l")
+    return plain(s.out[left + 8:]) if left >= 0 else "NOT_LEFT"
+"##;
+
+/// Runs `tiza --socket s.sock ARGS` in `dir` on a pty, with
+/// `TIZA_TEST_HOOK=hook` when it is not empty, then `steps` (Python, at
+/// the top level: `s` is the pty). Prints the lines of the script.
+fn pty_talk(dir: &Path, args: &[&str], hook: &str, steps: &str) -> String {
+    let body = format!(
+        r##"{PTY_PRELUDE}
+env = dict(os.environ, TERM="xterm-256color", TIZA_NO_OSC="1")
+if {hook:?}:
+    env["TIZA_TEST_HOOK"] = {hook:?}
+s = Pty([binary, "--socket", "s.sock"] + {args}, 30, 100, env=env)
+ok = s.wait_listening()
+{steps}
+"##,
+        args = serde_json::to_string(args).unwrap(),
+    );
+    tiza_qa::pty_script(
+        dir,
+        "talk.py",
+        &body,
+        &[tiza_qa::bin().to_str().unwrap(), dir.to_str().unwrap()],
+    )
+}
+
+fn master_json(dir: &Path) -> serde_json::Value {
+    serde_json::from_str(&std::fs::read_to_string(dir.join("talk.tiza")).unwrap()).unwrap()
+}
+
+/// `tiza talk.tiza`: the keys of the terminal go from scene to scene, and
+/// each way to quit (`q`, Ctrl-C, SIGTERM) writes where the talk was.
+#[test]
+fn pty_the_keys_cross_scenes_and_each_way_to_quit_writes_where_the_talk_is() {
+    for (close, code) in [("q", 0), ("ctrl-c", 0), ("sigterm", 143)] {
+        let dir = talk_copy(&format!("talk-pty-{close}"));
+        let own = std::fs::read(dir.join("own.tiza")).unwrap();
+        let steps = format!(
+            r##"
+ok = ok and until([1, 0], "the first scene, at step 0")
+ok and s.send(b":scene own 2\r")
+ok = ok and until([3, 2], ":scene own 2")
+ok and s.send(b"n")
+ok = ok and until([5, 0], "n: the scene after the skipped one, at step 0")
+ok and s.send(b"p")
+ok = ok and until([3, 2], "p: the scene before, at its last step")
+ok and s.send(b"\x1b[5~")
+ok = ok and until([3, 1], "PageUp: the step before")
+print("PATH", ok, flush=True)
+close = {close:?}
+if close == "q":
+    s.send(b"q")
+elif close == "ctrl-c":
+    s.send(b"\x03")
+else:
+    os.kill(s.p.pid, signal.SIGTERM)
+print("EXIT", s.finish(10), flush=True)
+print("TAIL", json.dumps(tail()), flush=True)
+"##
+        );
+        let out = pty_talk(&dir, &["talk.tiza"], "", &steps);
+        assert!(out.contains("PATH True"), "{close}:\n{out}");
+        assert!(out.contains(&format!("EXIT {code}\n")), "{close}:\n{out}");
+        let raw = master_json(&dir);
+        assert_eq!(
+            raw["talk"]["at"],
+            json!({"position": 3, "name": "own", "step": 1}),
+            "{close}:\n{out}"
+        );
+        assert_eq!(raw["kept"], "a key that this version does not know");
+        assert_eq!(
+            raw["talk"]["scenes"][3],
+            json!({"file": "not-shown.tiza", "skip": true})
+        );
+        // Going from step to step does not change the file of a scene.
+        assert_eq!(std::fs::read(dir.join("own.tiza")).unwrap(), own, "{close}");
+    }
+}
+
+/// A read-only master: the talk plays, and on exit the terminal says that
+/// the position is not saved. The master stays as it is.
+#[test]
+fn pty_a_read_only_master_plays_and_says_that_the_position_is_not_saved() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = talk_copy("talk-pty-read-only");
+    let master = dir.join("talk.tiza");
+    let before = std::fs::read(&master).unwrap();
+    std::fs::set_permissions(&master, std::fs::Permissions::from_mode(0o444)).unwrap();
+    let out = pty_talk(
+        &dir,
+        &["talk.tiza"],
+        "",
+        r##"
+ok = ok and until([1, 0], "the first scene")
+ok and s.send(b":scene own 2\r")
+ok = ok and until([3, 2], ":scene own 2")
+print("PATH", ok, flush=True)
+s.send(b"q")
+print("EXIT", s.finish(10), flush=True)
+print("TAIL", json.dumps(tail()), flush=True)
+"##,
+    );
+    std::fs::set_permissions(&master, std::fs::Permissions::from_mode(0o644)).unwrap();
+    assert!(out.contains("PATH True"), "{out}");
+    assert!(out.contains("EXIT 0\n"), "{out}");
+    let tail = text_after(&out, "TAIL");
+    assert!(
+        tail.contains("the position in the talk is not saved") && tail.contains("read-only"),
+        "{out}"
+    );
+    assert_eq!(std::fs::read(&master).unwrap(), before);
+}
+
+/// A panic while the next scene opens (the `talk:panic` hook): the request
+/// gets an error, the scene on screen stays whole, the socket answers, and
+/// `q` writes the position of the scene on screen.
+#[test]
+fn pty_a_panic_while_the_next_scene_opens_leaves_the_scene_on_screen() {
+    let dir = talk_copy("talk-pty-panic");
+    let out = pty_talk(
+        &dir,
+        &["talk.tiza", "--scene", "own", "--step", "2"],
+        "talk:panic",
+        r##"
+ok = ok and until([3, 2], "--scene own --step 2")
+rc, reply = api("step.next")
+print("NEXT", json.dumps([rc, reply]), flush=True)
+print("HERE", json.dumps(here()), flush=True)
+print("CODE", json.dumps(answer("code.get").get("text")), flush=True)
+print("PATH", ok, flush=True)
+s.send(b"q")
+print("EXIT", s.finish(10), flush=True)
+"##,
+    );
+    assert!(out.contains("PATH True"), "{out}");
+    let next: serde_json::Value = serde_json::from_str(text_after(&out, "NEXT")).unwrap();
+    assert_ne!(next[0], 0, "the request fails: {out}");
+    let here: serde_json::Value = serde_json::from_str(text_after(&out, "HERE")).unwrap();
+    assert_eq!(here, json!([3, 2]), "{out}");
+    let code: serde_json::Value = serde_json::from_str(text_after(&out, "CODE")).unwrap();
+    assert!(code.to_string().contains("let d = c;"), "{out}");
+    assert!(out.contains("EXIT 0\n"), "{out}");
+    assert_eq!(
+        master_json(&dir)["talk"]["at"],
+        json!({"position": 3, "name": "own", "step": 2}),
+        "{out}"
+    );
+}
+
+/// The text after `KEY ` on its line.
+fn text_after<'a>(out: &'a str, key: &str) -> &'a str {
+    out.lines()
+        .find_map(|l| l.strip_prefix(&format!("{key} ")))
+        .unwrap_or_else(|| panic!("no {key} in:\n{out}"))
 }
