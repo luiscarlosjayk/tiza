@@ -436,6 +436,137 @@ fn with_no_save_q_waits_while_another_scene_holds_changes_in_memory() {
 }
 
 #[test]
+fn the_socket_does_not_change_the_scene_under_a_command_or_unsaved_changes() {
+    let dir = talk_copy("talk-socket-busy");
+    let live = open(&dir, Some("own"), SessionStart::default());
+    live.command("goto 2");
+    // The presenter types a `:` command: the next scene would take the
+    // rest of the keys as keys of normal mode.
+    live.keys(&[KeyCode::Char(':'), KeyCode::Char('t')]);
+    let reply = live.api("step.next", json!({}));
+    let error = reply.error.as_ref().expect("an error");
+    assert!(error.message.contains("typing a command"), "{reply:?}");
+    assert_eq!((scene_file(&live), step(&live)), ("own.tiza".into(), 2));
+    // A step inside the scene is not a scene change: it goes on.
+    live.keys(&[KeyCode::Esc]);
+    live.api_ok("step.prev", json!({}));
+    assert_eq!(step(&live), 1);
+    live.api_ok("step.next", json!({}));
+    live.api_ok("step.next", json!({}));
+    assert_eq!((scene_file(&live), step(&live)), ("loop.tiza".into(), 0));
+    // Changes that are not saved: the reply says so, as the bar does.
+    live.command("autosave off");
+    live.command("note 1 drawn live");
+    let reply = live.api("step.prev", json!({}));
+    assert_eq!(
+        reply.error.as_ref().map(|e| e.code.as_str()),
+        Some("unsaved_changes"),
+        "{reply:?}"
+    );
+    assert_eq!(scene_file(&live), "loop.tiza");
+}
+
+#[test]
+fn a_scene_shown_at_another_step_than_its_file_has_nothing_unsaved_after_undo() {
+    let dir = talk_copy("talk-saved-step");
+    let start = SessionStart {
+        no_save: true,
+        ..Default::default()
+    };
+    // The file of borrow is on step 1; the talk shows it at step 0.
+    let live = open(&dir, Some("borrow"), start);
+    assert_eq!(step(&live), 0);
+    live.command("note 1 drawn live");
+    live.command("undo");
+    assert_eq!(live.with(|a| a.unsaved_summary()), None);
+    // Also after a scene change.
+    live.command("scene own");
+    live.command("scene borrow");
+    live.command("note 1 drawn live");
+    live.command("undo");
+    assert_eq!(live.with(|a| a.unsaved_summary()), None);
+}
+
+#[test]
+fn with_no_save_then_autosave_on_the_changes_that_waited_are_saved() {
+    let dir = talk_copy("talk-autosave-on");
+    let start = SessionStart {
+        no_save: true,
+        ..Default::default()
+    };
+    let live = open(&dir, Some("own"), start);
+    live.command("note 1 drawn live");
+    live.command("scene loop");
+    live.command("autosave on");
+    live.command("scene own");
+    let own = std::fs::read_to_string(dir.join("own.tiza")).unwrap();
+    assert!(own.contains("drawn live"), "{own}");
+    assert!(live.with(|a| !a.dirty));
+    // The presenter chose to save: the place in the talk is written too.
+    assert_eq!(live.with(|a| a.save_talk_position()), None);
+    assert_eq!(
+        master_json(&dir)["talk"]["at"],
+        json!({"position": 3, "name": "own", "step": 0})
+    );
+}
+
+#[test]
+fn mouse_off_stays_off_in_the_next_scene_over_the_config() {
+    let dir = talk_copy("talk-mouse");
+    let start = SessionStart {
+        config_defaults: tiza_core::config::Defaults {
+            mouse: Some(true),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let live = open(&dir, Some("own"), start);
+    assert!(live.with(|a| a.mouse), "the config turns it on");
+    live.command("mouse off");
+    live.command("scene loop");
+    assert!(live.with(|a| !a.mouse));
+}
+
+#[test]
+fn n_on_the_last_step_of_the_last_scene_does_not_move_also_with_loop() {
+    let dir = talk_copy("talk-last-loop");
+    let last = dir.join("2024.tiza");
+    let looping = std::fs::read_to_string(&last)
+        .unwrap()
+        .replacen("\"step\": 0,", "\"step\": 0, \"loop\": true,", 1);
+    std::fs::write(&last, looping).unwrap();
+    let live = open(&dir, Some("2024"), SessionStart::default());
+    assert!(live.with(|a| a.doc.looping));
+    live.command("goto 1");
+    live.keys(&[KeyCode::Char('n')]);
+    assert_eq!((scene_file(&live), step(&live)), ("2024.tiza".into(), 1));
+}
+
+#[test]
+fn with_no_save_changes_of_a_scene_whose_file_breaks_as_it_is_left_are_said_lost() {
+    let dir = talk_copy("talk-no-save-broken");
+    let start = SessionStart {
+        no_save: true,
+        ..Default::default()
+    };
+    let file = dir.join("own.tiza");
+    let good = std::fs::read(&file).unwrap();
+    let live = open(&dir, Some("own"), start);
+    live.command("note 1 drawn live");
+    std::fs::write(&file, "{ \"schema\": ").unwrap();
+    live.command("scene loop");
+    assert_eq!(scene_file(&live), "loop.tiza");
+    std::fs::write(&file, &good).unwrap();
+    live.command("scene own");
+    assert_eq!(scene_file(&live), "own.tiza");
+    let (msg, _) = live.message().unwrap();
+    assert!(
+        msg.contains("changes not kept") && msg.contains("changed on disk"),
+        "{msg}"
+    );
+}
+
+#[test]
 fn a_put_of_another_document_holds_autosave_for_its_scene_only() {
     let dir = talk_copy("talk-put");
     let live = open(&dir, Some("own"), SessionStart::default());
@@ -844,4 +975,27 @@ fn text_after<'a>(out: &'a str, key: &str) -> &'a str {
     out.lines()
         .find_map(|l| l.strip_prefix(&format!("{key} ")))
         .unwrap_or_else(|| panic!("no {key} in:\n{out}"))
+}
+
+/// `--smoke` draws one frame and exits: the master stays as it is, also
+/// when the talk opens at a scene that is not its `at`.
+#[test]
+fn pty_smoke_leaves_the_master_as_it_is() {
+    let dir = talk_copy("talk-pty-smoke");
+    let before = std::fs::read(dir.join("talk.tiza")).unwrap();
+    let body = r##"
+binary, cwd = sys.argv[1], sys.argv[2]
+os.chdir(cwd)
+env = dict(os.environ, TERM="xterm-256color", TIZA_NO_OSC="1")
+s = Pty([binary, "--smoke", "--no-socket", "talk.tiza", "--scene", "own", "--step", "1"], 30, 100, env=env)
+print("EXIT", s.finish(10), flush=True)
+"##;
+    let out = tiza_qa::pty_script(
+        &dir,
+        "smoke.py",
+        body,
+        &[tiza_qa::bin().to_str().unwrap(), dir.to_str().unwrap()],
+    );
+    assert!(out.contains("EXIT 0\n"), "{out}");
+    assert_eq!(std::fs::read(dir.join("talk.tiza")).unwrap(), before);
 }

@@ -9334,11 +9334,11 @@ impl App {
                 serde_json::to_value(StepReply::of(&self.doc, self.revision))?
             }
             "step.next" => {
-                self.next_step();
+                self.step_by_socket(true)?;
                 serde_json::to_value(StepReply::of(&self.doc, self.revision))?
             }
             "step.prev" => {
-                self.prev_step();
+                self.step_by_socket(false)?;
                 serde_json::to_value(StepReply::of(&self.doc, self.revision))?
             }
             "step.goto" => {

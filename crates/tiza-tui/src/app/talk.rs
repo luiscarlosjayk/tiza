@@ -15,7 +15,7 @@ use tiza_core::history::History;
 use tiza_core::talk::{At, LoadedTalk, TalkScene};
 use tiza_core::{Document, Error, fs};
 
-use super::App;
+use super::{App, Mode, Overlay};
 use crate::SessionStart;
 
 /// Where a scene opens when the presenter comes to it.
@@ -115,8 +115,8 @@ fn fingerprint(doc: &Document, path: &Path) -> Option<Vec<u8>> {
 
 impl App {
     /// The scene a talk opens on: `scene` (`--scene`, a position or a
-    /// name) at its own step, else the one its `at` names, else the first
-    /// scene that shows. The app is not started yet: the binary opens it
+    /// name) at step 0, else the one its `at` names at its step, else the
+    /// first scene that shows, at step 0. The app is not started yet: the binary opens it
     /// with `start` as it opens a document.
     pub fn first_scene(
         mut loaded: LoadedTalk,
@@ -149,6 +149,8 @@ impl App {
             app.error(format!("moves: {e}"));
         }
         app.disk_step = Some(disk_step);
+        // What a save writes has the step of the file: the saved state too.
+        app.mark_saved();
         if at.is_some() {
             app.step_ready_at = None;
         }
@@ -183,11 +185,65 @@ impl App {
     /// first (as at the last step of a document), and the next `n` goes
     /// to the next scene. `None` when `n` stays in the scene.
     pub(super) fn next_scene_key(&mut self, force: bool) -> Option<bool> {
-        let to = self.scene_after_end()?;
+        let t = self.talk.as_ref()?;
+        if self.doc.step < self.doc.max_step() {
+            return None;
+        }
+        let to = t.next_shown();
         if self.typing.is_some() || self.effect.is_some() {
             return Some(self.step_to(self.doc.step));
         }
-        Some(self.enter_scene(to, Landing::First, force, ":next!"))
+        match to {
+            Some(to) => Some(self.enter_scene(to, Landing::First, force, ":next!")),
+            // The last scene: `n` does not go back to step 0, also with
+            // `loop` (only its auto-advance loops).
+            None if self.doc.looping => Some(false),
+            None => None,
+        }
+    }
+
+    /// `step.next` (`forward`) and `step.prev` from the socket. A step
+    /// that leaves the scene on screen waits while the presenter types a
+    /// `:` command, selects or has a panel open: the next scene starts in
+    /// normal mode, so the rest of the keys would act on it. Changes that
+    /// are not saved stop it with `unsaved_changes`, as the bar says for
+    /// `n`.
+    pub(super) fn step_by_socket(&mut self, forward: bool) -> Result<(), Error> {
+        if let Some((to, landing)) = self.socket_crossing(forward) {
+            if matches!(self.mode, Mode::Command(_) | Mode::Select { .. })
+                || self.overlay != Overlay::None
+            {
+                return Err(Error::Invalid(
+                    "the presenter is typing a command or has a panel open: the scene changes after it closes; ask again then".into(),
+                ));
+            }
+            return self.try_enter_scene(to, landing, false);
+        }
+        if forward {
+            self.next_step();
+        } else {
+            self.prev_step();
+        }
+        Ok(())
+    }
+
+    /// The scene that `step.next` or `step.prev` goes to, when it leaves
+    /// the scene on screen, as `n` and `p` do.
+    fn socket_crossing(&self, forward: bool) -> Option<(usize, Landing)> {
+        let t = self.talk.as_ref()?;
+        if forward {
+            if self.typing.is_some() || self.effect.is_some() {
+                return None;
+            }
+            return self.scene_after_end().map(|i| (i, Landing::First));
+        }
+        let back = (0..self.doc.step)
+            .rev()
+            .find(|&s| self.doc.auto_advance_ms(s).is_none());
+        match back {
+            Some(_) => None,
+            None => t.prev_shown().map(|i| (i, Landing::Last)),
+        }
     }
 
     /// The auto-advance of the last step of a scene that does not loop:
@@ -361,7 +417,11 @@ impl App {
                 let on_disk = fs::load_document(&self.save_path).ok()?;
                 fingerprint(&on_disk, &self.save_path)
             })
-            .flatten();
+            .flatten()
+            // With `--no-save`, the changes wait also when the file does not
+            // read now: no files match an empty fingerprint, so the bar says
+            // that they are not kept, when the presenter comes back.
+            .or_else(|| keep.then(Vec::new));
         let follow_wanted = if self.source_file().is_some() {
             self.follow.is_some()
         } else {
@@ -370,6 +430,8 @@ impl App {
 
         let mut next = App::new(doc, path);
         next.disk_step = Some(disk_step);
+        // What a save writes has the step of the file: the saved state too.
+        next.mark_saved();
         next.host_dark = self.host_dark;
         next.wide = self.wide;
         next.size = self.size;
@@ -394,6 +456,8 @@ impl App {
         }
         start.follow = follow_wanted && next.source_file().is_some();
         crate::open_rest(&mut next, &start, notice.as_ref(), &[]);
+        // As the presenter left it: `:mouse off` wins over `mouse = true`.
+        next.mouse = self.mouse;
         if let Some(e) = sync {
             next.error(format!("moves: {e}"));
         }
@@ -478,6 +542,11 @@ impl App {
         talk.index = index;
         next.talk = Some(talk);
         *self = next;
+        // Changes that waited in memory, after `:autosave on`: saved now,
+        // as autosave does.
+        if self.autosave && self.dirty && self.save_error.is_none() {
+            let _ = self.save();
+        }
         Ok(())
     }
 
@@ -513,7 +582,8 @@ impl App {
     /// written, for stderr.
     pub fn save_talk_position(&self) -> Option<String> {
         let t = self.talk.as_ref()?;
-        if t.start.no_save {
+        // `--no-save`, unless the presenter turned autosave on.
+        if self.no_save {
             return None;
         }
         let s = t.scene();

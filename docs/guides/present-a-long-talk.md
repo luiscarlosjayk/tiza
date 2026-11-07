@@ -73,7 +73,7 @@ The first time, the talk opens at step 0 of the first scene that shows. Then go 
 
 - When a step types code, `n` finishes the typing, as in a document. The next `n` goes to the next scene.
 - A step with `auto_advance_ms` goes on by itself, also from the last step of a scene to the next scene.
-- In a scene with `"loop": true`, `n` on the last step goes to the next scene. The auto-advance of the last step goes back to step 0, so a title slide waits for you.
+- In a scene with `"loop": true`, `n` on the last step goes to the next scene. The auto-advance of the last step goes back to step 0, so a title slide waits for you. In the last scene, `n` does not go back to step 0.
 - `p` goes back over the steps that go on by themselves. Thus `p` on a title slide goes to the scene before. When `p` comes back to such a scene, the scene waits on its last step for your next key. In the first scene, there is no scene before: `p` goes one step back, and that step waits for your next key.
 - On the last step of the last scene, `n` does not move. On step 0 of the first scene, `p` does not move.
 - These rules are the same in normal mode and in presentation mode.
@@ -112,7 +112,7 @@ When Tiza closes, it writes the place in the talk into the master, as `talk.at`.
 - **`--theme-file` and `--lang`:** they do not work with a talk. Put the theme and the language in each scene.
 - **`:saveas`:** it does not work in a talk, because the master names the file of each scene. `:w PATH` writes a copy. With `--no-save`, the status bar and `:q` in normal mode tell you to use `:w PATH`. `:w` with no path writes the file of the scene on screen, as in a document.
 - **`tiza render` and `tiza check`:** they refuse a master. Give them a scene.
-- **`tiza next`, `tiza prev` and `tiza goto ID`:** they act on the live talk as `n`, `p` and `:goto ID` do. Thus `tiza next` on the last step of a scene goes to the next scene. `tiza goto ID` stays in the scene on screen.
+- **`tiza next`, `tiza prev` and `tiza goto ID`:** they act on the live talk as `n`, `p` and `:goto ID` do. Thus `tiza next` on the last step of a scene goes to the next scene. `tiza goto ID` stays in the scene on screen. When you type a `:` command or have a panel open, `tiza next` and `tiza prev` do not change the scene: they give an error, and the agent asks again later. Changes that are not saved also stop them, with the error `unsaved_changes`.
 - **A scene file is not there, or Tiza cannot read it:** `tiza talk.tiza` does not open, and the message names the scene. Tiza does not read the file of a skipped scene, so that file can be missing.
 - **A scene file breaks while the talk is open:** when you go to that scene, the status bar tells why, and the scene on screen stays.
 - **A `scene put` of another document:** it turns autosave off for that scene only. The next scene has autosave on.

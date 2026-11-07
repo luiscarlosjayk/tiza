@@ -226,6 +226,9 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<Exit> {
 /// talk ([`App::first_scene`]), and `notice` from its load. Returns when it
 /// closes.
 pub fn run_app(mut app: App, notice: Option<String>, opts: RunOptions) -> io::Result<Exit> {
+    // `--smoke` draws one frame and leaves every file as it is: also the
+    // master of a talk.
+    let smoke = opts.smoke;
     let start = &opts.start;
     open_theme(&mut app, start);
     // The host's appearance, and how wide it draws the glyphs of Tiza's own
@@ -289,7 +292,7 @@ pub fn run_app(mut app: App, notice: Option<String>, opts: RunOptions) -> io::Re
         if let Some(s) = app.parked_summary() {
             say_on_exit(gone, &s);
         }
-        if let Some(s) = app.save_talk_position() {
+        if let Some(s) = (!smoke).then(|| app.save_talk_position()).flatten() {
             say_on_exit(gone, &s);
         }
         drop(ipc);
@@ -396,7 +399,7 @@ pub fn run_app(mut app: App, notice: Option<String>, opts: RunOptions) -> io::Re
         say_on_exit(gone, &s);
     }
     // In a talk, where it was: the next `tiza MASTER` opens there.
-    if let Some(s) = app.save_talk_position() {
+    if let Some(s) = (!smoke).then(|| app.save_talk_position()).flatten() {
         say_on_exit(gone, &s);
     }
     if let Some(written) = quit_written {
