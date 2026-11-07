@@ -229,7 +229,7 @@ Exits with code 1 also for warnings.
 
 With a master `.tiza`, checks only the scene `X`, as `tiza check SCENE` does. `X` is the position of the scene or its name. Without it, Tiza checks every scene of the talk.
 
-A skipped scene is refused: the message gives the command that checks its file.
+A skipped scene is refused: the message gives the command that checks its file. When its file is not there, the message says so.
 
 </dd>
 <dt><code>--width N</code> of <code>tiza scene text</code></dt>

@@ -120,7 +120,7 @@ tiza render talk.tiza --scene 3 --step 2 --out slide.png
 ```
 
 - Each scene is as its own export: its theme, its gutter, its margin, its typing, its effects and its `auto_advance_ms`. The flags of the command apply to each scene.
-- Every frame has the size of the widest scene and of the tallest scene. A smaller scene is at the top left, on the background of its theme.
+- Every frame has the width of the export and the height of the tallest scene. A lower scene is at the top, on the background of its own theme. A scene with `center` is in the middle across, but not down.
 - The last step stays twice as long only at the end of the talk. In the talk, a scene goes on to the next one after `--interval`, or after the `auto_advance_ms` of its last step.
 - A scene with `loop` plays one time.
 - `--scene X` exports one scene, as `tiza render SCENE` does. `X` is the position of the scene or its name.

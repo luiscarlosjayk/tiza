@@ -74,8 +74,9 @@ tiza render talk.tiza --out talk.mp4
 ```
 
 - The scenes that show play in a row, each as its own export: its theme, its typing, its effects and its `auto_advance_ms`.
-- Every frame has the size of the widest scene and of the tallest scene. A smaller scene is at the top left. An export does not center a scene down, also with `center`.
-- The last step stays twice as long only at the end of the talk. In the talk, a scene goes on to the next one after `--interval`.
+- Every frame has the width of the export and the height of the tallest scene. A lower scene is at the top. An export does not center a scene down, also with `center`.
+- The last step stays twice as long only at the end of the talk. In the talk, a scene goes on to the next one after `--interval`, or after the `auto_advance_ms` of its last step.
+- A scene with `loop` plays one time.
 - A GIF and a WebP work too. For an image, a text export or a `.cast` of one scene, give `--scene X`, and `--step N` for an image. See [Exports](../reference/exports.md#record-a-talk).
 
 ## 4. Present the talk
