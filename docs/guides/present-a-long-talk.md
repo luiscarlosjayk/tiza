@@ -64,8 +64,6 @@ Run `tiza check` on each scene, at the width of the terminal that you record in.
 tiza talk.tiza --present
 ```
 
-With a `title` in the master, the terminal tab shows the name of the talk while you present, and it gets its old title back when you quit.
-
 The first time, the talk opens at step 0 of the first scene that shows. Then go through the talk with the keys of a document:
 
 | Key or command | What it does in a talk |
@@ -81,6 +79,7 @@ The first time, the talk opens at step 0 of the first scene that shows. Then go 
 - `p` goes back over the steps that go on by themselves. Thus `p` on a title slide goes to the scene before. When `p` comes back to such a scene, the scene waits on its last step for your next key. In the first scene, there is no scene before: `p` goes one step back, and that step waits for your next key.
 - On the last step of the last scene, `n` does not move. On step 0 of the first scene, `p` does not move.
 - These rules are the same in normal mode and in presentation mode.
+- With a `title` in the master, the terminal tab shows the title while you present. The tab gets its old title back when presentation mode stops or when you quit.
 - `q` quits. Autosave stays on during the talk. With changes that are not saved in the scene on screen, `q` does not quit: type `:q!`. See [Present](../reference/keys.md#present).
 
 ## 5. Start at a scene

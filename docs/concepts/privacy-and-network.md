@@ -77,6 +77,7 @@ Tiza sends the color query to the terminal only when the theme is `auto`, the de
 - At each resize, Tiza sends it again through the same terminal as at start.
 - At start, with any theme, Tiza also sends the width probe: it asks the terminal for the cursor position. When the line has room, Tiza then writes `⚠`, `↪`, `⏸`, `▶` and `⚠` with VS16, and asks for the cursor position after each one. [The width probe](../reference/terminals.md#the-width-probe) gives the rules.
 - `TIZA_NO_OSC` stops the color query at start and at each resize, and the width probe. Any value works, even an empty one.
+- In presentation mode, a talk with a `title` sets the title of the terminal tab with `OSC 0`, after it pushes the old title on the xterm title stack. When presentation mode stops or Tiza quits, it pops the old title back. `TIZA_NO_OSC` does not stop this: to keep the title of the tab, remove `title` from the master.
 - When standard input is a pipe, Tiza reads its keys from `/dev/tty`.
 - To read the keys, Tiza opens the terminal again: by its name, for example `/dev/ttys003`, or as `/dev/tty` when standard input is not a terminal.
 
