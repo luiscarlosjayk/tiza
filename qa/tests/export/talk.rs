@@ -416,6 +416,23 @@ fn the_last_step_holds_twice_only_at_the_end_of_the_talk() {
     }
 }
 
+/// The bytes of an export, with the `timestamp` of the header of a
+/// `.cast` taken out: it is the time of the export, in seconds, so two
+/// exports of the same scene a second apart differ only there.
+fn without_cast_time(bytes: Vec<u8>) -> Vec<u8> {
+    let text = String::from_utf8_lossy(&bytes);
+    let Some((head, rest)) = text.split_once('\n') else {
+        return bytes;
+    };
+    match serde_json::from_str::<serde_json::Value>(head) {
+        Ok(mut h) if h.get("version").is_some() && h.get("timestamp").is_some() => {
+            h.as_object_mut().unwrap().remove("timestamp");
+            format!("{h}\n{rest}").into_bytes()
+        }
+        _ => bytes,
+    }
+}
+
 #[test]
 fn what_a_whole_talk_cannot_be_is_refused_with_what_to_give() {
     let dir = scratch("talk-export-refused");
@@ -532,7 +549,8 @@ fn what_a_whole_talk_cannot_be_is_refused_with_what_to_give() {
         b.extend_from_slice(extra);
         run_ok(&b);
         assert!(
-            std::fs::read(&p).unwrap() == std::fs::read(&q).unwrap(),
+            without_cast_time(std::fs::read(&p).unwrap())
+                == without_cast_time(std::fs::read(&q).unwrap()),
             "{out}: --scene is not the scene alone"
         );
     }
