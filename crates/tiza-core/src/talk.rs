@@ -355,47 +355,21 @@ pub fn load_talk(path: &Path) -> Result<LoadedTalk, Error> {
     crate::fs::migrate_document_value(&mut raw)?;
     let talk = Talk::from_value(&raw)?;
     let base = crate::fs::document_dir(path);
-    let mut scenes = Vec::with_capacity(talk.scenes.len());
-    let mut seen: Vec<(PathBuf, usize)> = Vec::new();
+    let mut scenes: Vec<TalkScene> = Vec::with_capacity(talk.scenes.len());
     for (i, entry) in talk.scenes.iter().enumerate() {
-        let position = i + 1;
-        let name = entry.name();
-        let label = match &name {
-            Some(n) => format!("scene {position} ({n}, {})", entry.file),
-            None => format!("scene {position} ({})", entry.file),
-        };
-        let joined = base.join(&entry.file);
-        if entry.skip {
-            scenes.push(TalkScene {
-                position,
-                name,
-                path: joined,
-                skip: true,
-                doc: None,
-            });
-            continue;
-        }
-        let canonical = std::fs::canonicalize(&joined).map_err(|e| Error::Within {
-            what: label.clone(),
-            inner: Box::new(Error::Io(e)),
-        })?;
-        if let Some((_, other)) = seen.iter().find(|(p, _)| same_file(p, &canonical)) {
+        let scene = load_entry(&base, entry, i + 1)?;
+        if !scene.skip
+            && let Some(other) = scenes
+                .iter()
+                .find(|o| !o.skip && same_file(&o.path, &scene.path))
+        {
             return Err(Error::Invalid(format!(
-                "{label}: the same file as scene {other}; a talk shows a file once (copy it to show it again)"
+                "{}: the same file as scene {}; a talk shows a file once (copy it to show it again)",
+                entry_label(entry, scene.position),
+                other.position
             )));
         }
-        seen.push((canonical.clone(), position));
-        let doc = crate::fs::load_document(&canonical).map_err(|e| Error::Within {
-            what: label.clone(),
-            inner: Box::new(e),
-        })?;
-        scenes.push(TalkScene {
-            position,
-            name,
-            path: canonical,
-            skip: false,
-            doc: Some(doc),
-        });
+        scenes.push(scene);
     }
     Ok(LoadedTalk {
         path: path.to_path_buf(),
@@ -404,9 +378,49 @@ pub fn load_talk(path: &Path) -> Result<LoadedTalk, Error> {
     })
 }
 
+/// `scene 3 (borrow, borrow.tiza)`: how an error names an entry.
+fn entry_label(entry: &SceneEntry, position: usize) -> String {
+    match entry.name() {
+        Some(n) => format!("scene {position} ({n}, {})", entry.file),
+        None => format!("scene {position} ({})", entry.file),
+    }
+}
+
+/// Reads one entry of a talk at `position` (from 1), with its path
+/// relative to `base` (the folder of the master): its document, or nothing
+/// for an entry that `skip` leaves out. A scene that shows has its
+/// canonical path. An error names the entry. It does not compare the file
+/// with the other scenes: see [`same_file`].
+pub fn load_entry(base: &Path, entry: &SceneEntry, position: usize) -> Result<TalkScene, Error> {
+    let name = entry.name();
+    let joined = base.join(&entry.file);
+    if entry.skip {
+        return Ok(TalkScene {
+            position,
+            name,
+            path: joined,
+            skip: true,
+            doc: None,
+        });
+    }
+    let within = |e: Error| Error::Within {
+        what: entry_label(entry, position),
+        inner: Box::new(e),
+    };
+    let canonical = std::fs::canonicalize(&joined).map_err(|e| within(Error::Io(e)))?;
+    let doc = crate::fs::load_document(&canonical).map_err(within)?;
+    Ok(TalkScene {
+        position,
+        name,
+        path: canonical,
+        skip: false,
+        doc: Some(doc),
+    })
+}
+
 /// Two canonical paths name the same file: equal, or the same file on a
 /// file system that ignores case (APFS by default).
-fn same_file(a: &Path, b: &Path) -> bool {
+pub fn same_file(a: &Path, b: &Path) -> bool {
     if a == b {
         return true;
     }
@@ -420,27 +434,37 @@ fn same_file(a: &Path, b: &Path) -> bool {
     false
 }
 
-/// Writes `at` into the master on disk and nothing else: the file is read
-/// again, and only `talk.at` changes (the other keys, the form of each
-/// entry and the keys that this version does not know stay as they are).
-/// When the `scenes` on disk are not `scenes` any more (the master was
-/// edited while the talk ran), nothing is written: the error says so.
+/// Writes `at` into the master on disk and nothing else: see
+/// [`update_talk`].
 pub fn save_at(path: &Path, scenes: &[SceneEntry], at: &At) -> Result<(), Error> {
+    update_talk(path, scenes, "at", serde_json::to_value(at)?)
+}
+
+/// The one writer of a master: the file is read again, and only `key` of
+/// `talk` changes to `value` (the other keys, the form of each entry and
+/// the keys that this version does not know stay as they are). When the
+/// `scenes` on disk are not `scenes` any more (the master was edited while
+/// the talk ran), nothing is written: the error says so.
+pub fn update_talk(
+    path: &Path,
+    scenes: &[SceneEntry],
+    key: &str,
+    value: Value,
+) -> Result<(), Error> {
     let text = std::fs::read_to_string(path)?;
     let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
     let mut raw: Value = serde_json::from_str(text)?;
     let on_disk = Talk::from_value(&raw)?;
     if on_disk.scenes != scenes {
-        return Err(Error::Invalid(format!(
-            "{} changed while the talk ran: the position is not saved",
-            path.display()
-        )));
+        return Err(Error::Invalid(
+            "its list of scenes changed while the talk ran".into(),
+        ));
     }
     let talk = raw
         .get_mut("talk")
         .and_then(Value::as_object_mut)
         .ok_or_else(|| Error::Invalid("`talk` must be an object with `scenes`".into()))?;
-    talk.insert("at".into(), serde_json::to_value(at)?);
+    talk.insert(key.into(), value);
     let out = serde_json::to_string_pretty(&raw)?;
     crate::fs::write_atomically(path, out.as_bytes())
 }
