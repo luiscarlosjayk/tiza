@@ -150,7 +150,10 @@ fn open_rest(
     app.mouse = start.mouse || app.config_defaults.mouse == Some(true);
     // Here the flag wins both ways: `--counter` shows it over `counter =
     // false`.
-    app.counter = start.counter.or(app.config_defaults.counter).unwrap_or(true);
+    app.counter = start
+        .counter
+        .or(app.config_defaults.counter)
+        .unwrap_or(true);
     // A bad entry of the config file was ignored: the first one on the
     // bar, file name, line and key first (the binary printed every one on
     // stderr with the full path), and how many there are: a cut keeps the
@@ -283,6 +286,9 @@ pub fn run_app(mut app: App, notice: Option<String>, opts: RunOptions) -> io::Re
         if let Some(s) = app.unsaved_summary() {
             say_on_exit(gone, &s);
         }
+        if let Some(s) = app.parked_summary() {
+            say_on_exit(gone, &s);
+        }
         if let Some(s) = app.save_talk_position() {
             say_on_exit(gone, &s);
         }
@@ -383,6 +389,10 @@ pub fn run_app(mut app: App, notice: Option<String>, opts: RunOptions) -> io::Re
         say_on_exit(gone, &msg);
     }
     if let Some(s) = app.unsaved_summary() {
+        say_on_exit(gone, &s);
+    }
+    // With `--no-save`, the changes of the other scenes of a talk.
+    if let Some(s) = app.parked_summary() {
         say_on_exit(gone, &s);
     }
     // In a talk, where it was: the next `tiza MASTER` opens there.

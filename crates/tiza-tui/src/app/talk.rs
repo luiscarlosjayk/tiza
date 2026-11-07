@@ -481,6 +481,33 @@ impl App {
         Ok(())
     }
 
+    /// The other scenes whose changes wait in memory (`--no-save`), in
+    /// the order of the talk: `scene 3 (own)`. They are gone when Tiza
+    /// closes.
+    pub fn parked_changes(&self) -> Vec<String> {
+        let Some(t) = self.talk.as_ref() else {
+            return Vec::new();
+        };
+        t.loaded
+            .scenes
+            .iter()
+            .filter(|s| t.parked.get(&s.path).is_some_and(|p| p.doc.is_some()))
+            .map(scene_label)
+            .collect()
+    }
+
+    /// What Tiza says on the terminal as it closes when other scenes have
+    /// changes in memory.
+    pub fn parked_summary(&self) -> Option<String> {
+        let parked = self.parked_changes();
+        (!parked.is_empty()).then(|| {
+            format!(
+                "quit without saving the changes in {} (--no-save)",
+                parked.join(", ")
+            )
+        })
+    }
+
     /// The position to resume at, written to the master once, as Tiza
     /// exits. `None` when nothing is to be said; else why it could not be
     /// written, for stderr.

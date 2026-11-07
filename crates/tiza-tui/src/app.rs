@@ -2755,6 +2755,16 @@ impl App {
                 return;
             }
         }
+        // With `--no-save`, other scenes of a talk can hold changes in
+        // memory: closing loses them.
+        let parked = self.parked_changes();
+        if !parked.is_empty() {
+            self.error(format!(
+                "unsaved changes in {} (--no-save): :q! discards them",
+                parked.join(", ")
+            ));
+            return;
+        }
         // The marks of stale moves live only here: closing loses them.
         if let Some(msg) = tiza_core::stale::on_close(&self.doc) {
             // As the notice of stale moves: the bar gives it the room.
@@ -2784,6 +2794,7 @@ impl App {
     pub fn would_lose_work(&self) -> bool {
         (self.dirty && (self.save_error.is_some() || !self.autosave))
             || tiza_core::stale::on_close(&self.doc).is_some()
+            || !self.parked_changes().is_empty()
     }
 
     pub fn add_annotation(

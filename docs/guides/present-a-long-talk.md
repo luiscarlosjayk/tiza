@@ -104,7 +104,7 @@ When Tiza closes, it writes the place in the talk into the master, as `talk.at`.
 - Tiza reads a scene from disk again when you go to it. A change from your editor or from an agent shows when you get to that scene.
 - Undo is for each scene. When you come back to a scene, `u` undoes the changes that you made there, if its files did not change on disk.
 - When autosave cannot save a change, for example a read-only file or `:autosave off`, `n` and `p` do not leave the scene. The status bar tells you to type `:w`. `:next!`, `:prev!` and `:scene! X` leave the scene without the change.
-- With `--no-save`, `n` and `p` always leave a scene. Its changes and its undo wait in memory: when you come back, the scene shows them. Tiza does not write them, and they are gone when Tiza closes. When the files of the scene change on disk while it waits, the scene opens from the disk, and the status bar tells you.
+- With `--no-save`, `n` and `p` always leave a scene. Its changes and its undo wait in memory: when you come back, the scene shows them. Tiza does not write them. `q` names the scenes that hold changes and does not quit. `:q!` and Ctrl-C quit without them. When the files of the scene change on disk while it waits, the scene opens from the disk, and the status bar tells you.
 - The flags of the command line apply to each scene: `--theme`, `--padding`, `--no-save`, `--follow` and `--mouse`. `--step` and `--focus` apply only to the scene that the talk opens at.
 
 ## Special cases

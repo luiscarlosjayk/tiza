@@ -397,6 +397,45 @@ fn with_no_save_a_scene_with_changes_waits_in_memory() {
 }
 
 #[test]
+fn with_no_save_q_waits_while_another_scene_holds_changes_in_memory() {
+    let dir = talk_copy("talk-no-save-quit");
+    let start = SessionStart {
+        no_save: true,
+        ..Default::default()
+    };
+    let live = open(&dir, Some("own"), start);
+    live.command("note 1 drawn live");
+    live.command("scene loop");
+    assert_eq!(scene_file(&live), "loop.tiza");
+    assert!(live.with(|a| !a.dirty), "the scene on screen has no change");
+    // `q` would lose the note of `own`: it says so, and does not quit.
+    live.command("q");
+    let (msg, loud) = live.message().unwrap();
+    assert!(
+        loud && msg.contains("unsaved changes in scene 3 (own)") && msg.contains(":q!"),
+        "{msg}"
+    );
+    assert!(!live.with(|a| a.quit));
+    // The local API asks the same: `app.quit` refuses without `force`.
+    let reply = live.api("app.quit", json!({}));
+    assert_eq!(
+        reply.error.as_ref().map(|e| e.code.as_str()),
+        Some("unsaved_changes"),
+        "{reply:?}"
+    );
+    // On the terminal at the exit: which changes are not saved.
+    let said = live.with(|a| a.parked_summary()).expect("a summary");
+    assert!(said.contains("scene 3 (own)"), "{said}");
+    // Back in `own`, the note is on screen: nothing waits elsewhere.
+    live.command("scene own");
+    assert_eq!(live.with(|a| a.parked_changes()), Vec::<String>::new());
+    // `:q!` discards.
+    live.command("scene loop");
+    live.command("q!");
+    assert!(live.with(|a| a.quit));
+}
+
+#[test]
 fn a_put_of_another_document_holds_autosave_for_its_scene_only() {
     let dir = talk_copy("talk-put");
     let live = open(&dir, Some("own"), SessionStart::default());
