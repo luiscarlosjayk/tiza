@@ -21,6 +21,7 @@ In these cases, a change stays in memory and is not on disk:
 
 - Before a change, the status bar shows `no-save` in no-save mode and `autosave off` with autosave off. After a change, the status bar text in the table replaces it.
 - **No-save mode** keeps the document on disk as it is. Use it to annotate an example or a demo. `:w` and `:wq` write over the open document, so the status bar tells you to use `:saveas PATH`. After `:saveas PATH`, Tiza saves each change to the new file.
+- **In a talk**, use `:w PATH` in place of `:saveas PATH`, because the master names the file of each scene. `:w PATH` writes a copy. In no-save mode, the status bar shows `unsaved (:w PATH · :q! discards)`. See [Present a long talk](../guides/present-a-long-talk.md).
 - **Autosave off** keeps your changes until you save them. `:w` saves them. `:autosave on` starts autosave again.
 - **A document from an agent** is on screen. See [Agents and saving](#agents-and-saving).
 - **A failed save** does not stop autosave. Tiza tries again at each change. See [A failed save](#a-failed-save).
@@ -117,6 +118,7 @@ An agent can send a document with `scene put`. Autosave never writes a document 
 | The code sent is the copy that Tiza loaded, and the file changed on disk after that. | `FILE changed on disk since it was loaded: still read from it; the screen keeps the copy loaded (:follow on reloads it)` |
 | Autosave is off, the code sent is the text of a file that the open document shows embedded, and no other message of the put shows. | `FILE is a reference again; autosave still off (:autosave on resumes)` |
 
+- In a talk, the messages give `:w PATH writes a copy` in place of `:saveas PATH saves elsewhere`.
 - When several files changed on disk, the message names them all and says `they`, `them` and `copies`.
 - `REASON` is `the code sent for FILE differs from the file on disk`. For a linked file that Tiza did not read before and cannot read now, it is `FILE is not a file on disk`. Tiza joins several reasons with `; `.
 - When the code sent is not the same as one file, and another file changed on disk, the status bar shows one message. The second part starts with ` · also `.

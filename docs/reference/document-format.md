@@ -1405,7 +1405,7 @@ The fields of `talk`:
 
 The title of the talk.
 
-Text. No default.
+String. No default.
 
 </dd>
 <dt><code>scenes</code></dt>
@@ -1417,7 +1417,9 @@ The scenes, in the order of the talk. Each entry is the path of a `.tiza` file, 
 - `name`: the name of the scene. Default: the file name up to the first dot, for example `06-move` for `scenes/06-move.md.tiza`.
 - `skip`: when `true`, the talk leaves out the scene, and Tiza does not read its file. Default: `false`.
 
-A path is absolute or relative to the master. List with at least one scene that shows. Required.
+A path is absolute or relative to the master.
+
+Array, with at least one scene that shows. Required.
 
 </dd>
 <dt><code>at</code></dt>

@@ -20,6 +20,7 @@ talk.tiza
 scenes/01-cover.txt.tiza     a title slide that goes on by itself
 scenes/02-memory.md.tiza     a slide in Markdown
 scenes/03-move.rs.tiza       code, with its error message by a code.link move
+scenes/04-extra.rs.tiza      a scene that the talk leaves out
 scenes/05-thanks.txt.tiza
 ```
 
@@ -45,7 +46,7 @@ A master is a `.tiza` file with `talk` in place of `code`:
 
 - An entry is a path, or an object with `file`, `name` and `skip`. A path is relative to the master.
 - Each scene has a position: the number of its entry, from 1. A skipped entry has a position too, so `skip` does not change the positions of the other scenes.
-- Each scene has a name: its `name`, else its file name up to the first dot (`scenes/02-memory.md.tiza` is `02-memory`). Two scenes can have the same name.
+- Each scene has a name: its `name`, else its file name up to the first dot (`scenes/02-memory.md.tiza` is `02-memory`). A file name of digits only, for example `07.tiza`, gives no name: use the position of the scene. Two scenes can have the same name.
 - `"skip": true` leaves the scene out of the talk. Tiza does not read its file, and the file stays.
 - To change the order, move a line.
 - A master cannot hold another master, and a file shows once in a talk.
@@ -85,7 +86,7 @@ The first time, the talk opens at step 0 of the first scene that shows. Then go 
 tiza talk.tiza --present --scene move --step 9
 ```
 
-- `--scene X` takes a position or a name. Digits only are a position: `--scene 06` is position 6. A name goes to the first scene with that name.
+- `--scene X` takes a position or a name. Digits only are a position: `--scene 06` is position 6. A name goes to the first scene that shows with that name.
 - `--step N` is the step of that scene.
 - To present only a part of the talk, start at its first scene, and give `"skip": true` to the scenes that you do not show.
 
