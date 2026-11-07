@@ -33,6 +33,7 @@ pub mod schema;
 pub mod socket;
 pub mod stale;
 pub mod steps;
+pub mod talk;
 pub mod theme;
 
 pub use error::Error;

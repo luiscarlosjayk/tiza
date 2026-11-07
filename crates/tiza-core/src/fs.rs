@@ -335,6 +335,32 @@ pub fn open(spec: &str) -> Result<Opened, Error> {
     open_with(spec, true)
 }
 
+/// What `tiza FILE` opens: a document ([`open`]), or a talk when the file
+/// is a master `.tiza` ([`crate::talk::load_talk`]).
+pub enum OpenedAny {
+    Document(Box<Opened>),
+    Talk(crate::talk::LoadedTalk),
+}
+
+/// [`open`], or a talk when `spec` is a master `.tiza` (no range).
+pub fn open_any(spec: &str) -> Result<OpenedAny, Error> {
+    let (path, asked) = parse_target_in(spec, None)?;
+    if asked.is_none() && is_document_path(&path) && file_is_talk(&path) {
+        return Ok(OpenedAny::Talk(crate::talk::load_talk(&path)?));
+    }
+    open(spec).map(|o| OpenedAny::Document(Box::new(o)))
+}
+
+/// The file is JSON with `talk` at the top. A file that does not read or
+/// parse is not a talk here: [`open`] then gives its error.
+fn file_is_talk(path: &Path) -> bool {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
+    serde_json::from_str::<serde_json::Value>(text).is_ok_and(|raw| crate::talk::is_talk(&raw))
+}
+
 /// [`open`] where a range shows only its lines, without the document of
 /// that range: `tiza scene put --as-code`.
 pub fn open_range_as_code(spec: &str) -> Result<Opened, Error> {
@@ -520,6 +546,11 @@ pub fn parse_document(text: &str, base_dir: Option<&Path>) -> Result<Document, E
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let mut raw: serde_json::Value = serde_json::from_str(text)?;
     migrate_document_value(&mut raw)?;
+    // A master is not a document: every command that reads a document
+    // says so, instead of «missing field `code`».
+    if crate::talk::is_talk(&raw) {
+        return Err(crate::talk::not_a_document());
+    }
     let unknown = take_unknown_effects(&mut raw);
     let newer = take_newer_moves(&mut raw);
     let mut doc: Document = serde_json::from_value(raw).map_err(|e| {
@@ -1349,6 +1380,12 @@ pub fn document_json(doc: &Document) -> Result<String, Error> {
 /// Saves atomically (tmp + rename), as editors do.
 pub fn save_document(doc: &Document, path: &Path) -> Result<(), Error> {
     let json = document_json(doc)?;
+    write_atomically(path, json.as_bytes())
+}
+
+/// Writes a file atomically (tmp + rename), and refuses a file that the
+/// user made read-only: a `.tiza` document, or the `at` of a talk.
+pub(crate) fn write_atomically(path: &Path, bytes: &[u8]) -> Result<(), Error> {
     // The save is an atomic replace (temp file + rename), which would walk
     // over a file the user made read-only: honour the bit instead.
     if let Ok(meta) = std::fs::metadata(path)
@@ -1366,7 +1403,7 @@ pub fn save_document(doc: &Document, path: &Path) -> Result<(), Error> {
     {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(&tmp, json.as_bytes())?;
+    std::fs::write(&tmp, bytes)?;
     std::fs::rename(&tmp, path)?;
     Ok(())
 }

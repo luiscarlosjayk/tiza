@@ -61,6 +61,10 @@ pub enum Error {
     /// `step.goto` / `tiza goto` with an id no named step has.
     #[error("{0}")]
     StepNotFound(String),
+    /// `--scene` / `:scene` with a name no scene of the talk has, or a
+    /// position that is not in the talk.
+    #[error("{0}")]
+    SceneNotFound(String),
     #[error(
         ".tiza document with schema {found}: this version of Tiza reads schema {supported} at most"
     )]
@@ -94,6 +98,7 @@ impl Error {
             Error::NotFound(_)
             | Error::ViewNotFound(_)
             | Error::StepNotFound(_)
+            | Error::SceneNotFound(_)
             | Error::MoveNotFound(_) => "not_found",
             Error::DuplicateId(_) => "duplicate_id",
             Error::TextNotFound(_) | Error::NoMatch(_) | Error::MoveNoMatch { .. } => {

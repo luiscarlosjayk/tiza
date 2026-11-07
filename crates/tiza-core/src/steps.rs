@@ -52,6 +52,54 @@ pub fn serialize_sorted<S: Serializer>(steps: &[NamedStep], s: S) -> Result<S::O
     s.collect_seq(sorted)
 }
 
+/// What a word that names something (a step id, the name of a scene of a
+/// talk) means when it is a number, and the command that would read a
+/// leading `-` as an option: the rest of the rules is the same for both.
+pub(crate) struct WordRules {
+    /// What a number means instead (`a step number`).
+    pub number: &'static str,
+    /// The command that takes the word (`tiza goto`).
+    pub command: &'static str,
+    /// What the words are called, plural (`ids`).
+    pub plural: &'static str,
+    /// An example of one word (`shared-borrow`).
+    pub example: &'static str,
+}
+
+impl WordRules {
+    pub(crate) const STEP_ID: WordRules = WordRules {
+        number: "a step number",
+        command: "tiza goto",
+        plural: "ids",
+        example: "shared-borrow",
+    };
+}
+
+/// The rules of a word that names a step or a scene, already trimmed and
+/// not empty: it does not start with `-`, it is not all digits, and it has
+/// no blank. `what` starts the message (`steps: id "x" (step 3)`).
+pub(crate) fn check_word(word: &str, what: &str, rules: &WordRules) -> Result<(), Error> {
+    if word.starts_with('-') {
+        return Err(Error::Invalid(format!(
+            "{what} starts with `-`, which `{}` would read as an option; start it with a letter or a digit",
+            rules.command
+        )));
+    }
+    if word.chars().all(|c| c.is_ascii_digit()) {
+        return Err(Error::Invalid(format!(
+            "{what} is all digits; a number means {}, so {} need a letter",
+            rules.number, rules.plural
+        )));
+    }
+    if word.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return Err(Error::Invalid(format!(
+            "{what} has blanks; use one word (`{}`)",
+            rules.example
+        )));
+    }
+    Ok(())
+}
+
 /// Checks and tidies a `steps` list (load, `scene.put`, `scene.patch`):
 /// single-line titles, ids trimmed, unique, without blanks, not all digits
 /// and not starting with `-`, one entry per step, `auto_advance_ms >= 1`;
@@ -78,24 +126,11 @@ pub fn normalize(steps: &mut [NamedStep]) -> Result<(), Error> {
                     n.step
                 )));
             }
-            if id.starts_with('-') {
-                return Err(Error::Invalid(format!(
-                    "steps: id {id:?} (step {}) starts with `-`, which `tiza goto` would read as an option; start it with a letter or a digit",
-                    n.step
-                )));
-            }
-            if id.chars().all(|c| c.is_ascii_digit()) {
-                return Err(Error::Invalid(format!(
-                    "steps: id {id:?} (step {}) is all digits; a number means a step number, so ids need a letter",
-                    n.step
-                )));
-            }
-            if id.chars().any(|c| c.is_whitespace() || c.is_control()) {
-                return Err(Error::Invalid(format!(
-                    "steps: id {id:?} (step {}) has blanks; use one word (`shared-borrow`)",
-                    n.step
-                )));
-            }
+            check_word(
+                id,
+                &format!("steps: id {id:?} (step {})", n.step),
+                &WordRules::STEP_ID,
+            )?;
             if !ids.insert(id.clone()) {
                 return Err(Error::Invalid(format!(
                     "steps: id {id:?} is used twice (ids must be unique)"
