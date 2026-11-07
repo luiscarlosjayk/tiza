@@ -4637,8 +4637,8 @@ impl App {
         }
         let lang = self.doc.source.language.clone();
         let d = Document::from_code(text, lang, None);
-        // Code that was never given a language: a shebang or modeline in
-        // the pasted text picks one. An explicit `:lang`/`--lang` sticks.
+        // Code that was never given a language: a shebang, a diff header
+        // or a modeline in the pasted text picks one. An explicit `:lang`/`--lang` sticks.
         let detected = (self.doc.source.language == "txt" || self.doc.source.language.is_empty())
             .then(|| tiza_core::highlight::language_from_content(&d.code))
             .flatten();

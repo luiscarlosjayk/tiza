@@ -452,7 +452,8 @@ fn open_with(spec: &str, range_document: bool) -> Result<Opened, Error> {
 
 /// Opens what came through stdin (`-`): a `.tiza` document when the text
 /// is JSON with a `schema` field, otherwise code in `language` (`None`:
-/// detected from a shebang or modeline, else plain text).
+/// detected from a shebang, a diff header or a modeline, else plain
+/// text).
 pub fn from_stdin(text: &str, language: Option<&str>) -> Result<Opened, Error> {
     let trimmed = text.trim_start_matches('\u{feff}').trim_start();
     if trimmed.starts_with('{') && trimmed.contains("\"schema\"") {

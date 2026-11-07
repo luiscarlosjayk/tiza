@@ -9,7 +9,7 @@
 //!   A `.tiza` that references a file with an empty `source.language`
 //!   detects the same way.
 //! - AC2 Code from stdin without `--lang` is detected from its content
-//!   (shebang/modeline), not forced to plain text. `--lang` always wins and
+//!   (shebang, diff header, modeline), not forced to plain text. `--lang` always wins and
 //!   warns when no grammar exists for it.
 //! - AC3 `:lang` shows the language; `:lang <id>` overrides it (`rust`,
 //!   `typescript`… are normalized to `rs`, `ts`…) and a `:lang` without
@@ -69,6 +69,12 @@ fn stdin_detects_from_content_and_lang_wins() {
     let o = fs::from_stdin("#!/bin/bash\necho hi\n", Some("py")).unwrap();
     assert_eq!(o.document.source.language, "py");
     let o = fs::from_stdin("plain words\n", None).unwrap();
+    assert_eq!(o.document.source.language, "txt");
+    // A diff by its header, and `--lang` still wins.
+    let diff = "--- a.rs\n+++ b.rs\n@@ -1 +1 @@\n-x\n+y\n";
+    let o = fs::from_stdin(diff, None).unwrap();
+    assert_eq!(o.document.source.language, "diff");
+    let o = fs::from_stdin(diff, Some("txt")).unwrap();
     assert_eq!(o.document.source.language, "txt");
     // The binary: `--lang` without a grammar warns on stderr but still renders.
     let out = tiza(&[
@@ -226,4 +232,50 @@ fn lang_given_a_path_detects_from_it() {
         String::from_utf8_lossy(&out.stderr)
     );
     assert!(String::from_utf8_lossy(&out.stdout).contains("print(1)"));
+}
+
+/// `tiza render` of `args` with `input` on stdin: its stdout.
+fn render_stdin(input: &[u8], args: &[&str]) -> Vec<u8> {
+    use std::io::Write;
+    use std::process::Stdio;
+    let mut child = tiza_qa::command()
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(input).unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    out.stdout
+}
+
+/// A real diff on stdin (`git diff | tiza render -`) has no file name: its
+/// header gives the diff language, so it gets the same colors as the same
+/// text in a `.diff` file. With `--lang txt`, it is plain text.
+#[test]
+fn a_diff_on_stdin_gets_the_colors_of_a_diff_file() {
+    for name in ["git.diff", "unified.diff"] {
+        let path = fixture(&format!("render/language_detection/diff/{name}"));
+        let text = std::fs::read(&path).unwrap();
+        let ansi = ["--format", "ansi", "--out", "-"];
+        let file = tiza(&[&["render", path.to_str().unwrap()][..], &ansi[..]].concat());
+        assert!(file.status.success(), "{name}");
+        let piped = render_stdin(&text, &[&["render", "-"][..], &ansi[..]].concat());
+        assert_eq!(
+            String::from_utf8_lossy(&piped),
+            String::from_utf8_lossy(&file.stdout),
+            "{name}: stdin and the .diff file differ"
+        );
+        let plain = render_stdin(
+            &text,
+            &[&["render", "-", "--lang", "txt"][..], &ansi[..]].concat(),
+        );
+        assert_ne!(plain, piped, "{name}: --lang txt gave the diff colors");
+    }
 }

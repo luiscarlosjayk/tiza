@@ -58,6 +58,8 @@ pub enum Via {
     FileName,
     /// A `#!` line (`#!/usr/bin/env python3`).
     Shebang,
+    /// The header of a diff (`diff --git`, or `--- ` and then `+++ `).
+    DiffHeader,
     /// A Vim or Emacs modeline (`# vim: ft=python`, `-*- mode: ruby -*-`).
     Modeline,
     /// Nothing matched: plain text.
@@ -70,6 +72,7 @@ impl Via {
             Via::Extension => "file extension",
             Via::FileName => "file name",
             Via::Shebang => "shebang",
+            Via::DiffHeader => "diff header",
             Via::Modeline => "modeline",
             Via::Default => "default: plain text",
         }
@@ -95,8 +98,9 @@ pub fn has_grammar(language: &str) -> bool {
 ///
 /// Order: the file extension when a grammar exists for it (so a `.sh` file
 /// with a Python shebang stays shell), well-known file names (`Makefile`,
-/// `Dockerfile`, `Cargo.lock`, `.bashrc`…), a `#!` line, then a Vim or
-/// Emacs modeline in the first or last five lines. Otherwise plain text.
+/// `Dockerfile`, `Cargo.lock`, `.bashrc`…), a `#!` line, the header of a
+/// diff, then a Vim or Emacs modeline in the first or last five lines.
+/// Otherwise plain text.
 pub fn detect_language(path: Option<&str>, code: &[String]) -> Detection {
     if let Some(p) = path {
         if let Some(ext) = std::path::Path::new(p)
@@ -154,7 +158,7 @@ fn language_from_file_name(name: &str) -> Option<&'static str> {
     })
 }
 
-/// Shebang or modeline in the code, if any.
+/// Shebang, diff header or modeline in the code, if any.
 pub fn language_from_content(code: &[String]) -> Option<Detection> {
     if let Some(first) = code.first()
         && let Some(lang) = language_from_shebang(first)
@@ -162,6 +166,14 @@ pub fn language_from_content(code: &[String]) -> Option<Detection> {
         return Some(Detection {
             language: lang.into(),
             via: Via::Shebang,
+        });
+    }
+    // Before the modeline: a diff can hold one in a changed line
+    // (`+# vim: ft=python`), and the text is still a diff.
+    if is_diff(code) {
+        return Some(Detection {
+            language: "diff".into(),
+            via: Via::DiffHeader,
         });
     }
     let head = code.iter().take(5);
@@ -172,6 +184,21 @@ pub fn language_from_content(code: &[String]) -> Option<Detection> {
             language,
             via: Via::Modeline,
         })
+}
+
+/// A diff, by its header: the first line that is not blank starts with
+/// `diff --git ` (`git diff`), or starts with `--- ` and the next line
+/// with `+++ ` (`diff -u`). A `---` of YAML or Markdown has no space and
+/// no `+++ ` line after it.
+fn is_diff(code: &[String]) -> bool {
+    let mut lines = code.iter().skip_while(|l| l.trim().is_empty());
+    match lines.next() {
+        Some(first) if first.starts_with("diff --git ") => true,
+        Some(first) if first.starts_with("--- ") => {
+            lines.next().is_some_and(|l| l.starts_with("+++ "))
+        }
+        _ => false,
+    }
 }
 
 /// `#!/usr/bin/env python3`, `#!/bin/bash`, `#!/usr/bin/env -S deno run` …
@@ -856,6 +883,40 @@ mod tests {
         assert_eq!((d.language.as_str(), d.via), ("py", Via::Shebang));
         let d = detect_language(Some("notes"), &["hello".into()]);
         assert_eq!((d.language.as_str(), d.via), ("txt", Via::Default));
+    }
+
+    #[test]
+    fn a_diff_is_found_by_its_header() {
+        let d = |text: &str| detect_language(None, &lines(text));
+        for text in [
+            "diff --git a/x.rs b/x.rs\nindex 1..2 100644\n--- a/x.rs\n+++ b/x.rs\n@@ -1 +1 @@\n-a\n+b",
+            "--- old.txt\t2026-11-07\n+++ new.txt\t2026-11-07\n@@ -1 +1 @@\n-a\n+b",
+            "\n\ndiff --git a/x b/x",
+        ] {
+            let got = d(text);
+            assert_eq!(
+                (got.language.as_str(), got.via),
+                ("diff", Via::DiffHeader),
+                "{text:?}"
+            );
+            assert!(has_grammar(&got.language));
+        }
+        // A changed modeline near the end does not make the diff Python.
+        let tail = "diff --git a/t.py b/t.py\n@@ -1 +1 @@\n-x\n+# vim: ft=python";
+        assert_eq!(d(tail).language, "diff");
+        // Not a diff: YAML, a `---` with no `+++` line, a `+++` first, a
+        // header in the middle.
+        for text in [
+            "---\nkey: 1",
+            "--- notes\nmore notes",
+            "+++ b/x\n--- a/x",
+            "intro\ndiff --git a/x b/x",
+            "diff --gitx",
+        ] {
+            assert_eq!(d(text).language, "txt", "{text:?}");
+        }
+        // A `#!` line still comes first.
+        assert_eq!(d("#!/bin/sh\n--- a\n+++ b").language, "sh");
     }
 
     #[test]

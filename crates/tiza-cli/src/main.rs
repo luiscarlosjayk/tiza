@@ -22,7 +22,7 @@ use tiza_core::{Theme, ThemeName};
 struct Cli {
     /// Source file (`main.rs`, `main.rs:12-48`), `.tiza` document, or `-` for stdin (code or a document). Without it, reads stdin when piped.
     file: Option<String>,
-    /// Language override (rs, ts, py, go…); otherwise detected from the extension, file name, shebang or modeline
+    /// Language override (rs, ts, py, go…); otherwise detected from the extension, file name, shebang, diff header or modeline
     #[arg(long)]
     lang: Option<String>,
     /// Draw one frame and exit without touching the document (CI smoke test)

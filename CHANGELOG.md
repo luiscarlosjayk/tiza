@@ -6,6 +6,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 
 ### Added
 - `--no-counter` hides the step counter of presentation mode for the session, and the last row shows code again. `counter = false` in `[defaults]` of the config file hides it for every session, and `--counter` shows it. The `⏸ N to review · :review` chip still shows. See [Config file](docs/reference/config.md#which-value-wins).
+- A diff on standard input gets the colors of a `.diff` file, for example in `git diff | tiza` or `git diff | tiza render -`. Tiza finds it from its header: the first line starts with `diff --git`, or a `--- ` line is followed by a `+++ ` line. `--lang` still wins. Before, the diff was plain text, because standard input has no file name. See [How Tiza finds the language](docs/reference/cli.md#how-tiza-finds-the-language).
 
 ### Changed
 - The reference of the command line and of the document format gives the options and the fields as lists, as the pages of the `:` commands do. Each note about one flag, command or field is under it, and a field gives its type and its default. See [Command line](docs/reference/cli.md) and [Document format](docs/reference/document-format.md).
