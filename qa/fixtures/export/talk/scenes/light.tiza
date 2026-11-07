@@ -1,0 +1,14 @@
+{
+ "schema": 2,
+ "source": {"language": "txt", "first_line": 1},
+ "theme": "light",
+ "center": true,
+ "numbers": false,
+ "loop": true,
+ "code": ["A light scene", "in the middle"],
+ "steps": [{"step": 2, "auto_advance_ms": 1500}],
+ "annotations": [
+  {"id": "l1", "step": 1, "type": "highlight", "span": {"line": 1, "start": 0, "end": 7}},
+  {"id": "l2", "step": 2, "type": "box", "from_line": 2, "to_line": 2}
+ ]
+}

@@ -1166,6 +1166,105 @@ fn webp_decoder(bytes: &[u8]) -> image_webp::WebPDecoder<std::io::Cursor<&[u8]>>
     image_webp::WebPDecoder::new(std::io::Cursor::new(bytes)).unwrap()
 }
 
+/// A master that Tiza cannot play: a change to the master of
+/// `qa/fixtures/shared/talk/`, and a text that the error must hold. The
+/// tests that open a talk and the tests of `tiza check` use the same
+/// cases, so that the two readers of a master agree.
+pub struct BadMaster {
+    pub name: &'static str,
+    pub change: fn(&mut serde_json::Value),
+    pub want: &'static str,
+    /// The master itself is wrong: `tiza check` checks no scene.
+    pub stops: bool,
+}
+
+/// The [`BadMaster`] cases.
+pub fn bad_masters() -> Vec<BadMaster> {
+    use serde_json::json;
+    let case = |name, change, want, stops| BadMaster {
+        name,
+        change,
+        want,
+        stops,
+    };
+    vec![
+        case(
+            "both",
+            |m| m["code"] = json!(["x"]),
+            "both `code` and `talk`",
+            true,
+        ),
+        case(
+            "empty",
+            |m| m["talk"]["scenes"] = json!([]),
+            "`scenes` is empty",
+            true,
+        ),
+        case(
+            "all-skipped",
+            |m| m["talk"]["scenes"] = json!([{"file": "own.tiza", "skip": true}]),
+            "every scene has `skip`",
+            true,
+        ),
+        case(
+            "skip-text",
+            |m| m["talk"]["scenes"][2] = json!({"file": "own.tiza", "skip": "yes"}),
+            "talk: scene 3: `skip` must be true or false",
+            false,
+        ),
+        case(
+            "bad-name",
+            |m| m["talk"]["scenes"][2] = json!({"file": "own.tiza", "name": "my scene"}),
+            "talk: scene 3: name",
+            false,
+        ),
+        case(
+            "not-tiza",
+            |m| m["talk"]["scenes"][2] = json!("src/borrow.rs"),
+            "src/borrow.rs is not a .tiza file",
+            false,
+        ),
+        case(
+            "unknown-key",
+            |m| m["talk"]["order"] = json!("random"),
+            "talk: unknown key `order`",
+            true,
+        ),
+        case(
+            "twice",
+            |m| m["talk"]["scenes"][6] = json!("own.tiza"),
+            "a talk shows a file once",
+            false,
+        ),
+        case(
+            "missing",
+            |m| m["talk"]["scenes"][2] = json!({"file": "gone.tiza", "name": "own"}),
+            "scene 3 (own, gone.tiza)",
+            false,
+        ),
+        case(
+            "nested",
+            |m| m["talk"]["scenes"][2] = json!("talk.tiza"),
+            "scene 3 (talk, talk.tiza) is a talk: a talk plays documents, not other talks",
+            false,
+        ),
+    ]
+}
+
+/// Copies the folder `from` into `to`, with its subfolders.
+pub fn copy_dir(from: &Path, to: &Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for e in std::fs::read_dir(from).unwrap() {
+        let e = e.unwrap();
+        let target = to.join(e.file_name());
+        if e.file_type().unwrap().is_dir() {
+            copy_dir(&e.path(), &target);
+        } else {
+            std::fs::copy(e.path(), target).unwrap();
+        }
+    }
+}
+
 /// RGBA pixels and size of a WebP still.
 pub fn webp_still(bytes: &[u8]) -> (Vec<u8>, u32, u32) {
     let mut d = webp_decoder(bytes);

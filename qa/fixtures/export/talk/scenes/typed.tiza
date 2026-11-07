@@ -1,0 +1,20 @@
+{
+ "schema": 1,
+ "title": "A typed move and effects",
+ "source": {"language": "rs", "first_line": 1},
+ "code": [
+  "fn main() {",
+  "    let s = String::from(\"hi\");",
+  "    s.push('!');",
+  "    let n = s.len();",
+  "}"
+ ],
+ "annotations": [
+  {"id": "b1", "step": 1, "type": "box", "from_line": 2, "to_line": 3, "label": "the owner", "effect": "draw"},
+  {"id": "n1", "step": 2, "type": "note", "line": 4, "text": "its length", "effect": "fade"}
+ ],
+ "moves": [
+  {"at_step": 2, "action": "code.patch", "op": "insert", "after": "let n = s.len();",
+   "content": "\n    // typed", "typing": "char", "speed_ms": 40}
+ ]
+}

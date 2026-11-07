@@ -353,7 +353,7 @@ pub fn open_any(spec: &str) -> Result<OpenedAny, Error> {
 
 /// The file is JSON with `talk` at the top. A file that does not read or
 /// parse is not a talk here: [`open`] then gives its error.
-fn file_is_talk(path: &Path) -> bool {
+pub fn file_is_talk(path: &Path) -> bool {
     let Ok(text) = std::fs::read_to_string(path) else {
         return false;
     };

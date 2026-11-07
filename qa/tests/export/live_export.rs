@@ -640,6 +640,7 @@ fn layout_never_indexes_out_of_bounds_on_a_view_with_no_loaded_lines() {
                 line_numbers: true,
                 from_zero: true,
                 margin_cap: None,
+                hold_last: true,
             },
         );
     }
@@ -1030,6 +1031,7 @@ fn the_arithmetic_of_holds_saturates() {
             line_numbers: true,
             from_zero: true,
             margin_cap: None,
+            hold_last: true,
         },
     );
     assert!(

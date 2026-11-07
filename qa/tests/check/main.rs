@@ -9,5 +9,6 @@ mod live_check;
 mod preflight;
 mod scroll_targets;
 mod spotlight_end;
+mod talk;
 mod terminal_width;
 mod zero_width_labels;

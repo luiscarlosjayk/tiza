@@ -12,6 +12,7 @@ mod scroll_moves;
 mod step_past_the_last;
 mod svg_and_png;
 mod svg_font_faces;
+mod talk;
 mod text_markdown_ansi;
 mod theme_auto;
 mod typing_pace;

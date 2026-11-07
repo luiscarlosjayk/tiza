@@ -1,0 +1,6 @@
+{
+  "schema": 2,
+  "talk": {
+    "scenes": ["scenes/typed.tiza", "scenes/light.tiza"]
+  }
+}

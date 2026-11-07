@@ -129,12 +129,15 @@ fn encode<F: Frames + ?Sized>(
     let mut strips = Strips::default();
     // The strips of frame `i` to rasterize, from `before`, the frame
     // before it: `None` for all of them.
-    let dirty_of = |i: usize, before: &Canvas, now: &Canvas, height: u32| {
-        (reuse && i > 0).then(|| dirty_strips(before, now, o, height))
+    // The first frame of a part (a scene of a talk, with its own theme)
+    // is rasterized whole: the same cells can have other pixels.
+    let dirty_of = |i: usize, new_part: bool, before: &Canvas, now: &Canvas, height: u32| {
+        (reuse && i > 0 && !new_part).then(|| dirty_strips(before, now, o, height))
     };
     // The frame before the one being encoded: the frames come one at a
     // time.
     let mut before = Canvas::new(0, 0);
+    let mut before_part = 0usize;
     let wanted = |dirty: &Option<Vec<bool>>, k: usize| dirty.as_ref().is_none_or(|d| d[k]);
     // The colors of each strip when it was last rasterized: a strip that
     // is not rasterized again counts them again.
@@ -142,11 +145,11 @@ fn encode<F: Frames + ?Sized>(
     let mut work = Work::default();
     let mut count = 0usize;
     let mut duration_ms = 0u64;
-    frames.each(&mut |canvas, delay_ms| {
+    frames.each_themed(theme, &mut |canvas, delay_ms, theme, part| {
         let i = count;
         count += 1;
         duration_ms = duration_ms.saturating_add(frame_delay_ms(delay_ms));
-        let dirty = dirty_of(i, &before, canvas, height);
+        let dirty = dirty_of(i, part != before_part, &before, canvas, height);
         if dirty.as_ref().is_none_or(|d| d.contains(&true)) {
             let raster = frame_raster(canvas, theme, o, height, &dirty, &mut work)?;
             let (w, h) = (raster.width, raster.height);
@@ -178,6 +181,7 @@ fn encode<F: Frames + ?Sized>(
             }
         }
         before.clone_from(canvas);
+        before_part = part;
         Ok(())
     })?;
     if count == 0 {
@@ -210,13 +214,14 @@ fn encode<F: Frames + ?Sized>(
         // animation.
         let mut buffer: Vec<u8> = Vec::new();
         let mut i = 0usize;
-        frames.each(&mut |canvas, delay_ms| {
+        frames.each_themed(theme, &mut |canvas, delay_ms, theme, part| {
             // Rasterizing is deterministic: the same strips, with the same
             // pixels, as in step 1. A frame with another size, or with a
             // color that step 1 did not count, is an error, not a panic.
             // A strip that is not rasterized again has the pixels of the
             // frame before, so its indexes are on the screen already.
-            let dirty = dirty_of(i, &before, canvas, height);
+            let new_part = i > 0 && part != before_part;
+            let dirty = dirty_of(i, new_part, &before, canvas, height);
             screen.start();
             if dirty.as_ref().is_none_or(|d| d.contains(&true)) {
                 let raster = frame_raster(canvas, theme, o, height, &dirty, &mut work)?;
@@ -281,6 +286,7 @@ fn encode<F: Frames + ?Sized>(
                 }
             }
             before.clone_from(canvas);
+            before_part = part;
             i += 1;
             Ok(())
         })?;

@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "source": {"language": "rs"},
+ "code": {"file": "../src/tall.rs"},
+ "annotations": [
+  {"id": "t1", "step": 1, "type": "note", "line": 2, "text": "the start"},
+  {"id": "t2", "step": 2, "type": "box", "from_line": 10, "to_line": 12, "label": "the end"}
+ ]
+}

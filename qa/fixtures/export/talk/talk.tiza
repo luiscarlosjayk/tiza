@@ -1,0 +1,12 @@
+{
+  "schema": 2,
+  "talk": {
+    "title": "A talk to export",
+    "scenes": [
+      "scenes/typed.tiza",
+      {"file": "scenes/light.tiza", "name": "light"},
+      "scenes/tall.tiza",
+      {"file": "scenes/gone.tiza", "skip": true}
+    ]
+  }
+}

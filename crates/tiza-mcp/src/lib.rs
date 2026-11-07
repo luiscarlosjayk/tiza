@@ -1817,6 +1817,7 @@ impl ExportJob {
                         line_numbers: doc.numbers_or(true),
                         from_zero: !self.skip_zero,
                         margin_cap: None,
+                        hold_last: true,
                     },
                 );
                 anim_frames = take.len();

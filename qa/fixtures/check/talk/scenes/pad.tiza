@@ -1,0 +1,5 @@
+{"schema": 1, "source": {"language": "rs"}, "padding": [0, 20],
+ "code": ["fn main() {", "    let s = String::new();", "}"],
+ "annotations": [
+  {"id": "p1", "step": 1, "type": "note", "line": 2, "text": "a note of a middle length here"}
+ ]}

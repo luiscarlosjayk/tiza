@@ -1,0 +1,5 @@
+{"schema": 1, "source": {"language": "rs"},
+ "code": ["fn main() {", "    let s = String::new();", "}"],
+ "annotations": [
+  {"id": "q1", "step": 1, "type": "note", "line": 2, "text": "a much longer note that needs many columns of the margin"}
+ ]}

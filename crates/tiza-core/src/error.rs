@@ -58,6 +58,13 @@ pub enum Error {
     },
     #[error("{0}")]
     Invalid(String),
+    /// A master (a file with `talk`) where a document is needed. Its own
+    /// variant, so that a talk can tell a scene that is a master from
+    /// another error without reading the message.
+    #[error(
+        "this file is a talk (it has `talk`), not a document: open it with `tiza FILE` or `tiza FILE --present`"
+    )]
+    NotADocument,
     /// `step.goto` / `tiza goto` with an id no named step has.
     #[error("{0}")]
     StepNotFound(String),
@@ -113,7 +120,9 @@ impl Error {
             Error::TextNotFound(_) | Error::NoMatch(_) | Error::MoveNoMatch { .. } => {
                 "text_not_found"
             }
-            Error::Invalid(_) | Error::InsideCharacter { .. } => "invalid_argument",
+            Error::Invalid(_) | Error::NotADocument | Error::InsideCharacter { .. } => {
+                "invalid_argument"
+            }
             Error::UnsupportedSchema { .. } => "unsupported_schema",
             Error::UnsavedChanges => "unsaved_changes",
             Error::Unavailable(_) => "unavailable",

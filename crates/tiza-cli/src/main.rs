@@ -154,6 +154,17 @@ fn config_theme_notes(cfg: &tiza_core::config::Config) -> Vec<String> {
         .collect()
 }
 
+/// `--scene` without a master.
+const SCENE_NEEDS_A_MASTER: &str =
+    "--scene opens a scene of a talk: give a master .tiza that lists the scenes";
+/// `--theme-file` with a master.
+const TALK_NO_THEME_FILE: &str = "--theme-file does not work with a talk: put the theme in each scene (`:theme`, or `theme` in its .tiza)";
+/// `--lang` with a master.
+const TALK_NO_LANG: &str = "--lang does not work with a talk: each scene names its own language";
+/// A master on stdin: its scenes have no folder to be read from.
+const TALK_FROM_STDIN: &str =
+    "a talk on stdin has no folder for its scenes: give the path of the master .tiza";
+
 /// The theme an export paints: the flag or the document's, with the
 /// override tables applied; `terminal` and `reset` tokens fall back with a
 /// notice on stderr (there is no host palette in a file).
@@ -163,6 +174,25 @@ fn export_theme(
     theme_file: Option<&PathBuf>,
     config: Option<&tiza_core::theme::ThemeOverrides>,
 ) -> anyhow::Result<Theme> {
+    export_theme_of(flag, doc, theme_file, config, None)
+}
+
+/// [`export_theme`]; `scene` names the scene of a talk in front of each
+/// note (`scene 2 (move): …`).
+fn export_theme_of(
+    flag: Option<ThemeArg>,
+    doc: &tiza_core::Document,
+    theme_file: Option<&PathBuf>,
+    config: Option<&tiza_core::theme::ThemeOverrides>,
+    scene: Option<&str>,
+) -> anyhow::Result<Theme> {
+    let say = |n: &str| {
+        let line = match scene {
+            Some(s) => format!("{s}: {n}"),
+            None => n.to_string(),
+        };
+        eprintln!("tiza: {}", tiza_core::printable::printable_text(&line));
+    };
     let name = flag
         .and_then(ThemeArg::fixed)
         .or(doc.theme)
@@ -172,7 +202,7 @@ fn export_theme(
             let (ov, notes) =
                 tiza_core::theme::load_theme_file(p).map_err(|e| anyhow::anyhow!("{e}"))?;
             for n in notes {
-                eprintln!("tiza: {}", tiza_core::printable::printable_text(&n));
+                say(&n);
             }
             Some(ov)
         }
@@ -187,11 +217,11 @@ fn export_theme(
     // The notes quote the overrides as written, from the document or a
     // theme file: shown, never sent raw to the terminal.
     for n in notes {
-        eprintln!("tiza: {}", tiza_core::printable::printable_text(&n));
+        say(&n);
     }
     let (theme, notice) = theme.for_export();
     if let Some(n) = notice {
-        eprintln!("tiza: {}", tiza_core::printable::printable_text(&n));
+        say(&n);
     }
     Ok(theme)
 }
@@ -287,6 +317,9 @@ enum Cmd {
         /// .gif and an animated .webp: how many times it plays (0 = forever, the default)
         #[arg(long = "loop", default_value_t = 0)]
         loop_count: u16,
+        /// A master .tiza: export only this scene (its position or its name), as `tiza render SCENE` does. Without it, a .gif, .webp, .mp4 or .webm plays every scene of the talk in a row
+        #[arg(long)]
+        scene: Option<String>,
     },
     /// Preflight before a take: load a .tiza and list every problem (anchors, markers, moves at their
     /// step, linked files, ids, annotations a move hides, labels
@@ -304,6 +337,9 @@ enum Cmd {
         /// Warnings fail too (exit 1)
         #[arg(long)]
         strict: bool,
+        /// A master .tiza: check only this scene (its position or its name), as `tiza check SCENE` does. Without it, Tiza checks every scene of the talk
+        #[arg(long)]
+        scene: Option<String>,
         /// `check` never talks to the live instance: the global `--socket`
         /// and `--session` are accepted (and ignored) but left out of its help.
         #[arg(long, hide = true)]
@@ -439,7 +475,11 @@ fn real_main() -> anyhow::Result<()> {
             skip_zero,
             title,
             loop_count,
+            scene,
         }) => {
+            // `tiza --scene 2 render talk.tiza` as `tiza render talk.tiza --scene 2`.
+            let scene = scene.or(cli.scene.clone());
+            let mut file = file;
             if all_steps && out == "-" {
                 bail!("--all-steps writes one file per step: pass a directory, --out steps/");
             }
@@ -520,6 +560,77 @@ fn real_main() -> anyhow::Result<()> {
                     }
                 });
             let config = load_config();
+            // A talk: one scene (`--scene`), else every scene in a row.
+            let talk_path = file
+                .as_deref()
+                .filter(|f| *f != "-")
+                .map(PathBuf::from)
+                .filter(|p| fs::is_document_path(p) && fs::file_is_talk(p));
+            match (&talk_path, &scene) {
+                (None, Some(_)) => bail!(SCENE_NEEDS_A_MASTER),
+                (Some(_), _) if lang.is_some() || cli.lang.is_some() => bail!(TALK_NO_LANG),
+                (Some(_), _) if theme_file.is_some() => bail!(TALK_NO_THEME_FILE),
+                (Some(path), Some(spec)) => {
+                    if format == Format::Tape {
+                        bail!(
+                            "a .tape opens the file that it is given in the TUI, and a master opens the whole talk: give the scene file, `tiza render SCENE.tiza --out demo.tape`"
+                        );
+                    }
+                    // Only this scene is read: it does not need the others.
+                    let (_, _, given) = tiza_core::talk_check::resolve_scene(path, spec, "render")
+                        .map_err(|e| anyhow::anyhow!("{e}"))?;
+                    // The scene next to the master, as the command line
+                    // gave the master.
+                    let shown = match path.parent().filter(|d| !d.as_os_str().is_empty()) {
+                        Some(d) => d.join(&given),
+                        None => PathBuf::from(&given),
+                    };
+                    file = Some(shown.to_string_lossy().into_owned());
+                }
+                (Some(path), None) => {
+                    let animated = matches!(format, Format::Gif | Format::Mp4 | Format::Webm)
+                        || (format == Format::Webp && step.is_none() && !all_steps);
+                    if all_steps {
+                        bail!(
+                            "--all-steps writes the steps of one document, and a talk has steps in each scene: give --scene ID"
+                        );
+                    }
+                    if !animated {
+                        bail!(match format {
+                            Format::Cast => "a .cast of a talk is not made yet: give --scene ID for one scene".to_string(),
+                            Format::Tape => "a .tape of a talk is not made yet: give the file of one scene, `tiza render SCENE.tiza --out demo.tape`".to_string(),
+                            _ => "a talk has steps in each scene: give --scene ID --step K, or export a .gif, .webp, .mp4 or .webm of the whole talk".to_string(),
+                        });
+                    }
+                    return render_talk(&TalkExport {
+                        path,
+                        out: &out,
+                        format,
+                        width,
+                        config: &config,
+                        theme,
+                        numbers: match (numbers, no_numbers) {
+                            (true, _) => Some(true),
+                            (_, true) => Some(false),
+                            _ => None,
+                        },
+                        margin_cols,
+                        interval,
+                        skip_zero,
+                        loop_count,
+                        svg: tiza_export::SvgOptions {
+                            font_size,
+                            margin_cells: margin,
+                            radius,
+                            embed_fonts: false,
+                            title: None,
+                        },
+                        scale,
+                        system_fonts,
+                    });
+                }
+                (None, None) => {}
+            }
             // The document: a file, or the live instance's scene.
             // The live instance's `.tiza` and whether it autosaves: what a
             // `.tape` of it opens.
@@ -533,6 +644,12 @@ fn real_main() -> anyhow::Result<()> {
                     let mut opened = if f == "-" {
                         let mut text = String::new();
                         std::io::stdin().read_to_string(&mut text)?;
+                        let raw = text.strip_prefix('\u{feff}').unwrap_or(&text);
+                        if serde_json::from_str::<serde_json::Value>(raw)
+                            .is_ok_and(|v| tiza_core::talk::is_talk(&v))
+                        {
+                            bail!(TALK_FROM_STDIN);
+                        }
                         fs::from_stdin(&text, None)
                             .context("could not read the document from stdin")?
                     } else {
@@ -829,6 +946,7 @@ fn real_main() -> anyhow::Result<()> {
                         line_numbers,
                         from_zero: !skip_zero,
                         margin_cap,
+                        hold_last: true,
                     };
                     // Made once; each pass of an encoder plays it back.
                     let take = tiza_core::anim::Take::record(&doc, &theme, &anim_opts);
@@ -1128,8 +1246,11 @@ fn real_main() -> anyhow::Result<()> {
             width,
             json,
             strict,
+            scene,
             ..
         }) => {
+            // `tiza --scene 2 check talk.tiza` as `tiza check talk.tiza --scene 2`.
+            let scene = scene.or(cli.scene.clone());
             let width = width
                 .map(tiza_core::layout::check_width)
                 .transpose()
@@ -1148,6 +1269,15 @@ fn real_main() -> anyhow::Result<()> {
             let (name, report) = if file == "-" {
                 let mut text = String::new();
                 std::io::stdin().read_to_string(&mut text)?;
+                let raw = text.strip_prefix('\u{feff}').unwrap_or(&text);
+                if serde_json::from_str::<serde_json::Value>(raw)
+                    .is_ok_and(|v| tiza_core::talk::is_talk(&v))
+                {
+                    bail!(TALK_FROM_STDIN);
+                }
+                if scene.is_some() {
+                    bail!(SCENE_NEEDS_A_MASTER);
+                }
                 let cwd = std::env::current_dir().ok();
                 (
                     "stdin".to_string(),
@@ -1167,9 +1297,50 @@ fn real_main() -> anyhow::Result<()> {
                     }
                     sidecar
                 };
-                let report = tiza_core::check::check_path(&path, &opts)
-                    .with_context(|| format!("could not read {}", path.display()))?;
-                (path.display().to_string(), report)
+                let is_talk = fs::file_is_talk(&path);
+                match (&scene, is_talk) {
+                    (Some(_), false) => bail!(SCENE_NEEDS_A_MASTER),
+                    (None, true) => {
+                        let report = tiza_core::talk_check::check_talk(&path, &opts)
+                            .with_context(|| format!("could not read {}", path.display()))?;
+                        let failed = !report.ok || (strict && report.warnings > 0);
+                        let mut stdout = std::io::stdout();
+                        if json {
+                            writeln!(
+                                stdout,
+                                "{}",
+                                json_text(serde_json::to_string_pretty(&report)?)
+                            )?;
+                        } else {
+                            let text = report.to_text(&path.display().to_string());
+                            write!(stdout, "{}", tiza_core::printable::printable_text(&text))?;
+                        }
+                        stdout.flush()?;
+                        if failed {
+                            std::process::exit(1);
+                        }
+                        return Ok(());
+                    }
+                    (Some(spec), true) => {
+                        let (_, scene_path, given) =
+                            tiza_core::talk_check::resolve_scene(&path, spec, "check")
+                                .map_err(|e| anyhow::anyhow!("{e}"))?;
+                        // The scene as the command line names it: next to
+                        // the master as it was given.
+                        let shown = match path.parent().filter(|d| !d.as_os_str().is_empty()) {
+                            Some(d) => d.join(&given),
+                            None => PathBuf::from(&given),
+                        };
+                        let report = tiza_core::check::check_path(&scene_path, &opts)
+                            .with_context(|| format!("could not read {}", shown.display()))?;
+                        (shown.display().to_string(), report)
+                    }
+                    (None, false) => {
+                        let report = tiza_core::check::check_path(&path, &opts)
+                            .with_context(|| format!("could not read {}", path.display()))?;
+                        (path.display().to_string(), report)
+                    }
+                }
             };
             let failed = !report.ok || (strict && report.warnings > 0);
             let mut stdout = std::io::stdout();
@@ -1765,12 +1936,237 @@ fn find_ffmpeg() -> Option<std::path::PathBuf> {
         .find(|p| p.is_file())
 }
 
+/// What `tiza render MASTER --out talk.gif` was asked.
+struct TalkExport<'a> {
+    path: &'a Path,
+    out: &'a str,
+    format: Format,
+    width: Option<usize>,
+    config: &'a tiza_core::config::Config,
+    theme: Option<ThemeArg>,
+    /// `--numbers` (`Some(true)`) or `--no-numbers` (`Some(false)`).
+    numbers: Option<bool>,
+    margin_cols: Option<usize>,
+    interval: f64,
+    skip_zero: bool,
+    loop_count: u16,
+    svg: tiza_export::SvgOptions,
+    scale: Option<f32>,
+    system_fonts: bool,
+}
+
+/// `scene 2 (move)`: how the CLI names a scene of a talk.
+fn scene_label(position: usize, name: Option<&str>) -> String {
+    match name {
+        Some(n) => format!("scene {position} ({n})"),
+        None => format!("scene {position}"),
+    }
+}
+
+/// A .gif, .webp, .mp4 or .webm of a whole talk: each scene that shows,
+/// exactly as its own export, one after the other. Every frame has the
+/// size of the widest and the tallest scene. The last step stays twice as
+/// long only at the end of the talk.
+fn render_talk(t: &TalkExport<'_>) -> anyhow::Result<()> {
+    let talk = tiza_core::talk::load_talk(t.path)
+        .map_err(|e| anyhow::anyhow!("could not open {}: {e}", t.path.display()))?;
+    let width = t
+        .width
+        .or(t.config.defaults.width)
+        .unwrap_or(tiza_core::check::DEFAULT_WIDTH);
+    let width = tiza_core::layout::check_width(width).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let margin_cap = t
+        .margin_cols
+        .map(|c| {
+            tiza_core::layout::check_margin_cap(c).map_err(|_| {
+                anyhow::anyhow!(
+                    "--margin-cols={c}: use a number between {} and {}",
+                    tiza_core::layout::MIN_MARGIN_CAP,
+                    tiza_core::layout::MAX_MARGIN_CAP
+                )
+            })
+        })
+        .transpose()?;
+    let interval =
+        tiza_core::anim::check_interval(t.interval).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let video = matches!(t.format, Format::Mp4 | Format::Webm);
+    let scale = t.scale.unwrap_or(if video { 1.0 } else { 2.0 });
+    tiza_core::layout::check_font_size(t.svg.font_size).map_err(|e| anyhow::anyhow!("{e}"))?;
+    tiza_core::layout::check_margin_cells(t.svg.margin_cells)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    tiza_core::layout::check_radius(t.svg.radius).map_err(|e| anyhow::anyhow!("{e}"))?;
+    tiza_core::layout::check_scale(scale).map_err(|e| anyhow::anyhow!("{e}"))?;
+    if t.out == "-" {
+        bail!(
+            "a .{0} needs a file: pass --out talk.{0}",
+            format_ext(t.format)
+        );
+    }
+    let png = tiza_export::PngOptions {
+        scale,
+        system_fonts: t.system_fonts,
+    };
+    let default_numbers = t.config.defaults.numbers.unwrap_or(true);
+    let shown: Vec<&tiza_core::talk::TalkScene> = talk.shown().collect();
+    let last = shown.len().saturating_sub(1);
+    let mut parts: Vec<tiza_core::anim::TalkPart> = Vec::with_capacity(shown.len());
+    let mut timed_notes: Vec<String> = Vec::new();
+    for (k, sc) in shown.iter().enumerate() {
+        let Some(doc) = sc.doc.as_ref() else {
+            continue;
+        };
+        let label = scene_label(sc.position, sc.name.as_deref());
+        let say = |m: &str| {
+            let line = format!("{label}: {m}");
+            eprintln!("tiza: {}", tiza_core::printable::printable_text(&line));
+        };
+        // What `tiza render SCENE` says when it opens the scene.
+        if let Some(n) = tiza_core::fs::open_notice(doc) {
+            say(&n);
+        }
+        for w in doc.step_warnings() {
+            say(&w);
+        }
+        for r in tiza_core::moves::ignored_rebinds(doc) {
+            say(&format!("{}: {}", r.place(), r.message()));
+        }
+        let theme = export_theme_of(t.theme, doc, None, t.config.theme.as_ref(), Some(&label))?;
+        let opts = tiza_core::anim::AnimOptions {
+            interval,
+            width,
+            line_numbers: t.numbers.unwrap_or_else(|| doc.numbers_or(default_numbers)),
+            from_zero: !t.skip_zero,
+            margin_cap,
+            // Twice as long only at the end of the talk.
+            hold_last: k == last,
+        };
+        // Too many lines: an error before the layout, as for one document.
+        let first = u32::from(t.skip_zero);
+        let lines = (first..=doc.max_step().max(first))
+            .map(|s| doc.lines_at(s))
+            .max()
+            .unwrap_or(0);
+        tiza_export::check_lines(lines, &t.svg, &png)
+            .map_err(|e| anyhow::anyhow!("{label}: {e}"))?;
+        let timed = tiza_core::anim::timed_steps(doc, &opts);
+        if !timed.is_empty() {
+            let steps = timed
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            timed_notes.push(if timed.len() == 1 {
+                format!("{label}: step {steps} timed by its auto_advance_ms")
+            } else {
+                format!("{label}: steps {steps} timed by their auto_advance_ms")
+            });
+        }
+        let take = tiza_core::anim::Take::record(doc, &theme, &opts);
+        parts.push(tiza_core::anim::TalkPart {
+            position: sc.position,
+            name: sc.name.clone(),
+            take,
+            theme,
+        });
+    }
+    let take = tiza_core::anim::TalkTake::new(parts);
+    let Some((widest, tallest)) = take.widest_and_tallest() else {
+        bail!("the talk has no scene to show");
+    };
+    let label = |p: &tiza_core::anim::TalkPart| scene_label(p.position, p.name.as_deref());
+    // Each scene is as wide as the export: then only the height comes
+    // from one scene.
+    let sizes = if widest.take.size().0 == tallest.take.size().0 {
+        format!("tallest: {}", label(tallest))
+    } else {
+        format!("widest: {}, tallest: {}", label(widest), label(tallest))
+    };
+    // The frame of the talk can be over the limit when no scene is: the
+    // width of one and the height of another.
+    let (cols, rows) = take.size();
+    tiza_export::pixel_size_for(cols, rows, &t.svg, &png).map_err(|e| match e {
+        tiza_export::Error::TooBig(w, h) => anyhow::anyhow!(
+            "a frame of the talk is {w}×{h} px ({sizes}), over the limit ({} px per side, {} px in all): use a smaller width, scale, font size or margin",
+            tiza_export::MAX_SIDE_PX,
+            tiza_export::MAX_PIXELS
+        ),
+        e => anyhow::anyhow!("{e}"),
+    })?;
+    let first_theme = &take.parts()[0].theme;
+    let scenes = take.parts().len();
+    let scenes_text = format!("{scenes} scene{}", if scenes == 1 { "" } else { "s" });
+    let timed_note = if timed_notes.is_empty() {
+        String::new()
+    } else {
+        format!("; {}", timed_notes.join("; "))
+    };
+    let plays = if t.loop_count == 0 {
+        ", loops forever".to_string()
+    } else {
+        format!(", plays {}×", t.loop_count)
+    };
+    let out = t.out;
+    let shown_out = tiza_core::printable::printable_text(out);
+    let frames_text = |n: usize| format!("{n} frame{}", if n == 1 { "" } else { "s" });
+    let line = match t.format {
+        Format::Gif => {
+            let (bytes, report) = tiza_export::to_gif_from(
+                &take,
+                first_theme,
+                &tiza_export::GifOptions {
+                    svg: t.svg.clone(),
+                    png: png.clone(),
+                    repeat: (t.loop_count > 0).then(|| t.loop_count.saturating_sub(1)),
+                },
+            )
+            .context("could not encode the GIF")?;
+            write_atomically(out, &bytes)?;
+            format!(
+                "wrote {shown_out} ({} bytes): {scenes_text}, {}, {}×{} px ({sizes}), {:.1} s per loop, {} colors{plays}{timed_note}",
+                bytes.len(),
+                frames_text(report.frames),
+                report.width,
+                report.height,
+                report.duration_ms as f64 / 1000.0,
+                report.colors,
+            )
+        }
+        Format::Webp => {
+            let (bytes, report) = tiza_export::to_webp_anim_from(
+                &take,
+                first_theme,
+                &tiza_export::WebpAnimOptions {
+                    svg: t.svg.clone(),
+                    png: png.clone(),
+                    plays: t.loop_count,
+                },
+            )
+            .context("could not encode the WebP")?;
+            write_atomically(out, &bytes)?;
+            format!(
+                "wrote {shown_out} ({} bytes): {scenes_text}, {}, {}×{} px ({sizes}), {:.1} s per loop{plays}{timed_note}",
+                bytes.len(),
+                frames_text(report.frames),
+                report.width,
+                report.height,
+                report.duration_ms as f64 / 1000.0,
+            )
+        }
+        _ => {
+            let bytes = encode_video(&take, first_theme, &t.svg, &png, t.format, out)?;
+            format!("wrote {shown_out} ({bytes} bytes): {scenes_text} ({sizes}){timed_note}")
+        }
+    };
+    eprintln!("{line}");
+    Ok(())
+}
+
 /// MP4/WebM: the frames go to a temporary directory as PNGs with a concat
 /// list carrying each one's duration, and `ffmpeg` muxes them with a fixed,
 /// printed command (30 fps, even dimensions, yuv420p for MP4 so every
 /// player opens it). Returns the size of the file written.
-fn encode_video(
-    take: &tiza_core::anim::Take,
+fn encode_video<F: tiza_export::Frames + ?Sized>(
+    take: &F,
     theme: &Theme,
     svg_opts: &tiza_export::SvgOptions,
     png_opts: &tiza_export::PngOptions,
@@ -1792,19 +2188,24 @@ fn encode_video(
     let mut list = String::from("ffconcat version 1.0\n");
     let mut total_ms: u64 = 0;
     let mut i = 0usize;
-    // One frame at a time: its PNG is written as it comes.
-    take.each(|f| -> anyhow::Result<()> {
-        tiza_export::image_size(f.canvas, svg_opts, png_opts)
-            .context("could not rasterize a frame")?;
-        let svg = tiza_export::to_svg(f.canvas, theme, svg_opts);
-        let png = tiza_export::to_png(&svg, png_opts).context("could not rasterize a frame")?;
+    // One frame at a time: its PNG is written as it comes, with the theme
+    // of its scene. An error that is not of the export (writing the PNG)
+    // is kept here: the frames give only errors of the export.
+    let mut failure: Option<anyhow::Error> = None;
+    let played = take.each_themed(theme, &mut |canvas, delay_ms, theme, _part| {
+        tiza_export::image_size(canvas, svg_opts, png_opts)?;
+        let svg = tiza_export::to_svg(canvas, theme, svg_opts);
+        let png = tiza_export::to_png(&svg, png_opts)?;
         let name = format!("f{i:05}.png");
-        std::fs::write(dir.join(&name), png)?;
+        if let Err(e) = std::fs::write(dir.join(&name), png) {
+            failure = Some(anyhow::Error::from(e).context(format!("could not write {name}")));
+            return Err(tiza_export::Error::Png("not written".into()));
+        }
         // The GIF's own timing of this frame: its 10 ms
         // unit and 20 ms floor, so typed frames add up to the same length
         // in every format, and `--interval 0` still gives each step a
         // frame instead of `-t 0` and a file with no video stream.
-        let delay_ms = tiza_export::gif::frame_delay_ms(f.delay_ms);
+        let delay_ms = tiza_export::gif::frame_delay_ms(delay_ms);
         list.push_str(&format!(
             "file '{name}'\nduration {:.3}\n",
             delay_ms as f64 / 1000.0
@@ -1812,7 +2213,11 @@ fn encode_video(
         total_ms += delay_ms;
         i += 1;
         Ok(())
-    })?;
+    });
+    if let Some(e) = failure {
+        return Err(e);
+    }
+    played.context("could not rasterize a frame")?;
     // The last frame is listed once more so it holds for its duration at
     // all: without the repeat, ffmpeg 6 emits it as a single frame (its
     // `duration` only places the next entry, and there is none). What the
@@ -2160,15 +2565,9 @@ fn run_tui(cli: Cli, socket_path: PathBuf, origin: &socket::Origin) -> anyhow::R
         }),
     };
     match &opened {
-        Ok(_) if cli.scene.is_some() => {
-            bail!("--scene opens a scene of a talk: give a master .tiza that lists the scenes")
-        }
-        Err(_) if cli.theme_file.is_some() => bail!(
-            "--theme-file does not work with a talk: put the theme in each scene (`:theme`, or `theme` in its .tiza)"
-        ),
-        Err(_) if cli.lang.is_some() => {
-            bail!("--lang does not work with a talk: each scene names its own language")
-        }
+        Ok(_) if cli.scene.is_some() => bail!(SCENE_NEEDS_A_MASTER),
+        Err(_) if cli.theme_file.is_some() => bail!(TALK_NO_THEME_FILE),
+        Err(_) if cli.lang.is_some() => bail!(TALK_NO_LANG),
         _ => {}
     }
     let config = load_config();

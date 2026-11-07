@@ -1,0 +1,5 @@
+{"schema": 1, "source": {"language": "rs"},
+ "code": ["fn main() {", "}"],
+ "annotations": [
+  {"id": "x1", "step": 1, "type": "box", "from_line": 7, "to_line": 9}
+ ]}

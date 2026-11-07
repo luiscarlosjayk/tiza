@@ -95,16 +95,51 @@ pub fn is_talk(raw: &Value) -> bool {
 
 /// The message for a master given where a document is needed.
 pub fn not_a_document() -> Error {
-    Error::Invalid(
-        "this file is a talk (it has `talk`), not a document: open it with `tiza FILE` or `tiza FILE --present`"
-            .into(),
-    )
+    Error::NotADocument
+}
+
+/// The message for a scene of a talk that is a master itself.
+pub fn nested_talk(entry: &SceneEntry, position: usize) -> Error {
+    Error::Invalid(format!(
+        "{} is a talk: a talk plays documents, not other talks",
+        entry_label(entry, position)
+    ))
+}
+
+/// A master as `tiza check` reads it: the keys of `talk`, and each entry
+/// of `scenes` on its own, so that one bad entry does not hide the others.
+#[derive(Debug)]
+pub struct TalkEntries {
+    pub title: Option<String>,
+    /// One for each entry of `scenes`, in order: entry `i` is the scene at
+    /// position `i + 1`, also when an entry before it is bad.
+    pub entries: Vec<Result<SceneEntry, Error>>,
+    /// `at` as it was read: an error here does not stop the check of the
+    /// scenes.
+    pub at: Result<Option<At>, Error>,
 }
 
 impl Talk {
     /// Reads the `talk` of a master, already migrated. The errors name the
-    /// key or the entry.
+    /// key or the entry: the first one stops.
     pub fn from_value(raw: &Value) -> Result<Talk, Error> {
+        let read = Talk::entries_from_value(raw)?;
+        // `entries_from_value` already refused a talk with no scene that
+        // shows, when every entry reads.
+        let scenes = read.entries.into_iter().collect::<Result<Vec<_>, _>>()?;
+        Ok(Talk {
+            title: read.title,
+            scenes,
+            at: read.at?,
+        })
+    }
+
+    /// Reads the `talk` of a master, already migrated, as `tiza check`
+    /// does. An error of the master itself (its keys, `title`, a `scenes`
+    /// that is not a list, or no scene that shows) stops; an entry of
+    /// `scenes` and `at` keep their own error. [`Talk::from_value`] is
+    /// this, stopped at the first error.
+    pub fn entries_from_value(raw: &Value) -> Result<TalkEntries, Error> {
         if raw.get("code").is_some() {
             return Err(Error::Invalid(
                 "the file has both `code` and `talk`: a document has `code`, a talk has `talk`; keep one"
@@ -135,34 +170,48 @@ impl Talk {
                 "talk: `scenes` must be a list of .tiza files".into(),
             ));
         };
-        let scenes = entries_from(list)?;
+        let entries = entries_each(list)?;
         let at = match talk.get("at") {
-            None | Some(Value::Null) => None,
-            Some(v) => {
-                Some(At::deserialize(v).map_err(|e| Error::Invalid(format!("talk: `at`: {e}")))?)
-            }
+            None | Some(Value::Null) => Ok(None),
+            Some(v) => At::deserialize(v)
+                .map(Some)
+                .map_err(|e| Error::Invalid(format!("talk: `at`: {e}"))),
         };
-        Ok(Talk { title, scenes, at })
+        Ok(TalkEntries { title, entries, at })
     }
 }
 
 /// The entries of a `scenes` list (of a master, or of `talk.put`), with
 /// the rules of a master: each entry is a path or {file, name?, skip?},
-/// and at least one scene shows.
+/// and at least one scene shows. The first error stops.
 pub fn entries_from(list: &[Value]) -> Result<Vec<SceneEntry>, Error> {
-    let scenes = list
+    entries_each(list)?.into_iter().collect()
+}
+
+/// [`entries_from`], each entry on its own: entry `i` is the scene at
+/// position `i + 1`, also when an entry before it is bad. The list is an
+/// error only when every entry reads and no scene shows (a bad entry may
+/// be the one meant to show).
+pub fn entries_each(list: &[Value]) -> Result<Vec<Result<SceneEntry, Error>>, Error> {
+    let entries: Vec<Result<SceneEntry, Error>> = list
         .iter()
         .enumerate()
         .map(|(i, v)| SceneEntry::from_value(v, i + 1))
-        .collect::<Result<Vec<_>, _>>()?;
-    if scenes.iter().all(|s| s.skip) {
-        return Err(Error::Invalid(if scenes.is_empty() {
-            "talk: `scenes` is empty; give at least one .tiza file".into()
-        } else {
-            "talk: every scene has `skip`; at least one scene must show".into()
-        }));
+        .collect();
+    if entries.iter().all(|e| matches!(e, Ok(s) if s.skip)) {
+        let scenes: Vec<SceneEntry> = entries.into_iter().flatten().collect();
+        return Err(all_skipped(&scenes));
     }
-    Ok(scenes)
+    Ok(entries)
+}
+
+/// The error of a talk with no scene that shows.
+fn all_skipped(scenes: &[SceneEntry]) -> Error {
+    Error::Invalid(if scenes.is_empty() {
+        "talk: `scenes` is empty; give at least one .tiza file".into()
+    } else {
+        "talk: every scene has `skip`; at least one scene must show".into()
+    })
 }
 
 impl SceneEntry {
@@ -400,19 +449,23 @@ pub fn load_scenes(base: &Path, entries: &[SceneEntry]) -> Result<Vec<TalkScene>
                 .iter()
                 .find(|o| !o.skip && same_file(&o.path, &scene.path))
         {
-            return Err(Error::Invalid(format!(
-                "{}: the same file as scene {}; a talk shows a file once (copy it to show it again)",
-                entry_label(entry, scene.position),
-                other.position
-            )));
+            return Err(same_file_twice(entry, scene.position, other.position));
         }
         scenes.push(scene);
     }
     Ok(scenes)
 }
 
+/// The error of a scene whose file an earlier scene that shows shows too.
+pub fn same_file_twice(entry: &SceneEntry, position: usize, other: usize) -> Error {
+    Error::Invalid(format!(
+        "{}: the same file as scene {other}; a talk shows a file once (copy it to show it again)",
+        entry_label(entry, position)
+    ))
+}
+
 /// `scene 3 (borrow, borrow.tiza)`: how an error names an entry.
-fn entry_label(entry: &SceneEntry, position: usize) -> String {
+pub fn entry_label(entry: &SceneEntry, position: usize) -> String {
     match entry.name() {
         Some(n) => format!("scene {position} ({n}, {})", entry.file),
         None => format!("scene {position} ({})", entry.file),
@@ -441,7 +494,10 @@ pub fn load_entry(base: &Path, entry: &SceneEntry, position: usize) -> Result<Ta
         inner: Box::new(e),
     };
     let canonical = std::fs::canonicalize(&joined).map_err(|e| within(Error::Io(e)))?;
-    let doc = crate::fs::load_document(&canonical).map_err(within)?;
+    let doc = crate::fs::load_document(&canonical).map_err(|e| match e {
+        Error::NotADocument => nested_talk(entry, position),
+        e => within(e),
+    })?;
     Ok(TalkScene {
         position,
         name,

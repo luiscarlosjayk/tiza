@@ -75,7 +75,7 @@ pub struct Finding {
 }
 
 impl Finding {
-    fn new(level: Level, code: &'static str, message: impl Into<String>) -> Self {
+    pub(crate) fn new(level: Level, code: &'static str, message: impl Into<String>) -> Self {
         Finding {
             level,
             code,
@@ -87,19 +87,19 @@ impl Finding {
             text: None,
         }
     }
-    fn id(mut self, id: impl Into<String>) -> Self {
+    pub(crate) fn id(mut self, id: impl Into<String>) -> Self {
         self.id = Some(id.into());
         self
     }
-    fn step(mut self, step: u32) -> Self {
+    pub(crate) fn step(mut self, step: u32) -> Self {
         self.step = Some(step);
         self
     }
-    fn file(mut self, file: Option<String>) -> Self {
+    pub(crate) fn file(mut self, file: Option<String>) -> Self {
         self.file = file;
         self
     }
-    fn line(mut self, line: Option<u32>) -> Self {
+    pub(crate) fn line(mut self, line: Option<u32>) -> Self {
         self.line = line;
         self
     }
@@ -332,6 +332,14 @@ impl Report {
             out.push_str(&f.to_line());
             out.push('\n');
         }
+        out.push_str(&self.summary_text(name));
+        out
+    }
+
+    /// The lines of [`Report::to_text`] after the findings: the summary
+    /// (it starts with `name`) and the narrowest clean width.
+    pub fn summary_text(&self, name: &str) -> String {
+        let mut out = String::new();
         let plural = |n: usize, w: &str| format!("{n} {w}{}", if n == 1 { "" } else { "s" });
         // `tiza check` says the terminal and its columns of code.
         let at = match &self.terminal {

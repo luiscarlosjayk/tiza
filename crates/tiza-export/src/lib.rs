@@ -17,10 +17,15 @@ pub mod svg;
 pub mod webp;
 
 pub use gif::{GifOptions, GifReport, to_gif, to_gif_from};
-pub use limits::{check_lines, check_svg_lines, image_size, pixel_size, svg_size};
+pub use limits::{check_lines, check_svg_lines, image_size, pixel_size, pixel_size_for, svg_size};
 pub use png::{PngOptions, to_png};
 pub use svg::{SvgOptions, to_svg};
 pub use webp::{WebpAnimOptions, WebpReport, WebpStill, to_webp, to_webp_anim, to_webp_anim_from};
+
+/// What [`Frames::each_themed`] lends each frame to: its canvas, how long
+/// it stays in milliseconds, its theme and its part.
+pub type ThemedFrame<'a> = dyn FnMut(&tiza_core::canvas::Canvas, u64, &tiza_core::theme::Theme, usize) -> Result<(), Error>
+    + 'a;
 
 /// The frames of an animation, one at a time: each canvas (all of one
 /// size) and how long it stays, in milliseconds. An encoder may go over
@@ -32,6 +37,19 @@ pub trait Frames {
         &self,
         f: &mut dyn FnMut(&tiza_core::canvas::Canvas, u64) -> Result<(), Error>,
     ) -> Result<(), Error>;
+
+    /// [`Frames::each`], with the theme each frame is drawn with and the
+    /// part of the animation it is in (a scene of a talk). Frames of one
+    /// part share their theme; a new part may have another one, and an
+    /// encoder rasterizes its first frame whole. By default, every frame is in
+    /// part 0 with `theme`: the theme the encoder was given.
+    fn each_themed(
+        &self,
+        theme: &tiza_core::theme::Theme,
+        f: &mut ThemedFrame<'_>,
+    ) -> Result<(), Error> {
+        self.each(&mut |canvas, delay_ms| f(canvas, delay_ms, theme, 0))
+    }
 }
 
 impl Frames for [(tiza_core::canvas::Canvas, u64)] {
@@ -54,6 +72,26 @@ impl Frames for tiza_core::anim::Take {
         f: &mut dyn FnMut(&tiza_core::canvas::Canvas, u64) -> Result<(), Error>,
     ) -> Result<(), Error> {
         tiza_core::anim::Take::each(self, |frame| f(frame.canvas, frame.delay_ms))
+    }
+}
+
+/// A talk: each scene with its own theme, each one a part.
+impl Frames for tiza_core::anim::TalkTake {
+    fn each(
+        &self,
+        f: &mut dyn FnMut(&tiza_core::canvas::Canvas, u64) -> Result<(), Error>,
+    ) -> Result<(), Error> {
+        tiza_core::anim::TalkTake::each(self, |t| f(t.frame.canvas, t.frame.delay_ms))
+    }
+
+    fn each_themed(
+        &self,
+        _theme: &tiza_core::theme::Theme,
+        f: &mut ThemedFrame<'_>,
+    ) -> Result<(), Error> {
+        tiza_core::anim::TalkTake::each(self, |t| {
+            f(t.frame.canvas, t.frame.delay_ms, t.theme, t.part)
+        })
     }
 }
 

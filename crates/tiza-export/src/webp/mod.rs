@@ -271,7 +271,7 @@ pub fn to_webp_anim_from<F: crate::Frames + ?Sized>(
     let mut enc = None;
     let mut duration_ms = 0u64;
     let mut count = 0usize;
-    frames.each(&mut |canvas, delay| {
+    frames.each_themed(theme, &mut |canvas, delay, theme, _part| {
         count += 1;
         // Over the limits: an error before the SVG, not after it.
         crate::limits::image_size(canvas, &o.svg, &o.png)?;

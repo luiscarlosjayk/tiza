@@ -1,0 +1,6 @@
+{"schema": 2, "talk": {"scenes": [
+  "scenes/pad.tiza",
+  "scenes/plain.tiza",
+  {"file": "scenes/broken.tiza", "name": "broken"},
+  {"file": "scenes/gone.tiza", "skip": true}
+]}}

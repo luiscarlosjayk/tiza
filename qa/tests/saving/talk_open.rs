@@ -7,15 +7,16 @@
 //! - AC2 A master with a BOM and CRLF line ends opens.
 //! - AC3 `--scene` needs a master; `--theme-file` and `--lang` do not work
 //!   with a master.
-//! - AC4 A command that needs a document (`render`, `check`, `scene put`)
-//!   refuses a master and tells what it is.
+//! - AC4 `check` and `render` read a master (a talk) and change no file of
+//!   it; `scene put`, which needs a document, refuses it and tells what it
+//!   is.
 //!
 //! Without a terminal on stdout, `tiza FILE` stops after it opened the
 //! file: a talk that opens gives the error about the terminal.
 
 use std::path::{Path, PathBuf};
 
-use serde_json::{Value, json};
+use serde_json::Value;
 use tiza_qa::{fixture, scratch, tiza};
 
 const NO_TERMINAL: &str = "the TUI needs a terminal";
@@ -23,21 +24,8 @@ const NO_TERMINAL: &str = "the TUI needs a terminal";
 /// A copy of the talk of `qa/fixtures/shared/talk/`.
 fn talk_copy(name: &str) -> PathBuf {
     let dir = scratch(name);
-    copy_dir(&fixture("shared/talk"), &dir);
+    tiza_qa::copy_dir(&fixture("shared/talk"), &dir);
     dir
-}
-
-fn copy_dir(from: &Path, to: &Path) {
-    std::fs::create_dir_all(to).unwrap();
-    for e in std::fs::read_dir(from).unwrap() {
-        let e = e.unwrap();
-        let target = to.join(e.file_name());
-        if e.file_type().unwrap().is_dir() {
-            copy_dir(&e.path(), &target);
-        } else {
-            std::fs::copy(e.path(), target).unwrap();
-        }
-    }
 }
 
 fn master(dir: &Path) -> Value {
@@ -73,67 +61,19 @@ fn a_talk_that_tiza_can_play_opens_also_with_a_skipped_scene_that_is_missing() {
     assert!(!ok && err.contains(NO_TERMINAL), "{err}");
 }
 
-/// A change to the JSON of a master.
-type Change = Box<dyn FnOnce(&mut Value)>;
-
 #[test]
 fn a_master_that_tiza_cannot_play_does_not_open_and_the_error_names_why() {
-    let cases: Vec<(&str, Change, &str)> = vec![
-        (
-            "both",
-            Box::new(|m| m["code"] = json!(["x"])),
-            "both `code` and `talk`",
-        ),
-        (
-            "empty",
-            Box::new(|m| m["talk"]["scenes"] = json!([])),
-            "`scenes` is empty",
-        ),
-        (
-            "all-skipped",
-            Box::new(|m| m["talk"]["scenes"] = json!([{"file": "own.tiza", "skip": true}])),
-            "every scene has `skip`",
-        ),
-        (
-            "skip-text",
-            Box::new(|m| m["talk"]["scenes"][2] = json!({"file": "own.tiza", "skip": "yes"})),
-            "talk: scene 3: `skip` must be true or false",
-        ),
-        (
-            "bad-name",
-            Box::new(|m| m["talk"]["scenes"][2] = json!({"file": "own.tiza", "name": "my scene"})),
-            "talk: scene 3: name",
-        ),
-        (
-            "not-tiza",
-            Box::new(|m| m["talk"]["scenes"][2] = json!("src/borrow.rs")),
-            "src/borrow.rs is not a .tiza file",
-        ),
-        (
-            "unknown-key",
-            Box::new(|m| m["talk"]["order"] = json!("random")),
-            "talk: unknown key `order`",
-        ),
-        (
-            "twice",
-            Box::new(|m| m["talk"]["scenes"][6] = json!("own.tiza")),
-            "a talk shows a file once",
-        ),
-        (
-            "missing",
-            Box::new(|m| m["talk"]["scenes"][2] = json!({"file": "gone.tiza", "name": "own"})),
-            "scene 3 (own, gone.tiza)",
-        ),
-        (
-            "nested",
-            Box::new(|m| m["talk"]["scenes"][2] = json!("talk.tiza")),
-            "is a talk",
-        ),
-    ];
-    for (name, change, want) in cases {
-        let err = open_changed(&format!("talk-open-{name}"), change);
-        assert!(err.contains(want), "{name}: want {want:?} in:\n{err}");
-        assert!(!err.contains(NO_TERMINAL), "{name}:\n{err}");
+    for c in tiza_qa::bad_masters() {
+        let err = open_changed(&format!("talk-open-{}", c.name), c.change);
+        assert!(
+            err.contains(c.want),
+            "{}: want {:?} in:\n{err}",
+            c.name,
+            c.want
+        );
+        assert!(!err.contains(NO_TERMINAL), "{}:\n{err}", c.name);
+        // A scene that is a master is not told to open with `tiza FILE`.
+        assert!(!err.contains("open it with"), "{}:\n{err}", c.name);
     }
 }
 
@@ -205,22 +145,41 @@ fn scene_needs_a_master_and_theme_file_and_lang_do_not_work_with_one() {
 }
 
 #[test]
-fn render_check_and_scene_put_refuse_a_master() {
+fn check_and_render_read_a_master_and_scene_put_refuses_it() {
     let dir = talk_copy("talk-open-commands");
     let talk = dir.join("talk.tiza");
     let talk = talk.to_str().unwrap();
     let sock = dir.join("none.sock");
-    let before = std::fs::read(dir.join("talk.tiza")).unwrap();
-    for args in [
-        vec!["render", talk, "--out", "-"],
-        vec!["check", talk],
-        vec!["--socket", sock.to_str().unwrap(), "scene", "put", talk],
-    ] {
-        let (ok, err) = run(&args);
-        assert!(
-            !ok && err.contains("this file is a talk"),
-            "{args:?}:\n{err}"
-        );
-    }
-    assert_eq!(std::fs::read(dir.join("talk.tiza")).unwrap(), before);
+    let gif = scratch("talk-open-commands-out").join("talk.gif");
+    let files = |d: &Path| {
+        let mut all: Vec<(PathBuf, Vec<u8>)> = std::fs::read_dir(d)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| p.is_file())
+            .map(|p| (p.clone(), std::fs::read(&p).unwrap()))
+            .collect();
+        all.sort();
+        all
+    };
+    let before = files(&dir);
+    // `check` checks every scene that shows: the skipped scene, whose file
+    // is not there, gives no finding.
+    let (ok, out) = run(&["check", talk]);
+    assert!(ok && !out.contains("not-shown.tiza: error"), "{out}");
+    // A text export of a whole talk asks for a scene and a step.
+    let (ok, err) = run(&["render", talk, "--out", "-"]);
+    assert!(!ok && err.contains("--scene ID --step K"), "{err}");
+    let (ok, err) = run(&[
+        "render",
+        talk,
+        "--out",
+        gif.to_str().unwrap(),
+        "--scale",
+        "1",
+    ]);
+    assert!(ok && gif.exists(), "{err}");
+    let (ok, err) = run(&["--socket", sock.to_str().unwrap(), "scene", "put", talk]);
+    assert!(!ok && err.contains("this file is a talk"), "{err}");
+    // None of them writes a file of the talk.
+    assert!(files(&dir) == before, "a file of the talk changed");
 }

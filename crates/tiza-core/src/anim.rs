@@ -23,6 +23,10 @@ pub struct AnimOptions {
     /// Columns of the right margin (`--margin-cols`); `None` takes the
     /// document's `margin`.
     pub margin_cap: Option<usize>,
+    /// The last step stays twice as long (when the document does not time
+    /// it). A scene of a talk that is not the last one has it off: in the
+    /// middle of a talk, the next scene comes after one interval.
+    pub hold_last: bool,
 }
 
 impl Default for AnimOptions {
@@ -33,6 +37,7 @@ impl Default for AnimOptions {
             line_numbers: true,
             from_zero: true,
             margin_cap: None,
+            hold_last: true,
         }
     }
 }
@@ -157,7 +162,7 @@ fn generate(
         // frame stays, after its typed frames, as in the TUI.
         let delay = match doc.auto_advance_ms(step) {
             Some(ms) => ms.min(max),
-            None if step == last => hold.saturating_mul(2),
+            None if step == last && opts.hold_last => hold.saturating_mul(2),
             None => hold,
         };
         // The enter effects of the step, after its typing: the frames of
@@ -259,8 +264,24 @@ impl Take {
     /// Plays the take back: each frame in order, on one canvas, lent to
     /// `f`. Stops at the first error of `f`. Each call gives the same
     /// frames.
-    pub fn each<E>(&self, mut f: impl FnMut(FrameRef<'_>) -> Result<(), E>) -> Result<(), E> {
-        let mut canvas = Canvas::new_filled(self.width, self.height, self.base.style);
+    pub fn each<E>(&self, f: impl FnMut(FrameRef<'_>) -> Result<(), E>) -> Result<(), E> {
+        self.each_in(self.width, self.height, f)
+    }
+
+    /// [`Take::each`] on a canvas of `width` × `height` (at least the size
+    /// of the take): the cells past the take are its background. A talk
+    /// plays each scene this way, at the size of its largest scene.
+    pub fn each_in<E>(
+        &self,
+        width: usize,
+        height: usize,
+        mut f: impl FnMut(FrameRef<'_>) -> Result<(), E>,
+    ) -> Result<(), E> {
+        let mut canvas = Canvas::new_filled(
+            width.max(self.width),
+            height.max(self.height),
+            self.base.style,
+        );
         for r in &self.frames {
             match &r.change {
                 Change::Cells(cells) => {
@@ -280,6 +301,88 @@ impl Take {
                 delay_ms: r.delay_ms,
                 typing: r.typing,
                 effect: r.effect,
+            })?;
+        }
+        Ok(())
+    }
+}
+
+/// One scene of a [`TalkTake`]: its take and the theme it is drawn with.
+#[derive(Debug, Clone)]
+pub struct TalkPart {
+    /// Its position in the talk, from 1.
+    pub position: usize,
+    pub name: Option<String>,
+    pub take: Take,
+    pub theme: Theme,
+}
+
+/// The frames of a talk: the take of each scene that shows, one after the
+/// other, each with its own theme. Every frame has the size of the widest
+/// and the tallest scene; a smaller scene is at the top left, on the
+/// background of its theme.
+#[derive(Debug, Clone)]
+pub struct TalkTake {
+    width: usize,
+    height: usize,
+    parts: Vec<TalkPart>,
+}
+
+/// One frame of a [`TalkTake`], lent to the closure of [`TalkTake::each`].
+#[derive(Debug)]
+pub struct TalkFrameRef<'a> {
+    /// The index of its scene in [`TalkTake::parts`].
+    pub part: usize,
+    pub theme: &'a Theme,
+    pub frame: FrameRef<'a>,
+}
+
+impl TalkTake {
+    pub fn new(parts: Vec<TalkPart>) -> TalkTake {
+        let width = parts.iter().map(|p| p.take.width).max().unwrap_or(0);
+        let height = parts.iter().map(|p| p.take.height).max().unwrap_or(0);
+        TalkTake {
+            width,
+            height,
+            parts,
+        }
+    }
+
+    /// The size of every frame.
+    pub fn size(&self) -> (usize, usize) {
+        (self.width, self.height)
+    }
+
+    pub fn parts(&self) -> &[TalkPart] {
+        &self.parts
+    }
+
+    pub fn len(&self) -> usize {
+        self.parts.iter().map(|p| p.take.len()).sum()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// The scene that gives the width of the frames, and the one that
+    /// gives their height (the first one, when several do).
+    pub fn widest_and_tallest(&self) -> Option<(&TalkPart, &TalkPart)> {
+        let widest = self.parts.iter().find(|p| p.take.width == self.width)?;
+        let tallest = self.parts.iter().find(|p| p.take.height == self.height)?;
+        Some((widest, tallest))
+    }
+
+    /// Plays the talk back: each frame of each scene in order. Stops at
+    /// the first error of `f`. Each call gives the same frames.
+    pub fn each<E>(&self, mut f: impl FnMut(TalkFrameRef<'_>) -> Result<(), E>) -> Result<(), E> {
+        for (part, p) in self.parts.iter().enumerate() {
+            p.take.each_in(self.width, self.height, |frame| {
+                f(TalkFrameRef {
+                    part,
+                    theme: &p.theme,
+                    frame,
+                })
             })?;
         }
         Ok(())
