@@ -253,7 +253,7 @@ impl TalkReport {
             .parent()
             .filter(|d| !d.as_os_str().is_empty());
         for s in &self.scenes {
-            let label = scene_label(s, dir);
+            let label = scene_label(s, dir, name);
             match (&s.status, &s.report) {
                 (SceneStatus::Checked, Some(r)) => {
                     for f in &r.findings {
@@ -300,7 +300,7 @@ impl TalkReport {
         if let Some(s) = self.never_clean() {
             out.push_str(&format!(
                 "{name}: {} clips a label at every width up to {MAX_WIDTH}: shorten its labels\n",
-                scene_label(s, dir)
+                scene_label(s, dir, name)
             ));
         } else if let (Some(t), Some(c)) = (self.clean_terminal_width, self.clean_code_width) {
             out.push_str(&format!(
@@ -311,11 +311,13 @@ impl TalkReport {
     }
 }
 
-/// How the text names a scene: its file, else its position.
-fn scene_label(s: &SceneCheck, dir: Option<&Path>) -> String {
+/// How the text names a scene: its file, else the master (an entry that
+/// cannot be read is a problem of the master, and its message names the
+/// scene).
+fn scene_label(s: &SceneCheck, dir: Option<&Path>, master: &str) -> String {
     match &s.file {
         Some(f) => dir.map_or_else(|| f.clone(), |d| d.join(f).display().to_string()),
-        None => format!("scene {}", s.position),
+        None => master.to_string(),
     }
 }
 
@@ -400,6 +402,13 @@ pub fn resolve_scene(
                         Some(d) => d.join(&file),
                         None => PathBuf::from(&file),
                     };
+                    // No hint to a command that cannot work.
+                    if !s.path.exists() {
+                        return Err(Error::SceneNotFound(format!(
+                            "{e}; its file {} is not there",
+                            shown.display()
+                        )));
+                    }
                     let verb = if command == "check" {
                         "check"
                     } else {
@@ -407,7 +416,7 @@ pub fn resolve_scene(
                     };
                     Err(Error::SceneNotFound(format!(
                         "{e}; to {verb} it anyway: `tiza {command} {}`",
-                        shown.display()
+                        crate::cast::shell_quote(&shown.to_string_lossy())
                     )))
                 }
                 (None, _) => Err(e),

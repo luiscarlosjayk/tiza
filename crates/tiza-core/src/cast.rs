@@ -274,7 +274,9 @@ fn format_secs(s: f64) -> String {
     }
 }
 
-fn shell_quote(path: &str) -> String {
+/// `path` as one word of a shell command: in single quotes when it needs
+/// them.
+pub(crate) fn shell_quote(path: &str) -> String {
     if path
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || "./_-:".contains(c))

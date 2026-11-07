@@ -499,9 +499,10 @@ fn what_a_whole_talk_cannot_be_is_refused_with_what_to_give() {
         &["render", t, "--scene", "4", "--out", s(&dir.join("x.gif"))],
         "scene 4 is skipped",
     );
+    // Its file is not there: no command to export it anyway.
     refused(
         &["render", t, "--scene", "4", "--out", s(&dir.join("x.gif"))],
-        "to export it anyway: `tiza render",
+        "its file",
     );
     // A master on stdin has no folder for its scenes.
     let r = tiza_qa::command()

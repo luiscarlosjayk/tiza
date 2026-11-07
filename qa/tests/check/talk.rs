@@ -138,6 +138,12 @@ fn every_bad_entry_is_a_finding_and_the_other_scenes_are_checked() {
         std::fs::write(&path, raw.to_string()).unwrap();
         let (ok, out, _) = run_in(&dir, &["check", "talk.tiza", "--json"]);
         let report = json(&out);
+        // The text: an entry that cannot be read is a line of the master,
+        // which names the scene once.
+        let (_, text, _) = run_in(&dir, &["check", "talk.tiza"]);
+        for line in text.lines() {
+            assert!(!line.starts_with("scene "), "{}: {line:?}", c.name);
+        }
         let messages: Vec<&str> = report["findings"]
             .as_array()
             .unwrap()
@@ -250,12 +256,46 @@ fn the_exit_code_counts_every_scene_and_scene_checks_one() {
         let (_, before, _) = run_in(&cwd, &["--scene", spec, "check", m, "--width", "50"]);
         assert_eq!(before, alone, "tiza --scene {spec} check");
     }
-    // A skipped scene: how to check it anyway.
+    // A skipped scene whose file is not there: no command that fails.
     let (ok, _, err) = run_in(&cwd, &["check", m, "--scene", "4"]);
     assert!(
-        !ok && err.contains("is skipped") && err.contains("tiza check"),
+        !ok && err.contains("is skipped")
+            && err.contains("is not there")
+            && !err.contains("anyway"),
         "{err}"
     );
+    // A skipped scene that is there: the command to check it anyway, with
+    // its path in quotes when it has a space. Through a shell, it works.
+    std::fs::create_dir_all(talk.join("with space")).unwrap();
+    std::fs::copy(
+        talk.join("scenes/plain.tiza"),
+        talk.join("with space/plain.tiza"),
+    )
+    .unwrap();
+    let skips = talk.join("skips.tiza");
+    std::fs::write(
+        &skips,
+        serde_json::json!({"schema": 2, "talk": {"scenes":
+            ["scenes/pad.tiza", {"file": "with space/plain.tiza", "skip": true}]}})
+        .to_string(),
+    )
+    .unwrap();
+    let (ok, _, err) = run_in(&cwd, &["check", skips.to_str().unwrap(), "--scene", "2"]);
+    let hint = err
+        .split("to check it anyway: `")
+        .nth(1)
+        .and_then(|r| r.split('`').next())
+        .unwrap_or_else(|| panic!("no hint:\n{err}"));
+    assert!(!ok && hint.starts_with("tiza check '"), "{err}");
+    let bin = tiza_qa::command().get_program().to_owned();
+    let line = hint.replacen("tiza", &format!("'{}'", bin.to_str().unwrap()), 1);
+    let shell = std::process::Command::new("sh")
+        .args(["-c", &line])
+        .current_dir(&cwd)
+        .output()
+        .unwrap();
+    let said = String::from_utf8_lossy(&shell.stdout);
+    assert!(said.contains("plain.tiza: 0 errors"), "{line}:\n{said}");
     // `--scene` with a document, and a master on stdin.
     let (ok, _, err) = run_in(
         &cwd,

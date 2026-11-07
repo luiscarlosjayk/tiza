@@ -647,6 +647,7 @@ Tiza writes these messages on stderr:
 | `tiza: a talk on stdin has no folder for its scenes: give the path of the master .tiza` | `tiza check -` or `tiza render -` got a master. |
 | `tiza: --scene opens a scene of a talk: give a master .tiza that lists the scenes` | `--scene` came with a file that is not a master. |
 | `` tiza: scene N is skipped (`skip` in the talk); …; to check it anyway: `tiza check FILE` `` | `tiza check --scene` named a skipped scene. |
+| `` tiza: scene N is skipped (`skip` in the talk); …; its file FILE is not there `` | `tiza check --scene` or `tiza render --scene` named a skipped scene whose file is not there. |
 | ``tiza: FILE is neither a .tiza document nor a `scene get` envelope; to show it as code, pass --as-code`` | `tiza scene put` got a file that is not a document. |
 | `tiza: FILE: … scene put sends a document as it is, so it refuses this one` | `tiza scene put` got a document with an effect, a move or a key that this version of Tiza does not know. The key can be a key of a move or a key inside a position. Open the file in Tiza and save it, or remove them. |
 | `tiza: could not read PATH` | `tiza check`, `tiza scene put` or `tiza scene patch @PATH` cannot read the file. |
