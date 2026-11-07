@@ -2453,6 +2453,14 @@ impl App {
         u16::from(drawn && pad_v == 0)
     }
 
+    /// The `title` of the talk master, which the terminal tab shows in
+    /// presentation mode ([`crate::tab_title`]). Only the master counts:
+    /// the `title` of a scene, or of a single document, does not change
+    /// the tab.
+    pub fn talk_title(&self) -> Option<&str> {
+        self.talk.as_ref()?.loaded.talk.title.as_deref()
+    }
+
     /// Presentation mode draws the step counter: with more than one step,
     /// and on step 0 (also of a document of one step), unless the
     /// presenter turned it off. Then its row is code again.

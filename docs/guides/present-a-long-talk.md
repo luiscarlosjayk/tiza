@@ -64,6 +64,8 @@ Run `tiza check` on each scene, at the width of the terminal that you record in.
 tiza talk.tiza --present
 ```
 
+With a `title` in the master, the terminal tab shows the name of the talk while you present, and it gets its old title back when you quit.
+
 The first time, the talk opens at step 0 of the first scene that shows. Then go through the talk with the keys of a document:
 
 | Key or command | What it does in a talk |

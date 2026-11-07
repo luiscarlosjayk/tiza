@@ -16,6 +16,7 @@ pub mod panel;
 pub mod reanchor;
 pub mod runtime;
 pub mod signals;
+pub mod tab_title;
 pub mod ui;
 
 use std::io;
@@ -362,6 +363,7 @@ pub fn run_app(mut app: App, notice: Option<String>, opts: RunOptions) -> io::Re
         app.retry_save_on_exit = true;
     }
     let gone = silence_dead_stderr();
+    tab_title::restore();
     let _ = execute!(io::stdout(), DisableBracketedPaste, DisableMouseCapture);
     ratatui::restore();
     // Lines that panics.log could not take, now that nothing draws over
@@ -548,7 +550,9 @@ fn install_crash_hook(save_path: &std::path::Path) {
     }
     std::panic::set_hook(Box::new(|info| {
         // Leave the alternate screen, show the cursor, raw mode off, mouse
-        // and bracketed paste off (the sequences a clean `:q` sends).
+        // and bracketed paste off (the sequences a clean `:q` sends), and
+        // the old title back on the tab.
+        tab_title::restore();
         let _ = execute!(io::stdout(), DisableBracketedPaste, DisableMouseCapture);
         ratatui::restore();
         let reason = info
@@ -734,6 +738,8 @@ fn event_loop(
                 (s, next_frame_due(due, drawn, period))
             });
         }
+        // The tab shows the title of the talk while it is presented.
+        tab_title::follow(app.present.then(|| app.talk_title()).flatten());
         // `:mouse on|off` changed the flag: tell the terminal.
         if app.mouse != mouse_captured {
             mouse_captured = app.mouse;

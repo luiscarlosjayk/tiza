@@ -1120,6 +1120,77 @@ print("EXIT", s.finish(10), flush=True)
     }
 }
 
+/// In presentation mode the terminal tab shows the `title` of the master:
+/// Tiza pushes the old title on the stack (`CSI 22;0 t`), sets its own
+/// (`OSC 0`), keeps it when the talk goes to another scene, and pops the
+/// old title back (`CSI 23;0 t`) when presentation mode stops and on each
+/// way to quit. A master with no `title` writes none of these.
+#[test]
+fn pty_the_tab_shows_the_title_of_the_talk_while_it_is_presented() {
+    const PUSH: &str = r"b'\x1b[22;0t'";
+    const POP: &str = r"b'\x1b[23;0t'";
+    const SET: &str = r"b'\x1b]0;A short talk\x07'";
+    for (close, titled) in [
+        ("q", true),
+        ("ctrl-c", true),
+        ("sigterm", true),
+        ("q", false),
+    ] {
+        let dir = talk_copy(&format!("talk-pty-title-{close}-{titled}"));
+        if !titled {
+            let mut raw = master_json(&dir);
+            raw["talk"].as_object_mut().unwrap().remove("title");
+            std::fs::write(dir.join("talk.tiza"), raw.to_string()).unwrap();
+        }
+        let steps = format!(
+            r##"
+PUSH, POP, SET = {PUSH}, {POP}, {SET}
+def counts(o):
+    return [o.count(PUSH), o.count(POP), o.count(SET)]
+ok = ok and until([1, 0], "the first scene")
+if {titled}:
+    ok = ok and s.wait_for(lambda o: counts(o) == [1, 0, 1], what="--present: the title of the talk")
+ok = ok and api("talk.goto", {{"scene": "own"}})[0] == 0 and until([3, 0], "talk.goto own")
+print("CROSSED", json.dumps(counts(s.out)), flush=True)
+if {titled}:
+    ok and s.send(b"P")
+    ok = ok and s.wait_for(lambda o: counts(o) == [1, 1, 1], what="P off: the old title back")
+    ok and s.send(b"P")
+    ok = ok and s.wait_for(lambda o: counts(o) == [2, 1, 2], what="P on: the title again")
+print("PATH", ok, flush=True)
+close = {close:?}
+if close == "q":
+    s.send(b"q")
+elif close == "ctrl-c":
+    s.send(b"\x03")
+else:
+    os.kill(s.p.pid, signal.SIGTERM)
+print("EXIT", s.finish(10), flush=True)
+o = s.out
+print("END", json.dumps(counts(o)), flush=True)
+print("LAST_POP", o.rfind(POP) > o.rfind(b"\x1b]0;"), flush=True)
+"##,
+            titled = if titled { "True" } else { "False" },
+        );
+        let out = pty_talk(&dir, &["talk.tiza", "--present"], "", &steps);
+        let what = format!("{close}, title {titled}");
+        assert!(out.contains("PATH True"), "{what}:\n{out}");
+        assert!(out.contains("EXIT "), "{what}:\n{out}");
+        if titled {
+            // The change of scene keeps the title: no pop, no second push.
+            assert_eq!(text_after(&out, "CROSSED"), "[1, 0, 1]", "{what}:\n{out}");
+            assert_eq!(text_after(&out, "END"), "[2, 2, 2]", "{what}:\n{out}");
+            assert!(
+                out.contains("LAST_POP True"),
+                "{what}: the old title comes back last:\n{out}"
+            );
+        } else {
+            assert_eq!(text_after(&out, "END"), "[0, 0, 0]", "{what}:\n{out}");
+            assert!(!out.contains("LAST_POP True"), "{what}:\n{out}");
+        }
+    }
+}
+
 /// The text after `KEY ` on its line.
 fn text_after<'a>(out: &'a str, key: &str) -> &'a str {
     out.lines()

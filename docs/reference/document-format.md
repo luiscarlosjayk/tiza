@@ -1417,7 +1417,7 @@ The fields of `talk`:
 <dt><code>title</code></dt>
 <dd>
 
-The title of the talk.
+The title of the talk. In presentation mode, the terminal tab shows it. See [Present](keys.md#present).
 
 String. No default.
 
