@@ -437,9 +437,18 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         // status bar: on the new empty step after the last one too, also in
         // a document of one step. It and the chip below are on the last
         // row, which has no code ([`App::status_rows`]).
-        if app.present_counter_shown() {
-            let total = app.doc.step_total(app.doc.step);
-            let txt = format!(" {}/{} ", app.doc.step, total);
+        let progress = app.present_progress();
+        let (step, total) = progress.unwrap_or((app.doc.step, app.doc.step_total(app.doc.step)));
+        let counter = app
+            .present_counter_shown()
+            .then(|| format!(" {step}/{total} "));
+        if app.present_bar_shown()
+            && let Some((done, all)) = progress
+        {
+            let room = counter.as_ref().map_or(0, |t| t.width() as u16);
+            draw_progress_bar(frame, app, area, room, done, all);
+        }
+        if let Some(txt) = counter {
             let w = txt.width() as u16;
             if area.width > w {
                 frame.buffer_mut().set_string(
@@ -497,6 +506,27 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     }
     // The next frame of an effect paints on the same layout.
     app.put_back_screen(layout);
+}
+
+/// The progress bar of a talk on the last row, left of the counter
+/// (`room` columns at the right): a thin line in the accent color from the
+/// left edge, for the share `done / all` of the key presses of the talk.
+/// Nothing on a terminal too narrow for it.
+fn draw_progress_bar(frame: &mut Frame, app: &App, area: Rect, room: u16, done: u32, all: u32) {
+    let th = &app.theme;
+    let y = area.y + area.height - 1;
+    let len = area.width.saturating_sub(room + 1);
+    if len < 8 || all == 0 {
+        return;
+    }
+    let filled =
+        ((u64::from(len) * u64::from(done.min(all)) + u64::from(all) / 2) / u64::from(all)) as u16;
+    let style = Style::default().fg(rgb(th.accent)).bg(rgb(th.bg));
+    let buf = frame.buffer_mut();
+    for i in 0..len {
+        let glyph = if i < filled { "▂" } else { " " };
+        buf.set_string(area.x + i, y, glyph, style);
+    }
 }
 
 /// The `:` line being typed, with completions and notices on the right:

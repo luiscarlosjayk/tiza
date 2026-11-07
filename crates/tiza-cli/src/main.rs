@@ -40,6 +40,13 @@ struct Cli {
     /// Show the step counter of presentation mode, also when config.toml sets `counter = false`
     #[arg(long, overrides_with = "no_counter")]
     counter: bool,
+    /// Hide the progress bar of a talk for this session; the counter stays.
+    /// `progress = false` in config.toml hides it for every session.
+    #[arg(long, overrides_with = "progress")]
+    no_progress: bool,
+    /// Show the progress bar of a talk, also when config.toml sets `progress = false`
+    #[arg(long, overrides_with = "no_progress")]
+    progress: bool,
     /// Initial presentation step
     #[arg(long)]
     step: Option<u32>,
@@ -1476,7 +1483,7 @@ fn config_report(cfg: &tiza_core::config::Config) -> String {
     let d = &cfg.defaults;
     let on = |b: bool| if b { "on" } else { "off" }.to_string();
     let (pv, ph) = tiza_core::layout::DEFAULT_PADDING;
-    let rows: [(&str, Option<String>, String); 8] = [
+    let rows: [(&str, Option<String>, String); 9] = [
         (
             "pad",
             d.pad.map(|(v, h)| format!("{v} {h}")),
@@ -1485,6 +1492,7 @@ fn config_report(cfg: &tiza_core::config::Config) -> String {
         ("numbers", d.numbers.map(on), on(true)),
         ("mouse", d.mouse.map(on), on(false)),
         ("counter", d.counter.map(on), on(true)),
+        ("progress", d.progress.map(on), on(true)),
         ("autosave", d.autosave.map(on), on(true)),
         (
             "layout",
@@ -2622,6 +2630,11 @@ fn run_tui(cli: Cli, socket_path: PathBuf, origin: &socket::Origin) -> anyhow::R
         follow: cli.follow,
         no_save: cli.no_save,
         counter: match (cli.counter, cli.no_counter) {
+            (true, _) => Some(true),
+            (_, true) => Some(false),
+            _ => None,
+        },
+        progress: match (cli.progress, cli.no_progress) {
             (true, _) => Some(true),
             (_, true) => Some(false),
             _ => None,

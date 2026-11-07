@@ -407,6 +407,7 @@ struct TalkList {
     entries: Vec<tiza_core::talk::SceneEntry>,
     scenes: Vec<tiza_core::talk::TalkScene>,
     index: usize,
+    presses: Vec<u32>,
 }
 
 /// The fields of [`crate::follow::Follow`] that a load writes, and the
@@ -444,6 +445,7 @@ impl RequestState {
                     })
                     .collect(),
                 index: t.index,
+                presses: t.presses.clone(),
             });
         RequestState {
             doc: app.doc.clone(),
@@ -569,6 +571,7 @@ impl RequestState {
             t.loaded.talk.scenes = l.entries;
             t.loaded.scenes = l.scenes;
             t.index = l.index;
+            t.presses = l.presses;
             if let Some(bytes) = l.bytes
                 && std::fs::read(&l.master).ok().as_ref() != Some(&bytes)
                 && let Err(e) = tiza_core::talk::write_master(&l.master, &bytes)
@@ -761,6 +764,10 @@ pub struct App {
     /// Presentation mode draws its step counter (`counter = false` in the
     /// config file or `--no-counter` turn it off, `--counter` on).
     pub counter: bool,
+    /// The presentation of a talk draws its progress bar on the row of the
+    /// counter (`progress = false` in the config file or `--no-progress`
+    /// turn it off, `--progress` on). It is independent of `counter`.
+    pub progress: bool,
     /// The file the code was last read from (`code: {file}` when opened or
     /// at the last put): a put that sent other code leaves the document
     /// embedded in memory, and a later put of that file's code makes it a
@@ -1007,6 +1014,7 @@ impl App {
             socket_path: None,
             autosave: true,
             counter: true,
+            progress: true,
             no_save: false,
             reference,
             frozen_views,
@@ -2448,7 +2456,8 @@ impl App {
         if !self.present {
             return 1;
         }
-        let drawn = self.present_counter_shown() || !self.proposals.is_empty();
+        let drawn =
+            self.present_counter_shown() || self.present_bar_shown() || !self.proposals.is_empty();
         let (pad_v, _) = crate::ui::clamp_padding(self.effective_padding(), self.size, 0);
         u16::from(drawn && pad_v == 0)
     }
@@ -2465,7 +2474,24 @@ impl App {
     /// and on step 0 (also of a document of one step), unless the
     /// presenter turned it off. Then its row is code again.
     pub fn present_counter_shown(&self) -> bool {
+        // In a talk it counts the whole talk: its row stays in every scene,
+        // so that the code does not move a row at a crossing.
+        if self.present_progress().is_some() {
+            return self.counter;
+        }
         self.counter && (self.doc.step_total(self.doc.step) > 1 || self.doc.step == 0)
+    }
+
+    /// In a talk, the counter and the bar count the whole talk
+    /// ([`App::talk_progress`]).
+    pub fn present_progress(&self) -> Option<(u32, u32)> {
+        self.talk_progress()
+    }
+
+    /// The progress bar of a talk, on the row of the counter, unless the
+    /// presenter turned it off. Outside a talk there is no bar.
+    pub fn present_bar_shown(&self) -> bool {
+        self.progress && self.present_progress().is_some_and(|(_, n)| n > 0)
     }
 
     /// A step change in presentation mode, before the moves of the new

@@ -87,6 +87,20 @@ fn hostile_start(present: bool) -> SessionStart {
     }
 }
 
+/// A snapshot without its last row: in presentation mode, the row of the
+/// counter, which counts the whole talk and not the scene alone. The tests
+/// of that row are below («The counter of the whole talk»).
+fn above_counter(snap: (String, String), rows: u16) -> (String, String) {
+    let last = rows - 1;
+    let text: Vec<&str> = snap.0.lines().take(last as usize).collect();
+    let styles: Vec<&str> = snap
+        .1
+        .lines()
+        .filter(|l| l.split(':').next().unwrap().trim() != last.to_string())
+        .collect();
+    (text.join("\n"), styles.join("\n"))
+}
+
 #[test]
 fn each_scene_of_a_talk_looks_as_it_does_alone_at_every_step() {
     for present in [true, false] {
@@ -108,9 +122,14 @@ fn each_scene_of_a_talk_looks_as_it_does_alone_at_every_step() {
                 let sock = dir.join(format!("a{i}{s}.sock"));
                 let solo = alone(&dir.join(&file), s, &start, sock);
                 for (cols, rows) in [(80, 24), (120, 30)] {
+                    let (talk, solo) = (live.snapshot(cols, rows), solo.snapshot(cols, rows));
+                    let (talk, solo) = if present {
+                        (above_counter(talk, rows), above_counter(solo, rows))
+                    } else {
+                        (talk, solo)
+                    };
                     assert_eq!(
-                        live.snapshot(cols, rows),
-                        solo.snapshot(cols, rows),
+                        talk, solo,
                         "{file} at step {s}, {cols}x{rows}, present {present}"
                     );
                 }
@@ -161,7 +180,10 @@ fn p_before_the_start_of_a_scene_opens_the_scene_before_at_its_last_step() {
     live.keys(&[KeyCode::Char('p')]);
     assert_eq!((scene_file(&live), step(&live)), ("borrow.tiza".into(), 3));
     let solo = alone(&dir.join("borrow.tiza"), 3, &start, dir.join("a.sock"));
-    assert_eq!(live.snapshot(100, 24), solo.snapshot(100, 24));
+    assert_eq!(
+        above_counter(live.snapshot(100, 24), 24),
+        above_counter(solo.snapshot(100, 24), 24)
+    );
     // Back in the scene: one step at a time, then the intro.
     live.keys(&[KeyCode::Char('p'), KeyCode::Char('p'), KeyCode::Char('p')]);
     assert_eq!((scene_file(&live), step(&live)), ("borrow.tiza".into(), 0));
@@ -751,6 +773,413 @@ fn a_master_edited_while_the_talk_runs_is_not_overwritten() {
         "{said}"
     );
     assert_eq!(std::fs::read_to_string(&master).unwrap(), edited);
+}
+
+// ---- The counter of the whole talk ----
+
+fn progress(live: &Live) -> (u32, u32) {
+    live.with(|a| a.talk_progress()).expect("a talk")
+}
+
+#[test]
+fn the_counter_of_a_talk_counts_the_key_presses_of_the_whole_talk() {
+    let dir = talk_copy("talk-progress-walk");
+    let start = SessionStart {
+        present: true,
+        ..Default::default()
+    };
+    let live = open(&dir, None, start);
+    // By hand, from the scenes: the intro goes on by itself into the next
+    // scene (0), borrow 4, own 3, loop 3 (its last step loops, so `n`
+    // leaves it), again 3, and the last scene 1 (nothing after its last
+    // step). The skipped scene does not count.
+    let want = [
+        ("intro.tiza", [0, 0, 0].as_slice()),
+        ("borrow.tiza", &[0, 1, 2, 3]),
+        ("own.tiza", &[4, 5, 6]),
+        ("loop.tiza", &[7, 8, 9]),
+        ("again.tiza", &[10, 11, 12]),
+        ("2024.tiza", &[13, 14]),
+    ];
+    for (file, ks) in want {
+        for (s, k) in ks.iter().enumerate() {
+            assert_eq!(
+                (scene_file(&live), step(&live)),
+                (file.to_string(), s as u32)
+            );
+            assert_eq!(progress(&live), (*k, 14), "{file} at step {s}");
+            live.keys(&[KeyCode::Char('n')]);
+        }
+    }
+    // Back: the same count at each place.
+    live.keys(&[KeyCode::Char('p'), KeyCode::Char('p')]);
+    assert_eq!(scene_file(&live), "again.tiza");
+    assert_eq!(progress(&live), (12, 14));
+    // The counter on screen says it, also in a scene of one step.
+    live.command("scene 7 1");
+    assert!(live.with(|a| a.present_counter_shown()));
+    let screen = live.screen(80, 24);
+    assert!(
+        screen.lines().last().unwrap().trim_end().ends_with("14/14"),
+        "{screen}"
+    );
+    // The control: alone, a document of one step hides it.
+    let solo = alone(
+        &dir.join("2024.tiza"),
+        1,
+        &SessionStart {
+            present: true,
+            ..Default::default()
+        },
+        dir.join("a.sock"),
+    );
+    assert!(!solo.with(|a| a.present_counter_shown()));
+    assert!(solo.with(|a| a.talk_progress()).is_none());
+}
+
+#[test]
+fn a_step_added_live_counts_at_once_and_a_scene_counts_as_it_was_left() {
+    let dir = talk_copy("talk-progress-live");
+    let live = open(&dir, Some("own"), SessionStart::default());
+    assert_eq!(progress(&live), (4, 14));
+    // A step after the last one: one more press in the scene on screen.
+    live.api_ok(
+        "annotation.add",
+        json!({"type": "note", "line": 1, "text": "later", "step": 3}),
+    );
+    assert_eq!(progress(&live), (4, 15));
+    // A scene that changed on disk counts when the talk goes to it, and
+    // keeps that count when the talk leaves it.
+    let again = dir.join("again.tiza");
+    let mut doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&again).unwrap()).unwrap();
+    doc["annotations"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"id": "x9", "type": "note", "line": 1, "step": 3, "text": "new"}));
+    std::fs::write(&again, doc.to_string()).unwrap();
+    assert_eq!(
+        progress(&live),
+        (4, 15),
+        "not read before the talk goes to it"
+    );
+    live.command("scene 6");
+    assert_eq!(scene_file(&live), "again.tiza");
+    // Before it: the intro 0, borrow 4, own 4 (with its new step), loop 3.
+    assert_eq!(progress(&live), (11, 16));
+    live.command("scene own");
+    assert_eq!(progress(&live), (4, 16));
+}
+
+#[test]
+fn a_new_list_of_scenes_counts_at_once() {
+    let dir = talk_copy("talk-progress-list");
+    let live = open(&dir, Some("own"), SessionStart::default());
+    assert_eq!(progress(&live), (4, 14));
+    // A scene of three steps before `own`: 3 presses more, before it.
+    let note = |id: &str, step: u32| json!({"id": id, "type": "note", "line": 1, "step": step, "text": id});
+    live.api_ok(
+        "talk.insert",
+        json!({"file": "extra.tiza", "at": 2, "scene": {"schema": 1,
+            "source": {"language": "py", "first_line": 1}, "code": ["z = 3"],
+            "annotations": [note("e1", 1), note("e2", 2)]}}),
+    );
+    assert_eq!(progress(&live), (7, 17));
+    // Without `borrow` (4 presses), before the scene on screen.
+    live.api_ok(
+        "talk.put",
+        json!({"scenes": ["intro.tiza", "extra.tiza", {"file": "own.tiza", "name": "own"},
+            {"file": "not-shown.tiza", "skip": true}, "loop.tiza",
+            {"file": "again.tiza", "name": "borrow"}, "2024.tiza"]}),
+    );
+    assert_eq!(progress(&live), (3, 13));
+    // The last scene now: it does not count its way out.
+    live.api_ok(
+        "talk.put",
+        json!({"scenes": ["intro.tiza", {"file": "own.tiza", "name": "own"}]}),
+    );
+    assert_eq!(progress(&live), (0, 2));
+}
+
+#[test]
+fn a_scene_that_a_new_list_skips_while_it_shows_counts_0_when_the_talk_leaves_it() {
+    let dir = talk_copy("talk-progress-skip-here");
+    let live = open(&dir, Some("own"), SessionStart::default());
+    assert_eq!(progress(&live), (4, 14));
+    live.api_ok(
+        "talk.put",
+        json!({"scenes": ["intro.tiza", "borrow.tiza",
+            {"file": "own.tiza", "name": "own", "skip": true},
+            {"file": "not-shown.tiza", "skip": true}, "loop.tiza",
+            {"file": "again.tiza", "name": "borrow"}, "2024.tiza"]}),
+    );
+    // On screen it still counts, until the talk leaves it.
+    assert_eq!(progress(&live), (4, 14));
+    live.command("scene 5");
+    assert_eq!(scene_file(&live), "loop.tiza");
+    // The intro 0 and borrow 4 before loop; own (3) is out of the talk.
+    assert_eq!(progress(&live), (4, 11));
+}
+
+#[test]
+fn changes_that_a_forced_crossing_drops_do_not_count() {
+    let dir = talk_copy("talk-progress-dropped");
+    let live = open(&dir, Some("own"), SessionStart::default());
+    live.command("autosave off");
+    live.api_ok(
+        "annotation.add",
+        json!({"type": "note", "line": 1, "text": "later", "step": 3}),
+    );
+    assert_eq!(progress(&live), (4, 15));
+    live.command("scene! loop");
+    assert_eq!(scene_file(&live), "loop.tiza");
+    assert_eq!(progress(&live), (7, 14), "own counts as its file holds it");
+}
+
+// ---- The progress bar of a talk ----
+
+/// The last row of the screen at `cols`×24, and how many cells of the bar
+/// it has.
+fn bar_row(live: &Live, cols: u16) -> (String, usize) {
+    let screen = live.screen(cols, 24);
+    let row = screen.lines().nth(23).unwrap_or("").to_string();
+    let cells = row.matches('▂').count();
+    (row, cells)
+}
+
+/// The cells of the bar at `k/n` on a row of `cols`, left of the counter
+/// `counter` (by hand: the share of the free cells, rounded).
+fn filled(cols: u16, counter: &str, k: u32, n: u32) -> usize {
+    let len = cols as usize - counter.chars().count() - 1;
+    if len < 8 {
+        return 0;
+    }
+    (len * k as usize + n as usize / 2) / n as usize
+}
+
+fn presenting(counter: Option<bool>, progress: Option<bool>, config: Option<bool>) -> SessionStart {
+    SessionStart {
+        present: true,
+        counter,
+        progress,
+        config_defaults: tiza_core::config::Defaults {
+            progress: config,
+            ..Default::default()
+        },
+        ..Default::default()
+    }
+}
+
+#[test]
+fn the_bar_of_a_talk_fills_from_the_left_with_its_share_of_the_talk() {
+    let dir = talk_copy("talk-bar-fill");
+    let live = open(&dir, None, presenting(None, None, None));
+    // (where, the count, the counter on screen)
+    let places = [
+        (None, (0, 14), " 0/14 "),
+        (Some("scene own"), (4, 14), " 4/14 "),
+        (Some("scene 5 1"), (8, 14), " 8/14 "),
+        (Some("scene 7 1"), (14, 14), " 14/14 "),
+    ];
+    for (go, (k, n), counter) in places {
+        if let Some(command) = go {
+            live.command(command);
+        }
+        assert_eq!(progress(&live), (k, n), "{go:?}");
+        for cols in [80, 41, 15, 14] {
+            let (row, cells) = bar_row(&live, cols);
+            let want = filled(cols, counter, k, n);
+            assert_eq!(cells, want, "{k}/{n} at {cols} columns: {row:?}");
+            assert!(
+                row.chars().take(want).all(|c| c == '▂'),
+                "the bar starts at the left edge: {row:?}"
+            );
+            assert!(row.ends_with(counter.trim_end()), "{row:?}");
+        }
+    }
+    // The control of the narrow rows: on 15 columns 8 cells are free and
+    // the bar shows; on 14 there are 7, and there is no bar.
+    assert_eq!(filled(15, " 4/14 ", 4, 14), 2);
+    assert_eq!(filled(80, " 14/14 ", 14, 14), 72);
+    // The cells of the bar are in the accent color of the theme.
+    let accent = live.with(|a| {
+        let c = a.theme.accent;
+        format!("#{:02x}{:02x}{:02x}", c.0, c.1, c.2)
+    });
+    let (_, styles) = live.snapshot(80, 24);
+    let last = styles.lines().find(|l| l.starts_with(" 23:")).unwrap();
+    assert!(
+        last.starts_with(&format!(" 23: 0:{accent}/")),
+        "{accent}: {last}"
+    );
+}
+
+#[test]
+fn the_counter_and_the_bar_of_a_talk_turn_off_apart() {
+    // (counter flag, progress flag, progress of the config, the bar shows,
+    // the counter shows)
+    let cases = [
+        (None, None, None, true, true),
+        (Some(false), None, None, true, false),
+        (None, Some(false), None, false, true),
+        (Some(false), Some(false), None, false, false),
+        (None, None, Some(false), false, true),
+        (None, Some(true), Some(false), true, true),
+    ];
+    for (i, (counter, flag, config, bar, numbers)) in cases.into_iter().enumerate() {
+        let case = format!("counter {counter:?}, progress {flag:?}, config {config:?}");
+        let dir = talk_copy(&format!("talk-bar-off-{i}"));
+        let live = open(&dir, Some("own"), presenting(counter, flag, config));
+        for scene in ["own.tiza", "loop.tiza"] {
+            assert_eq!(scene_file(&live), scene);
+            let (k, n) = progress(&live);
+            let (row, cells) = bar_row(&live, 80);
+            let room = if numbers {
+                format!(" {k}/{n} ")
+            } else {
+                String::new()
+            };
+            let want = if bar { filled(80, &room, k, n) } else { 0 };
+            assert_eq!(cells, want, "{case}, {scene}: {row:?}");
+            assert_eq!(
+                row.ends_with(&format!("{k}/{n}")),
+                numbers,
+                "{case}: {row:?}"
+            );
+            // With neither, the last row is code again.
+            assert_eq!(
+                live.with(|a| a.status_rows()),
+                u16::from(bar || numbers),
+                "{case}"
+            );
+            // The next scene keeps the choice.
+            live.keys(&[KeyCode::Char('n'), KeyCode::Char('n'), KeyCode::Char('n')]);
+        }
+    }
+}
+
+#[test]
+fn a_document_that_is_not_a_talk_has_no_bar() {
+    let dir = talk_copy("talk-bar-alone");
+    let solo = alone(
+        &dir.join("own.tiza"),
+        1,
+        &presenting(None, Some(true), None),
+        dir.join("a.sock"),
+    );
+    let (row, cells) = bar_row(&solo, 80);
+    assert_eq!(cells, 0, "{row:?}");
+    let total = solo.with(|a| a.doc.step_total(a.doc.step));
+    assert!(
+        row.ends_with(&format!(" 1/{total}")),
+        "the counter of the scene: {row:?}"
+    );
+    assert!(!solo.with(|a| a.present_bar_shown()));
+}
+
+#[test]
+fn the_review_chip_shows_over_the_bar() {
+    let dir = talk_copy("talk-bar-chip");
+    let live = open(&dir, None, presenting(None, None, None));
+    live.command("scene 7 1");
+    live.command("supervise on");
+    let (tx, _reply) = std::sync::mpsc::channel();
+    live.with(move |a| {
+        a.handle_ipc(
+            tiza_core::protocol::Request {
+                id: json!(1),
+                method: "annotation.add".into(),
+                params: json!({"step": 1, "type": "note", "line": 1, "text": "later"}),
+            },
+            tx,
+        )
+    });
+    let (row, _) = bar_row(&live, 80);
+    let chip = " ⏸ 1 to review · :review ";
+    assert!(row.starts_with(chip), "{row:?}");
+    // Right of the chip, the bar goes on as it was, then the counter.
+    let full = filled(80, " 14/14 ", 14, 14);
+    let rest: String = row.chars().skip(chip.chars().count()).collect();
+    assert_eq!(
+        rest.matches('▂').count(),
+        full - chip.chars().count(),
+        "{row:?}"
+    );
+    assert!(row.ends_with("14/14"), "{row:?}");
+}
+
+/// The real binary on a pty of 80×24, in the talk of the fixture at the
+/// scene `own` (4/14): `progress = false` in the config hides the bar,
+/// `--progress` wins over it, `--no-progress` hides it, and of the two
+/// flags the last one wins. The counter stays in each case.
+#[test]
+fn the_config_hides_the_bar_of_a_talk_and_a_flag_wins_over_it() {
+    let dir = talk_copy("talk-bar-flags");
+    let off = "[defaults]\nprogress = false\n";
+    let cases: &[(&str, &[&str], bool)] = &[
+        ("", &[], true),
+        (off, &[], false),
+        (off, &["--progress"], true),
+        ("", &["--no-progress"], false),
+        ("", &["--no-progress", "--progress"], true),
+        ("", &["--progress", "--no-progress"], false),
+    ];
+    let body = r##"
+import json
+binary, cwd, cases = sys.argv[1], sys.argv[2], json.loads(sys.argv[3])
+os.chdir(cwd)
+for i, (cfg, flags, shown) in enumerate(cases):
+    with open("cfg.toml", "w") as f:
+        f.write(cfg)
+    env = dict(os.environ, TERM="xterm-256color", TIZA_CONFIG=os.path.abspath("cfg.toml"))
+    argv = [binary, "--theme", "dark", "--no-socket", "--no-save", "--present", "--scene", "own", *flags, "talk.tiza"]
+    s = Pty(argv, 24, 80, env=env, ctty=True, raw=True)
+    term = Term(24, 80, cpr=False)
+    seen = [0]
+    def last(out):
+        term.feed(out[seen[0]:])
+        seen[0] = len(out)
+        return term.lines()[-1]
+    want = lambda row: row.rstrip().endswith("4/14") and (("▂" in row) == shown)
+    ok = s.wait_for(lambda out: want(last(out)), 10, f"case {i}")
+    last(s.out)
+    print(f"CASE{i}", ok, json.dumps(term.lines()), flush=True)
+    s.send(b":q!\r")
+    print(f"EXIT{i}", s.finish(10), flush=True)
+"##;
+    let script = format!("{}\n{body}", tiza_qa::WIDETERM);
+    let out = tiza_qa::pty_script(
+        &dir,
+        "bar.py",
+        &script,
+        &[
+            tiza_qa::bin().to_str().unwrap(),
+            dir.to_str().unwrap(),
+            &serde_json::to_string(cases).unwrap(),
+        ],
+    );
+    for (i, (cfg, flags, shown)) in cases.iter().enumerate() {
+        let line = crate::common::field(&out, &format!("CASE{i}"));
+        let (ok, screen) = line.split_once(' ').unwrap();
+        let rows: Vec<String> = serde_json::from_str(screen).unwrap();
+        let case = format!("{cfg:?} {flags:?}, bar {shown}");
+        assert_eq!(ok, "True", "{case}:\n{}", rows.join("\n"));
+        let bottom = &rows[23];
+        assert_eq!(
+            bottom.matches('▂').count(),
+            if *shown {
+                filled(80, " 4/14 ", 4, 14)
+            } else {
+                0
+            },
+            "{case}: {bottom:?}"
+        );
+        assert_eq!(
+            crate::common::field(&out, &format!("EXIT{i}")),
+            "0",
+            "{case}: {out}"
+        );
+    }
 }
 
 #[test]

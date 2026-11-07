@@ -310,7 +310,7 @@ A step after the last step opens the last step. In a talk, it is a step of the s
 
 Opens a talk at scene `X`: a position or a name.
 
-Digits only are a position, from 1. Other text is a name, and it opens the first scene with that name. Without `--scene`, the talk opens where it was left. It works only with a master `.tiza`. See [Present a long talk](../guides/present-a-long-talk.md).
+Digits only are a position, from 1. Other text is a name, and it opens the first scene that shows with that name. Without `--scene`, the talk opens where it was left. It works only with a master `.tiza`. See [Present a long talk](../guides/present-a-long-talk.md).
 
 </dd>
 <dt><code>--focus A-B</code></dt>
@@ -354,7 +354,7 @@ See [Use the mouse](../guides/use-the-mouse.md).
 <dt><code>--no-counter</code></dt>
 <dd>
 
-Hides the step counter of presentation mode for this session. Then the last row shows code.
+Hides the step counter of presentation mode for this session. Then the last row shows code, unless the progress bar of a talk shows.
 
 `counter = false` in the config file hides it for every session. See [Config file](config.md#which-value-wins).
 
@@ -363,6 +363,20 @@ Hides the step counter of presentation mode for this session. Then the last row 
 <dd>
 
 Shows the step counter of presentation mode, also when the config file sets `counter = false`.
+
+</dd>
+<dt><code>--no-progress</code></dt>
+<dd>
+
+Hides the progress bar of a talk in presentation mode for this session. The counter stays.
+
+`progress = false` in the config file hides it for every session. See [Config file](config.md#which-value-wins).
+
+</dd>
+<dt><code>--progress</code></dt>
+<dd>
+
+Shows the progress bar of a talk in presentation mode, also when the config file sets `progress = false`.
 
 </dd>
 <dt><code>--no-save</code></dt>

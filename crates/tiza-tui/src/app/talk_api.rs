@@ -261,6 +261,7 @@ impl App {
             value,
         )?;
         // From here nothing fails: the talk in memory changes.
+        let presses = super::talk::scene_counts(&scenes);
         for s in &mut scenes {
             s.doc = None;
         }
@@ -268,6 +269,7 @@ impl App {
         t.loaded.talk.scenes = new;
         t.loaded.scenes = scenes;
         t.index = index;
+        t.presses = presses;
         self.revision += 1;
         Ok(removed)
     }

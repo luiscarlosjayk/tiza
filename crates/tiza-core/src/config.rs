@@ -26,6 +26,7 @@ pub const DEFAULT_KEYS: &[&str] = &[
     "numbers",
     "mouse",
     "counter",
+    "progress",
     "autosave",
     "layout",
     "width",
@@ -81,6 +82,8 @@ pub struct Defaults {
     pub effect_fps: Option<u16>,
     /// `counter = false`: no step counter in presentation mode.
     pub counter: Option<bool>,
+    /// `progress = false`: no progress bar in the presentation of a talk.
+    pub progress: Option<bool>,
 }
 
 /// What the config file holds, after every entry was checked.
@@ -1104,7 +1107,7 @@ fn shown(v: &DeValue<'_>) -> String {
 }
 
 /// `true`, `false` or the words `:numbers`, `:mouse` and `:autosave` take
-/// (also for `counter`).
+/// (also for `counter` and `progress`).
 fn on_off(v: &DeValue<'_>) -> Option<bool> {
     match v {
         DeValue::Boolean(b) => Some(*b),
@@ -1146,12 +1149,13 @@ fn defaults_table(t: &DeTable<'_>, cx: &mut Ctx) -> Defaults {
                     None => Some("use \"V H\" or \"V\", as :pad takes it".to_string()),
                 }
             }
-            "numbers" | "mouse" | "autosave" | "counter" => match on_off(value) {
+            "numbers" | "mouse" | "autosave" | "counter" | "progress" => match on_off(value) {
                 Some(b) => {
                     let slot = match key {
                         "numbers" => &mut d.numbers,
                         "mouse" => &mut d.mouse,
                         "counter" => &mut d.counter,
+                        "progress" => &mut d.progress,
                         _ => &mut d.autosave,
                     };
                     *slot = Some(b);
@@ -1373,7 +1377,7 @@ mod tests {
     #[test]
     fn defaults_take_the_values_of_their_commands() {
         let c = cfg(
-            "[defaults]\npad = \"1 3\"\nnumbers = false\nmouse = \"on\"\ncounter = \"off\"\nautosave = false\nlayout = \"stable\"\nwidth = 120\neffect_fps = 30\n",
+            "[defaults]\npad = \"1 3\"\nnumbers = false\nmouse = \"on\"\ncounter = \"off\"\nprogress = \"off\"\nautosave = false\nlayout = \"stable\"\nwidth = 120\neffect_fps = 30\n",
         );
         assert!(c.warnings.is_empty(), "{:?}", c.warning_lines());
         assert_eq!(
@@ -1387,6 +1391,7 @@ mod tests {
                 width: Some(120),
                 effect_fps: Some(30),
                 counter: Some(false),
+                progress: Some(false),
             }
         );
         assert_eq!(cfg("[defaults]\npad = 2").defaults.pad, Some((2, 4)));

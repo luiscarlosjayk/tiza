@@ -210,12 +210,13 @@ Presentation mode (`P`) shows only the code and the annotations. It hides:
 
 It keeps, on the last row:
 
-- the step counter `2/5` at the right, in the muted color, when the take has more than one step, and on step 0. In a take of one step, it also shows on the empty step after the last one (`2/2`);
+- the step counter `2/5` at the right, in the muted color, when the take has more than one step, and on step 0. In a take of one step, it also shows on the empty step after the last one (`2/2`). In a talk, it counts the whole talk and shows in each scene, also in a scene of one step;
+- in a talk, the progress bar: a line `▂` in the accent color from the left edge to the counter, for the share of the talk that is done. It has its own option (`progress`, `--no-progress`), apart from the counter;
 - the chip `⏸ 2 to review · :review` at the left, when agent changes wait;
 - the command line while the user types after `:`, and its result for 2 s;
 - the message at start for 2 s, when it holds the count of the entries that this version does not know.
 
-While the step counter or the chip shows, the last row has no code: the code does not go under them. A padding at the bottom keeps that row free already. The command line and its result go on the last row only for a short time, and can cover code.
+While the step counter, the progress bar or the chip shows, the last row has no code: the code does not go under them. A padding at the bottom keeps that row free already. The command line and its result go on the last row only for a short time, and can cover code.
 
 While the step counter shows, the chip takes no other row. When the counter does not show and the padding at the bottom is 0, the chip takes the last row: when it comes or goes, the top line of the view stays, and the last line of code goes out of view under the chip and comes back. With the live pointer on that line, the view moves up one row instead, so that the line of the pointer stays in view.
 

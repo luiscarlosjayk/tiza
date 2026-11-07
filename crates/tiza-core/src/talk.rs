@@ -523,6 +523,31 @@ pub fn same_file(a: &Path, b: &Path) -> bool {
     false
 }
 
+/// For each step of a scene, from 0 to its last: whether the presenter
+/// goes on from it with a key. A step that advances by itself to the next
+/// one does not count, so a title slide that plays alone counts once. The
+/// last step counts (`n` leaves the scene), unless it advances by itself
+/// into the next scene (`auto_advance_ms` without `loop`), or the scene is
+/// the `last` of the talk, with nothing after it.
+pub fn step_presses(doc: &Document, last: bool) -> Vec<bool> {
+    let max = doc.max_step();
+    (0..=max)
+        .map(|s| {
+            let auto = doc.auto_advance_ms(s).is_some();
+            if s < max {
+                !auto
+            } else {
+                !last && (!auto || doc.looping)
+            }
+        })
+        .collect()
+}
+
+/// The key presses of a scene: see [`step_presses`].
+pub fn scene_presses(doc: &Document, last: bool) -> u32 {
+    step_presses(doc, last).iter().filter(|p| **p).count() as u32
+}
+
 /// Writes `at` into the master on disk and nothing else: see
 /// [`update_talk`].
 pub fn save_at(path: &Path, scenes: &[SceneEntry], at: &At) -> Result<(), Error> {
@@ -934,5 +959,35 @@ mod tests {
         let ok = Talk::from_value(&json!({"talk": {"title": " T\n", "scenes": ["a.tiza", {"file": "b.tiza", "name": "b", "skip": false}]}})).unwrap();
         assert_eq!(ok.title.as_deref(), Some("T"));
         assert_eq!(ok.scenes[1].name.as_deref(), Some("b"));
+    }
+
+    /// A scene with steps 1 to `max`, and `auto_advance_ms` on `auto`.
+    fn steps_doc(max: u32, auto: &[u32], looping: bool) -> Document {
+        let steps: Vec<Value> = auto
+            .iter()
+            .map(|s| json!({"step": s, "auto_advance_ms": 500}))
+            .collect();
+        let doc = json!({
+            "schema": 1, "source": {"language": "txt"}, "code": ["x"],
+            "loop": looping, "steps": steps,
+            "annotations": [{"id": "n1", "type": "note", "line": 1, "step": max, "text": "end"}],
+        });
+        crate::fs::parse_document(&doc.to_string(), None).unwrap()
+    }
+
+    #[test]
+    fn a_step_that_advances_by_itself_is_not_a_key_press() {
+        // A title slide that plays alone: one press, to leave it.
+        let cover = steps_doc(2, &[0, 1], false);
+        assert_eq!(step_presses(&cover, false), [false, false, true]);
+        // Code with steps 0 to 5: five presses in it, and one to leave it.
+        assert_eq!(scene_presses(&steps_doc(5, &[], false), false), 6);
+        // The last step advances by itself into the next scene: no press.
+        assert_eq!(scene_presses(&steps_doc(2, &[0, 1, 2], false), false), 0);
+        // With `loop`, the last step goes back to step 0: `n` leaves it.
+        assert_eq!(scene_presses(&steps_doc(2, &[0, 1, 2], true), false), 1);
+        // The last scene of the talk: nothing after its last step.
+        assert_eq!(scene_presses(&steps_doc(5, &[], false), true), 5);
+        assert_eq!(scene_presses(&steps_doc(2, &[0, 1], true), true), 0);
     }
 }

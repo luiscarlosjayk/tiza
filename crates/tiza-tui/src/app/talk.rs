@@ -53,6 +53,26 @@ pub struct TalkState {
     /// By the canonical path of the scene, so that a new order of the list
     /// gives no scene the history of another.
     parked: HashMap<PathBuf, Parked>,
+    /// The key presses of each scene, for the counter of the whole talk
+    /// ([`tiza_core::talk::scene_presses`]): 0 for a skipped one. The scene
+    /// on screen is counted from its document as it is now.
+    pub(super) presses: Vec<u32>,
+}
+
+/// The key presses of each scene of `scenes`, from the documents that
+/// they hold: 0 for a skipped one. The last scene that shows does not
+/// count its way out.
+pub(super) fn scene_counts(scenes: &[tiza_core::talk::TalkScene]) -> Vec<u32> {
+    let last = scenes.iter().rposition(|s| !s.skip);
+    scenes
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            s.doc
+                .as_ref()
+                .map_or(0, |d| tiza_core::talk::scene_presses(d, Some(i) == last))
+        })
+        .collect()
 }
 
 struct Parked {
@@ -76,6 +96,11 @@ impl TalkState {
 
     pub fn scene(&self) -> &TalkScene {
         &self.loaded.scenes[self.index]
+    }
+
+    /// Whether no scene shows after the one at `index`.
+    fn last_shown(&self, index: usize) -> bool {
+        !self.loaded.scenes[index + 1..].iter().any(|s| !s.skip)
     }
 }
 
@@ -130,6 +155,7 @@ impl App {
                 (i, loaded.talk.at.is_some().then_some(step))
             }
         };
+        let presses = scene_counts(&loaded.scenes);
         for (i, s) in loaded.scenes.iter_mut().enumerate() {
             if i != index {
                 s.doc = None;
@@ -167,6 +193,7 @@ impl App {
             follow_wanted: start.follow,
             start: session,
             parked: HashMap::new(),
+            presses,
         }));
         Ok((app, notice))
     }
@@ -539,6 +566,21 @@ impl App {
         next.image_exporter = self.image_exporter.take();
         next.agent_deferred = std::mem::take(&mut self.agent_deferred);
         crate::note_save_path(&next.save_path);
+        // The scene left counts as it is now, for the counter of the talk;
+        // changes that a forced crossing drops count as its file holds it.
+        // A new list can skip the scene on screen: then it counts 0, as it
+        // does not show again.
+        let last = talk.last_shown(talk.index);
+        let dropped = self.dirty && !keep;
+        talk.presses[talk.index] = if talk.loaded.scenes[talk.index].skip {
+            0
+        } else if dropped {
+            fs::load_document(&self.save_path).map_or(talk.presses[talk.index], |d| {
+                tiza_core::talk::scene_presses(&d, last)
+            })
+        } else {
+            tiza_core::talk::scene_presses(&self.doc, last)
+        };
         talk.index = index;
         next.talk = Some(talk);
         next.scene_generation = self.scene_generation + 1;
@@ -555,6 +597,27 @@ impl App {
             let _ = self.save();
         }
         Ok(())
+    }
+
+    /// In a talk, how far it is: `(k, n)`, the key presses from its start
+    /// to the step on screen, and all the key presses of the talk. A step
+    /// that advances by itself does not count. The scene on screen counts
+    /// as it is now (a step added live counts at once), and the others as
+    /// they were when the talk last left them.
+    pub fn talk_progress(&self) -> Option<(u32, u32)> {
+        let t = self.talk.as_ref()?;
+        // A count for each entry of the list: a change of the list that
+        // did not count again gives no count, never a panic in a frame.
+        if t.presses.len() != t.loaded.scenes.len() {
+            return None;
+        }
+        let here = tiza_core::talk::step_presses(&self.doc, t.last_shown(t.index));
+        let step = (self.doc.step as usize).min(here.len() - 1);
+        let done = here[..step].iter().filter(|p| **p).count() as u32;
+        let all = here.iter().filter(|p| **p).count() as u32;
+        let before: u32 = t.presses[..t.index].iter().sum();
+        let after: u32 = t.presses[t.index + 1..].iter().sum();
+        Some((before + done, before + all + after))
     }
 
     /// The other scenes whose changes wait in memory (`--no-save`), in
@@ -610,5 +673,41 @@ impl App {
                     t.loaded.path.display()
                 )
             })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_list_and_counts_that_do_not_match_give_no_count() {
+        let master =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../qa/fixtures/shared/talk/talk.tiza");
+        let loaded = tiza_core::talk::load_talk(&master).unwrap();
+        let (mut app, _) = App::first_scene(loaded, &SessionStart::default(), None).unwrap();
+        assert_eq!(app.talk_progress(), Some((0, 14)));
+        app.talk.as_mut().unwrap().presses.pop();
+        assert_eq!(app.talk_progress(), None);
+    }
+
+    #[test]
+    fn a_list_put_back_after_a_panic_gets_its_counts_back() {
+        let master =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../qa/fixtures/shared/talk/talk.tiza");
+        let loaded = tiza_core::talk::load_talk(&master).unwrap();
+        let (mut app, _) = App::first_scene(loaded, &SessionStart::default(), None).unwrap();
+        let before = super::super::RequestState::take(&app, "talk.insert");
+        // As `talk.insert` leaves the talk: one scene more, with its count.
+        let t = app.talk.as_mut().unwrap();
+        let extra = tiza_core::talk::TalkScene {
+            doc: None,
+            ..t.loaded.scenes[1].clone()
+        };
+        t.loaded.scenes.insert(1, extra);
+        t.presses.insert(1, 5);
+        assert_eq!(app.talk_progress(), Some((0, 19)));
+        before.restore(&mut app);
+        assert_eq!(app.talk_progress(), Some((0, 14)));
     }
 }

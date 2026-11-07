@@ -69,6 +69,10 @@ pub struct SessionStart {
     /// step counter of presentation mode for this session. `None`: the
     /// config file decides, else it shows.
     pub counter: Option<bool>,
+    /// `--progress` (`Some(true)`) or `--no-progress` (`Some(false)`): the
+    /// progress bar of the presentation of a talk for this session. `None`:
+    /// the config file decides, else it shows.
+    pub progress: Option<bool>,
 }
 
 pub struct RunOptions {
@@ -154,6 +158,10 @@ fn open_rest(
     app.counter = start
         .counter
         .or(app.config_defaults.counter)
+        .unwrap_or(true);
+    app.progress = start
+        .progress
+        .or(app.config_defaults.progress)
         .unwrap_or(true);
     // A bad entry of the config file was ignored: the first one on the
     // bar, file name, line and key first (the binary printed every one on
