@@ -243,10 +243,10 @@ impl App {
         }
     }
 
-    /// Leaves the scene on screen for scene `index` of the talk, at
-    /// `landing`. Changes that could not be saved stop it (`forced` names
-    /// the command that goes on without them), unless `force`. `true` when
-    /// it said something loud on the bar.
+    /// [`App::try_enter_scene`], with what stops it on the bar: `true`
+    /// when the bar says something loud (also a warning of the new scene).
+    /// `forced` names the command that goes on without the changes that
+    /// are not saved.
     pub fn enter_scene(
         &mut self,
         index: usize,
@@ -254,36 +254,60 @@ impl App {
         force: bool,
         forced: &str,
     ) -> bool {
+        match self.try_enter_scene(index, landing, force) {
+            Ok(()) => self.message.as_ref().is_some_and(|m| m.1),
+            Err(e) if e.code() == "unsaved_changes" => {
+                self.error(format!("{e}; :w saves them, {forced} goes on without them"));
+                true
+            }
+            Err(e) => {
+                self.error(e.to_string());
+                true
+            }
+        }
+    }
+
+    /// Leaves the scene on screen for scene `index` of the talk, at
+    /// `landing`. Changes that could not be saved stop it, unless `force`:
+    /// the error has the code `unsaved_changes`. A scene that does not load,
+    /// or a named step that it does not have, is an error that names the
+    /// scene. On an error nothing changes.
+    pub fn try_enter_scene(
+        &mut self,
+        index: usize,
+        landing: Landing,
+        force: bool,
+    ) -> Result<(), Error> {
         let Some(t) = self.talk.as_ref() else {
-            return false;
+            return Err(Error::Invalid("no talk is open".into()));
         };
         let here = scene_label(t.scene());
         if !force && self.dirty && (self.save_error.is_some() || !self.autosave) {
-            self.error(format!(
-                "{here}: changes not saved; :w saves them, {forced} goes on without them"
-            ));
-            return true;
+            return Err(Error::Because {
+                message: format!("{here}: changes not saved"),
+                inner: Box::new(Error::UnsavedChanges),
+            });
         }
-        let to = &t.loaded.scenes[index];
-        let mut doc = match fs::load_document(&to.path) {
-            Ok(d) => d,
-            Err(e) => {
-                self.error(format!("{}: {e}", scene_label(to)));
-                return true;
-            }
+        let to = t.loaded.scenes.get(index).ok_or_else(|| {
+            Error::SceneNotFound(format!("the talk has no scene at index {index}"))
+        })?;
+        if to.skip {
+            return Err(Error::SceneNotFound(format!(
+                "scene {} is skipped (`skip` in the talk)",
+                to.position
+            )));
+        }
+        let within = |e: Error| Error::Within {
+            what: scene_label(to),
+            inner: Box::new(e),
         };
+        let mut doc = fs::load_document(&to.path).map_err(within)?;
         let disk_step = doc.step;
         let step = match &landing {
             Landing::First => 0,
             Landing::Last => doc.max_step(),
             Landing::At(s) => (*s).min(doc.max_step()),
-            Landing::Named(id) => match doc.resolve_step(id) {
-                Ok(s) => s,
-                Err(e) => {
-                    self.error(format!("{}: {e}", scene_label(to)));
-                    return true;
-                }
-            },
+            Landing::Named(id) => doc.resolve_step(id).map_err(within)?,
         };
         let path = to.path.clone();
         let notice = fs::open_notice(&doc);
@@ -393,7 +417,7 @@ impl App {
         talk.index = index;
         next.talk = Some(talk);
         *self = next;
-        self.message.as_ref().is_some_and(|m| m.1)
+        Ok(())
     }
 
     /// The position to resume at, written to the master once, as Tiza

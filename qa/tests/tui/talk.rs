@@ -189,6 +189,24 @@ fn an_intro_that_advances_by_itself_waits_when_p_comes_back_to_it() {
 }
 
 #[test]
+fn p_goes_past_a_step_that_advances_by_itself() {
+    let dir = talk_copy("talk-p-auto");
+    let path = dir.join("borrow.tiza");
+    let mut raw: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    raw["steps"][0]["auto_advance_ms"] = json!(3600000);
+    std::fs::write(&path, raw.to_string()).unwrap();
+    let live = open(&dir, Some("borrow"), SessionStart::default());
+    live.command("goto 3");
+    live.keys(&[KeyCode::Char('p')]);
+    assert_eq!(
+        (scene_file(&live), step(&live)),
+        ("borrow.tiza".into(), 1),
+        "step 2 would go on to step 3 by itself"
+    );
+}
+
+#[test]
 fn the_last_step_of_an_intro_advances_to_the_next_scene() {
     let dir = talk_copy("talk-auto");
     let live = open(&dir, None, SessionStart::default());
@@ -233,10 +251,15 @@ fn n_during_the_typing_of_the_last_step_ends_the_typing_first() {
     let live = open(&dir, Some("own"), SessionStart::default());
     live.keys(&[KeyCode::Char('n'), KeyCode::Char('n')]);
     assert!(live.with(|a| a.typing.is_some()), "step 2 types");
-    live.keys(&[KeyCode::Char('n')]);
+    // A key ends a typing before it does anything else; `step.next` of the
+    // socket and `:next` follow the same rule.
+    live.api_ok("step.next", json!({}));
     assert_eq!((scene_file(&live), step(&live)), ("own.tiza".into(), 2));
-    assert!(live.with(|a| a.typing.is_none()), "n ended the typing");
-    live.keys(&[KeyCode::Char('n')]);
+    assert!(
+        live.with(|a| a.typing.is_none()),
+        "step.next ended the typing"
+    );
+    live.api_ok("step.next", json!({}));
     assert_eq!(scene_file(&live), "loop.tiza");
 }
 
@@ -487,11 +510,9 @@ fn a_crossing_answers_what_waits_and_the_revision_grows() {
     tiza_qa::ipc::wait_pending(&live, 1);
     live.command("scene loop");
     let reply = waiting.join().unwrap();
-    assert_eq!(
-        reply.error.as_ref().map(|e| e.code.as_str()),
-        Some("unavailable"),
-        "{reply:?}"
-    );
+    let error = reply.error.as_ref().expect("an error");
+    assert_eq!(error.code, "unavailable", "{reply:?}");
+    assert!(error.message.contains("the scene changed"), "{reply:?}");
     assert!(
         !std::fs::read_to_string(dir.join("loop.tiza"))
             .unwrap()
