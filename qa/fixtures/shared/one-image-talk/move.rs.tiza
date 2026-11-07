@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "title": "A move",
+  "source": {
+    "language": "rs",
+    "first_line": 1
+  },
+  "code": ["fn main() {", "    let s = String::from(\"hello\");", "    takes(s);", "    // println!(\"{s}\"); // error: borrow of moved value"],
+  "step": 0,
+  "theme": "dark",
+  "padding": [1, 2],
+  "annotations": [
+    {"id": "a1", "step": 1, "type": "mark", "kind": "move", "span": {"line": 3, "start": 10, "end": 11}, "label": "into takes", "color": "orange"},
+    {"id": "a2", "step": 2, "type": "note", "line": 4, "text": "s no longer owns it: using it here does not compile", "color": "orange"}
+  ]
+}

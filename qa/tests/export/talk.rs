@@ -14,11 +14,14 @@
 //! - AC5 A still, a text export, `--all-steps`, a .cast and a .tape of a
 //!   whole talk are refused with what to give; `--scene` gives the export
 //!   of that scene, byte for byte.
+//! - AC6 In a talk, a scene with no annotations and no moves is one
+//!   image: one frame, not the two steps of the document alone.
 //!
 //! The fixture is `qa/fixtures/export/talk/`: a typed scene with
 //! effects (dark), a light scene with `center`, `loop` and a timed last
 //! step, a tall scene with its code in `src/`, and a skipped scene whose
-//! file is not there, as the last entry.
+//! file is not there, as the last entry. AC6 uses
+//! `qa/fixtures/shared/one-image-talk/`.
 
 use std::path::{Path, PathBuf};
 
@@ -768,4 +771,27 @@ fn one_scene_needs_only_its_own_file_and_each_scene_says_what_it_says_alone() {
 /// `talk.tiza` in a copy of the fixture.
 fn talk_in(dir: &Path) -> PathBuf {
     dir.join("talk.tiza")
+}
+
+#[test]
+fn a_scene_of_one_image_is_one_frame_of_the_talk() {
+    let dir = scratch("talk-export-one-image");
+    let shared = |f: &str| fixture(&format!("shared/one-image-talk/{f}"));
+    let total = |d: Vec<u16>| d.iter().map(|&x| u32::from(x)).sum::<u32>();
+    // One interval for the cover, one for each of the steps 0 to 2 of the
+    // scene after it, and the end of the talk twice: 6 s.
+    let whole = delays(&shared("talk.tiza"), &dir.join("talk.gif"), &[]);
+    assert_eq!(total(whole), 600);
+    // The control: alone, the cover has steps 0 and 1.
+    let cover = delays(&shared("cover.txt.tiza"), &dir.join("cover.gif"), &[]);
+    assert_eq!(total(cover), 300);
+    // `--scene` is the scene alone, byte for byte.
+    let flags = ["--scale", "1", "--interval", "1", "--scene", "1"];
+    let one = export(&shared("talk.tiza"), &dir.join("one.gif"), &flags);
+    let alone = export(
+        &shared("cover.txt.tiza"),
+        &dir.join("alone.gif"),
+        &flags[..4],
+    );
+    assert!(one == alone, "--scene 1: not the GIF of the cover alone");
 }

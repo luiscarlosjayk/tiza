@@ -91,11 +91,11 @@ impl App {
                 // The scene on screen as it is now; the others as their
                 // files hold them.
                 steps: if i == t.index {
-                    Some(self.doc.max_step())
+                    Some(self.doc.shown_last_step())
                 } else if s.skip {
                     None
                 } else {
-                    fs::load_document(&s.path).ok().map(|d| d.max_step())
+                    fs::load_document(&s.path).ok().map(|d| d.shown_last_step())
                 },
             })
             .collect();

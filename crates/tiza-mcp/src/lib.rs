@@ -1823,6 +1823,7 @@ impl ExportJob {
                         from_zero: !self.skip_zero,
                         margin_cap: None,
                         hold_last: true,
+                        in_talk: false,
                     },
                 );
                 anim_frames = take.len();

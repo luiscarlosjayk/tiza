@@ -77,6 +77,7 @@ tiza render talk.tiza --out talk.mp4
 - Every frame has the width of the export and the height of the tallest scene. A lower scene is at the top. An export does not center a scene down, also with `center`.
 - The last step stays twice as long only at the end of the talk. In the talk, a scene goes on to the next one after `--interval`, or after the `auto_advance_ms` of its last step.
 - A scene with `loop` plays one time.
+- A scene with no annotations, and no moves after step 0, is one image: it shows for one `--interval`, or for the `auto_advance_ms` of its step 0.
 - A GIF and a WebP work too. For an image, a text export or a `.cast` of one scene, give `--scene X`, and `--step N` for an image. See [Exports](../reference/exports.md#record-a-talk).
 
 ## 4. Present the talk
@@ -95,6 +96,7 @@ The first time, the talk opens at step 0 of the first scene that shows. Then go 
 | `:scene X STEP` | Goes to scene `X`, at a step number or a named step. |
 
 - When a step types code, `n` finishes the typing, as in a document. The next `n` goes to the next scene.
+- A scene with no annotations, and no moves after step 0, is one image. In a talk, it has only step 0: `n` goes to the next scene, and `p` from the next scene comes back to its step 0. When you open the same file alone, it has steps 0 and 1, so that you can add an annotation at step 1. `:scene X 1` also goes to step 1 in the talk.
 - A step with `auto_advance_ms` goes on by itself, also from the last step of a scene to the next scene.
 - In a scene with `"loop": true`, `n` on the last step goes to the next scene. The auto-advance of the last step goes back to step 0, so a title slide waits for you. In the last scene, `n` does not go back to step 0.
 - `p` goes back over the steps that go on by themselves. Thus `p` on a title slide goes to the scene before. When `p` comes back to such a scene, the scene waits on its last step for your next key. In the first scene, there is no scene before: `p` goes one step back, and that step waits for your next key.

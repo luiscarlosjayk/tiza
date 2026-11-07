@@ -185,6 +185,31 @@ fn step_next_on_the_last_step_of_the_last_scene_does_not_move_also_with_loop() {
     assert_eq!(r["step"], end, "{r}");
 }
 
+#[test]
+fn a_scene_of_one_image_has_one_step_over_the_socket() {
+    // `qa/fixtures/shared/one-image-talk/`: a cover and an end with
+    // nothing on them, and a scene with steps 0 to 2 between them.
+    let dir = scratch("tapi-one-image");
+    copy_dir(&fixture("shared/one-image-talk"), &dir);
+    let live = Live::open_talk(
+        &dir.join("talk.tiza"),
+        None,
+        SessionStart::default(),
+        dir.join("s.sock"),
+    );
+    let steps: Vec<Value> = live.api_ok("talk.get", json!({}))["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["steps"].clone())
+        .collect();
+    assert_eq!(steps, [json!(0), json!(2), json!(0)]);
+    // As the key `n`: one `step.next` leaves the cover.
+    let r = live.api_ok("step.next", json!({}));
+    let place = |r: &Value| (r["scene"]["position"].clone(), r["step"].clone());
+    assert_eq!(place(&r), (json!(2), json!(0)), "{r}");
+}
+
 // ---------------------------------------------------------------- AC2
 
 #[test]

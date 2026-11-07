@@ -523,14 +523,15 @@ pub fn same_file(a: &Path, b: &Path) -> bool {
     false
 }
 
-/// For each step of a scene, from 0 to its last: whether the presenter
+/// For each step of a scene, from 0 to its last
+/// ([`Document::shown_last_step`]): whether the presenter
 /// goes on from it with a key. A step that advances by itself to the next
 /// one does not count, so a title slide that plays alone counts once. The
 /// last step counts (`n` leaves the scene), unless it advances by itself
 /// into the next scene (`auto_advance_ms` without `loop`), or the scene is
 /// the `last` of the talk, with nothing after it.
 pub fn step_presses(doc: &Document, last: bool) -> Vec<bool> {
-    let max = doc.max_step();
+    let max = doc.shown_last_step();
     (0..=max)
         .map(|s| {
             let auto = doc.auto_advance_ms(s).is_some();
@@ -989,5 +990,17 @@ mod tests {
         // The last scene of the talk: nothing after its last step.
         assert_eq!(scene_presses(&steps_doc(5, &[], false), true), 5);
         assert_eq!(scene_presses(&steps_doc(2, &[0, 1], true), true), 0);
+    }
+
+    #[test]
+    fn a_scene_that_is_one_image_is_one_key_press() {
+        let empty = crate::fs::parse_document(
+            r#"{"schema": 1, "source": {"language": "txt"}, "code": ["x"]}"#,
+            None,
+        )
+        .unwrap();
+        assert_eq!(empty.max_step(), 1);
+        assert_eq!(step_presses(&empty, false), [true]);
+        assert_eq!(scene_presses(&empty, true), 0);
     }
 }

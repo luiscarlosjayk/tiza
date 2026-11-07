@@ -171,7 +171,7 @@ impl App {
         };
         let notice = fs::open_notice(&doc);
         let disk_step = doc.step;
-        doc.step = at.map_or(0, |s| s.min(doc.max_step()));
+        doc.step = at.map_or(0, |s| s.min(doc.shown_last_step()));
         let moved = doc.step != disk_step;
         let sync = moved.then(|| doc.sync_code_to_step()).flatten();
         let mut app = App::new(doc, loaded.scenes[index].path.clone());
@@ -202,11 +202,12 @@ impl App {
         Ok((app, notice))
     }
 
-    /// Whether `n` at this step leaves the scene: at its last step, in a
-    /// talk with a scene after this one. The scene to go to.
+    /// Whether `n` at this step leaves the scene: at its last step
+    /// ([`Document::shown_last_step`]), in a talk with a scene after this
+    /// one. The scene to go to.
     fn scene_after_end(&self) -> Option<usize> {
         let t = self.talk.as_ref()?;
-        if self.doc.step < self.doc.max_step() {
+        if self.doc.step < self.doc.shown_last_step() {
             return None;
         }
         t.next_shown()
@@ -217,7 +218,7 @@ impl App {
     /// to the next scene. `None` when `n` stays in the scene.
     pub(super) fn next_scene_key(&mut self, force: bool) -> Option<bool> {
         let t = self.talk.as_ref()?;
-        if self.doc.step < self.doc.max_step() {
+        if self.doc.step < self.doc.shown_last_step() {
             return None;
         }
         let to = t.next_shown();
@@ -229,6 +230,9 @@ impl App {
             // The last scene: `n` does not go back to step 0, also with
             // `loop` (only its auto-advance loops).
             None if self.doc.looping => Some(false),
+            // A last scene of one image ends at step 0: as at the last
+            // step of a document, nothing moves.
+            None if self.doc.step < self.doc.max_step() => Some(self.step_to(self.doc.step)),
             None => None,
         }
     }
@@ -280,11 +284,23 @@ impl App {
     /// The auto-advance of the last step of a scene that does not loop:
     /// to the next scene. `None` when it stays in the scene.
     pub(super) fn next_scene_auto(&mut self) -> Option<bool> {
-        if self.doc.next_step_from(self.doc.step).is_some() {
+        self.talk.as_ref()?;
+        // Before the last step ([`Document::shown_last_step`]): the scene
+        // goes on by itself.
+        if self.doc.step < self.doc.shown_last_step() {
             return None;
         }
-        let to = self.scene_after_end()?;
-        Some(self.enter_scene(to, Landing::First, false, ":next!"))
+        // `loop`: back to step 0, also in a scene of one image.
+        if self.doc.looping {
+            let one_image = self.doc.shown_last_step() < self.doc.max_step();
+            return one_image.then(|| self.step_to_with(0, true));
+        }
+        match self.scene_after_end() {
+            Some(to) => Some(self.enter_scene(to, Landing::First, false, ":next!")),
+            // A last scene of one image stays on step 0.
+            None if self.doc.step < self.doc.max_step() => Some(false),
+            None => None,
+        }
     }
 
     /// `p`, `:prev`, `step.prev` in a talk: to the nearest earlier step
@@ -424,8 +440,8 @@ impl App {
         let mut doc = kept.unwrap_or(disk);
         let step = match &landing {
             Landing::First => 0,
-            Landing::Last => doc.max_step(),
-            Landing::At(s) => (*s).min(doc.max_step()),
+            Landing::Last => doc.shown_last_step(),
+            Landing::At(s) => (*s).min(doc.shown_last_step()),
             Landing::Named(id) => doc.resolve_step(id).map_err(within)?,
         };
         let path = to.path.clone();

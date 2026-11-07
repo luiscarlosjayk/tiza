@@ -1,0 +1,11 @@
+{
+  "schema": 2,
+  "talk": {
+    "title": "A talk with a cover and an end of one image",
+    "scenes": [
+      "cover.txt.tiza",
+      "move.rs.tiza",
+      {"file": "thanks.txt.tiza", "name": "thanks"}
+    ]
+  }
+}

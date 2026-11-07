@@ -413,7 +413,7 @@ A scene has a **position**, its place in the list of the master from 1. A skippe
 
 - `talk.get` gives these fields and `scenes`, one item for each entry of the master: `entry`, `position`, `name`, `skip` and `steps`.
   - `entry` is the entry as Tiza writes it: the path alone, or `{file, name, skip}` with only the fields that are set. You can send the `entry` values back to `talk.put`.
-  - `steps` is the last step of the scene, or `null` for a skipped entry. Tiza does not read a skipped entry.
+  - `steps` is the last step of the scene, or `null` for a skipped entry. Tiza does not read a skipped entry. A scene with no annotations, and no moves after step 0, has `steps` 0: in a talk, it is one image. The `max_step` of `status` is the last step of the document alone, so it is 1 for such a scene.
 - A reply of `step.set`, `step.next`, `step.prev`, `step.goto` and `talk.goto` in a talk has `scene`, with the `position` and the `name` of the scene on screen. Look at it after `step.next`: after the last step of a scene, `step.next` opens the next scene at step 0.
 - The requests of one batch go in order, and each one acts on the scene on screen when it runs. A request after a `step.next` or a `talk.goto` that opens another scene acts on the new scene.
 

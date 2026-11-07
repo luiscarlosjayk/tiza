@@ -2395,6 +2395,18 @@ impl Document {
             .max(1)
     }
 
+    /// The last step of a scene in a talk: the last of
+    /// [`Document::change_steps`], the steps at which what a take draws
+    /// can change. A document with nothing on it is one image: its last
+    /// step is 0, and `n` leaves it with one press. A document alone keeps
+    /// [`Document::max_step`] (at least 1, a step to prepare on).
+    pub fn shown_last_step(&self) -> u32 {
+        self.change_steps(self.max_step())
+            .last()
+            .copied()
+            .unwrap_or(0)
+    }
+
     pub fn find_annotation(&self, id: &str) -> Option<&Annotation> {
         self.annotations.iter().find(|a| a.id == id)
     }

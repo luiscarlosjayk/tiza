@@ -954,6 +954,7 @@ fn real_main() -> anyhow::Result<()> {
                         from_zero: !skip_zero,
                         margin_cap,
                         hold_last: true,
+                        in_talk: false,
                     };
                     // Made once; each pass of an encoder plays it back.
                     let take = tiza_core::anim::Take::record(&doc, &theme, &anim_opts);
@@ -2047,13 +2048,11 @@ fn render_talk(t: &TalkExport<'_>) -> anyhow::Result<()> {
             margin_cap,
             // Twice as long only at the end of the talk.
             hold_last: k == last,
+            // A scene of one image has one frame, as in the TUI.
+            in_talk: true,
         };
         // Too many lines: an error before the layout, as for one document.
-        let first = u32::from(t.skip_zero);
-        let lines = (first..=doc.max_step().max(first))
-            .map(|s| doc.lines_at(s))
-            .max()
-            .unwrap_or(0);
+        let lines = opts.steps(doc).map(|s| doc.lines_at(s)).max().unwrap_or(0);
         tiza_export::check_lines(lines, &t.svg, &png)
             .map_err(|e| anyhow::anyhow!("{label}: {e}"))?;
         let timed = tiza_core::anim::timed_steps(doc, &opts);

@@ -49,6 +49,7 @@ mod step_zero_hint;
 mod supervised_mode;
 mod tab_selection;
 mod talk;
+mod talk_one_image;
 mod talk_session;
 mod terminal_setup;
 mod terminal_theme;

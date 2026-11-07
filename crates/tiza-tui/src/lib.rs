@@ -138,6 +138,11 @@ fn open_rest(
     config_warnings: &[String],
 ) {
     if let Some(s) = start.step {
+        // In a talk, a step of the scene: one of one image has only step 0.
+        let s = match app.talk {
+            Some(_) => s.min(app.doc.shown_last_step()),
+            None => s,
+        };
         app.set_step(s);
         // The step it opens at shows its final drawing, with no enter
         // effect, as when the document opens at its own step: also after

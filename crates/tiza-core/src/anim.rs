@@ -27,6 +27,24 @@ pub struct AnimOptions {
     /// it). A scene of a talk that is not the last one has it off: in the
     /// middle of a talk, the next scene comes after one interval.
     pub hold_last: bool,
+    /// The take of a scene of a talk: it ends at the last step that the
+    /// scene shows ([`Document::shown_last_step`]), so a scene of one
+    /// image has one frame. A document alone ends at
+    /// [`Document::max_step`].
+    pub in_talk: bool,
+}
+
+impl AnimOptions {
+    /// The steps of the take of `doc`, in order.
+    pub fn steps(&self, doc: &Document) -> std::ops::RangeInclusive<u32> {
+        let first = u32::from(!self.from_zero);
+        let last = if self.in_talk {
+            doc.shown_last_step()
+        } else {
+            doc.max_step()
+        };
+        first..=last.max(first)
+    }
 }
 
 impl Default for AnimOptions {
@@ -38,6 +56,7 @@ impl Default for AnimOptions {
             from_zero: true,
             margin_cap: None,
             hold_last: true,
+            in_talk: false,
         }
     }
 }
@@ -75,8 +94,7 @@ pub fn check_interval(secs: f64) -> Result<f64, crate::Error> {
 /// Steps whose frame holds for their own `auto_advance_ms` instead of the
 /// interval, for the export's summary line.
 pub fn timed_steps(doc: &Document, opts: &AnimOptions) -> Vec<u32> {
-    let first = if opts.from_zero { 0 } else { 1 };
-    (first..=doc.max_step().max(first))
+    opts.steps(doc)
         .filter(|s| doc.auto_advance_ms(*s).is_some())
         .collect()
 }
@@ -107,8 +125,8 @@ fn generate(
     opts: &AnimOptions,
     mut emit: impl FnMut(u32, &Canvas, u64, bool, bool),
 ) {
-    let first = if opts.from_zero { 0 } else { 1 };
-    let last = doc.max_step().max(first);
+    let steps = opts.steps(doc);
+    let (first, last) = (*steps.start(), *steps.end());
     // Bounded by the callers (`check_interval`); saturating anyway, so a
     // caller that forgets cannot overflow.
     let max = crate::model::MAX_HOLD_MS;
