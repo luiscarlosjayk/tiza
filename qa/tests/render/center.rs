@@ -240,21 +240,47 @@ fn a_linked_file_keeps_the_offset_of_the_widest_file() {
 }
 
 #[test]
-fn with_a_margin_cap_the_middle_is_the_one_of_the_screen() {
+fn with_a_margin_cap_the_block_is_in_the_middle_of_the_whole_width() {
+    // 120 columns, a block of 30 (2 + 26 + 2) and a margin cap of 20: the
+    // block goes 45 columns in, and the canvas keeps the 120 columns, so
+    // an export has as many blank columns on the right of the block as on
+    // its left. The cap still ends the margin: the long note wraps in 20
+    // cells.
+    let code = ["fn main() {", "    let total = 1 + 2 + 3;", "}"];
     let fields = |margin: Option<u16>| {
-        let mut f = json!({"center": true, "numbers": false});
+        let mut f = json!({"center": true, "numbers": false, "annotations": [
+            {"id": "n1", "step": 1, "type": "note", "line": 2,
+             "text": "a note that is longer than twenty cells"}]});
         if let Some(m) = margin {
             f["margin"] = json!(m);
         }
         f
     };
-    let free = open("center-margin-free", &FN, fields(None));
-    let capped = open("center-margin-cap", &FN, fields(Some(20)));
-    let (a, b) = (take(&free, 100, 1), take(&capped, 100, 1));
+    let free = open("center-margin-free", &code, fields(None));
+    let capped = open("center-margin-cap", &code, fields(Some(20)));
+    let (a, b) = (take(&free, 120, 1), take(&capped, 120, 1));
+    assert_eq!(b.left, (120 - 30) / 2);
     assert_eq!(a.left, b.left);
-    // The canvas ends at the cap: the left columns, the block with its
-    // rails (at least 10 columns of code) and 20 cells of margin.
-    assert_eq!(b.canvas.width, b.left + 2 + 14 + 2 + 20);
+    assert_eq!(b.canvas.width, 120);
+    let right_of_block = 120 - (b.left + 30);
+    assert_eq!(right_of_block, b.left);
+    // The note ends at the cap: 20 cells after the block, never further.
+    for y in 0..b.canvas.height {
+        let row = b.canvas.row_text(y);
+        let used = row.trim_end().chars().count();
+        assert!(
+            used <= b.left + 30 + 20,
+            "row {y} goes past the cap: {row:?}"
+        );
+    }
+    // Without the cap, the note has the whole margin: one row.
+    assert!(
+        b.rows.len() > a.rows.len(),
+        "the cap does not wrap the note"
+    );
+    // Without `center`, a capped canvas still ends at the cap.
+    let plain = take(&uncentered(&capped), 120, 1);
+    assert_eq!(plain.canvas.width, 30 + 20);
 }
 
 #[test]

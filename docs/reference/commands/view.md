@@ -126,7 +126,7 @@ For example, a title in the middle of 60 columns:
 
 - The code of all the steps goes to the same place: Tiza uses the widest step and the step with the most rows. Spaces at the start and at the end of a line count. To start an animation at the left side of the screen, put spaces in the text. See [`center`](../document-format.md#top-level-fields).
 - When the code is wider than the screen, it stays at the left. The reply of `:center on` then gives the width from which Tiza centers it.
-- An export centers the code across its width, but not down.
+- An export centers the code across its width, but not down. With a margin, the image keeps its full width.
 - `:center` alone shows the current value. `u` undoes the change.
 
 ## `:pad`

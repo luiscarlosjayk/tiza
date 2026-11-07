@@ -1958,6 +1958,9 @@ fn layout_pass(
     // The cap ends the frame: the margin is at most `cap` cells and
     // the canvas no wider than the content, so a capped PNG has no blank
     // band on the right and a capped terminal leaves its right columns free.
+    // With `center` the canvas keeps the whole width, blank after the cap,
+    // so that an export has the block in its middle, as the screen does.
+    let canvas_w = if doc.center { width } else { 0 };
     let width = match opts.margin_cap {
         Some(cap) if width > margin_x + cap => margin_x + cap,
         _ => width,
@@ -2373,10 +2376,10 @@ fn layout_pass(
     let base = theme.base();
     let mut canvas = match paint.spare {
         Some(mut c) => {
-            c.refill(width, rows.len(), base);
+            c.refill(width.max(canvas_w), rows.len(), base);
             c
         }
-        None => Canvas::new_filled(width, rows.len(), base),
+        None => Canvas::new_filled(width.max(canvas_w), rows.len(), base),
     };
     if shared.trace {
         canvas.start_trace();
