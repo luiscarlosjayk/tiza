@@ -330,6 +330,11 @@ pub struct TypedHighlight {
     /// annotations of the earlier steps go where the code of that stage
     /// puts them. `None` for the end of the step.
     pub stage: Option<usize>,
+    /// The number of the last line of the code at the end of the step: a
+    /// frame of the typing has the gutter of that code from its first
+    /// frame, so the code does not move when a line number gets one more
+    /// digit.
+    pub end_last_line: u32,
 }
 
 impl TypedHighlight {

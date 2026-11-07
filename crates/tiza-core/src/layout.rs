@@ -514,10 +514,11 @@ pub fn stable_geometry(doc: &Document, opts: &LayoutOptions) -> StableGeometry {
                     .max()
                     .unwrap_or(0),
             );
-            // With `center`, the gutter too: a step that types its tenth
-            // line has two digits from its first frame, so the code does
-            // not move.
-            if opts.line_numbers && doc.center {
+            // The gutter too: a step that types its tenth line has two
+            // digits from its first frame, so every pass of the layout (the
+            // labels under their line, the rows, the room of `center`) has
+            // the gutter that a frame of the typing draws.
+            if opts.line_numbers {
                 let last = d.source.first_line + (full.len() as u32).saturating_sub(1);
                 g.num_w = g.num_w.max(num_width(last, true, d.diff_channel));
             }
@@ -1007,6 +1008,15 @@ fn layout_core(
         &projected
     };
     let arrow_slots = arrow_slots(full, theme, opts, shown_file.as_ref());
+    // A frame of a typing has the gutter of the code at the end of its step
+    // from its first frame: the code does not move when a line number gets
+    // one more digit. A stable layout has that gutter from its geometry
+    // ([`stable_geometry`], also the one that an export makes for a typed
+    // frame); normal mode without `center` has no geometry and gets it here.
+    let num_min = match paint.typed {
+        Some(t) if opts.line_numbers => num_width(t.end_last_line, true, false),
+        _ => 0,
+    };
     let left = match geometry {
         Some(g) if full.center => center_left(g, opts.width),
         _ => 0,
@@ -1036,6 +1046,7 @@ fn layout_core(
         pinned: pinned.ids.clone(),
         arrow_slots,
         left,
+        num_min,
     };
     // Whether a margin block fits, and which rows it covers, is only known
     // once the rows exist, so the rows are planned again while a plan finds
@@ -1227,6 +1238,9 @@ struct Shared {
     /// The blank columns on the left ([`center_left`]): one value for every
     /// pass of the layout, `Pinned` included.
     left: usize,
+    /// The narrowest gutter: that of the code at the end of the step, for a
+    /// frame of a typing; else 0.
+    num_min: usize,
 }
 
 /// The place in the automatic palette of each arrow without a color: its
@@ -1508,7 +1522,8 @@ fn layout_pass(
 
     // ---- column widths ----
     let num_w = num_width(doc.last_line(), opts.line_numbers, doc.diff_channel)
-        .max(stable.as_ref().map_or(0, |g| g.num_w));
+        .max(stable.as_ref().map_or(0, |g| g.num_w))
+        .max(shared.num_min);
     let chan_w =
         if doc.diff_channel { CHANNEL_W } else { 0 }.max(stable.as_ref().map_or(0, |g| g.chan_w));
     // The line numbers, then the column of a diff.

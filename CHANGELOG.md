@@ -22,6 +22,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - `annotation.update` with `shape` replaces the `until` too. A `shape` without `until` removes it, as before for a spotlight. A request with `until` and also a `shape` fails with `invalid_argument`.
 - `scene.patch` keeps the `until` of an annotation that it replaces when the new annotation has no `until` key, as it keeps `step` and `file`. `"until": null` removes it. Before, a spotlight sent without `until` lost it.
 - The reference of the command line and of the document format gives the options and the fields as lists, as the pages of the `:` commands do. Each note about one flag, command or field is under it, and a field gives its type and its default. See [Command line](docs/reference/cli.md) and [Document format](docs/reference/document-format.md).
+- `tiza_core::highlight::TypedHighlight` has a new field, `end_last_line`: the number of the last line of the code at the end of the step that types. Code that makes a `TypedHighlight` itself must give it.
+
+### Fixed
+- **A step that types a line past line 9 does not move the code.** When the code of a step gets a line number with one more digit while the step types, the code moved one column to the right in the middle of the typing. In presentation mode and in an export it also moved one column to the left at the start of the typing. Now the gutter has the width of the code at the end of the step from the first frame of the typing, with or without `center`. In normal mode, the code can move when the step changes, as before.
 
 ## [0.2.1] - 2026-11-06
 

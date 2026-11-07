@@ -168,3 +168,49 @@ fn a_range_without_numbers_still_knows_its_lines() {
     let list = live.api_ok("scene.list", json!({}));
     assert!(list.to_string().contains("L16"), "{list}");
 }
+
+/// The column of `let v1` in each frame of an export of a document whose
+/// step 2 types line 9, then lines 10 and 11 (two moves), after eight lines.
+fn typed_columns(center: bool) -> Vec<usize> {
+    let code: Vec<String> = (1..=8).map(|i| format!("let v{i} = {i};")).collect();
+    let doc = json!({"schema": 2, "source": {"language": "rs", "first_line": 1},
+        "code": code, "annotations": [], "center": center,
+        "moves": [
+            {"at_step": 2, "action": "code.patch", "op": "insert", "after": "let v8 = 8;",
+             "content": "let v9 = 9;", "typing": "char", "speed_ms": 20},
+            {"at_step": 2, "action": "code.patch", "op": "insert", "after": "let v9 = 9;",
+             "content": "let v10 = 10;\nlet v11 = 11;", "typing": "char", "speed_ms": 20}]});
+    let doc = tiza_core::fs::parse_document(&doc.to_string(), None).unwrap();
+    let opts = tiza_core::anim::AnimOptions {
+        width: 60,
+        ..Default::default()
+    };
+    let take = tiza_core::anim::Take::record(&doc, &tiza_core::Theme::dark(), &opts);
+    let mut cols = Vec::new();
+    let mut typed = 0;
+    take.each(|f| -> Result<(), ()> {
+        typed += usize::from(f.typing);
+        let col = (0..f.canvas.height)
+            .find_map(|y| f.canvas.row_text(y).find("let v1 = 1;"))
+            .expect("let v1 in the frame");
+        cols.push(col);
+        Ok(())
+    })
+    .unwrap();
+    assert!(typed > 10, "{typed} typed frames");
+    cols
+}
+
+#[test]
+fn a_step_that_types_past_line_nine_keeps_the_code_in_its_column_in_an_export() {
+    // The gutter of a typed frame is that of the code at the end of its
+    // step: two digits from the first frame, not from the frame that
+    // types line 10.
+    for center in [false, true] {
+        let cols = typed_columns(center);
+        assert!(
+            cols.iter().all(|c| *c == cols[0]),
+            "center {center}: {cols:?}"
+        );
+    }
+}

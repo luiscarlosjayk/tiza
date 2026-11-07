@@ -53,6 +53,7 @@ mod terminal_setup;
 mod terminal_theme;
 mod text_anchor_errors;
 mod typing_colors;
+mod typing_gutter;
 mod typing_time;
 mod undo_message;
 mod viewport_warning;

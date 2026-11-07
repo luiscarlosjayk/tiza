@@ -2292,11 +2292,14 @@ impl TypingPlan {
     ) -> crate::highlight::TypedHighlight {
         use crate::highlight::{cut_segments, highlight, highlight_cached};
         let stage = self.stage(index);
+        let len = u32::try_from(self.full.len().saturating_sub(1)).unwrap_or(u32::MAX);
+        let end_last_line = first_line.saturating_add(len);
         let Some(item) = self.items.get(index) else {
             return crate::highlight::TypedHighlight {
                 base: highlight_cached(&self.full, language, theme),
                 lines: BTreeMap::new(),
                 stage,
+                end_last_line,
             };
         };
         let base = highlight_cached(&item.code, language, theme);
@@ -2322,7 +2325,12 @@ impl TypingPlan {
                 });
             lines.insert(at, segs);
         }
-        crate::highlight::TypedHighlight { base, lines, stage }
+        crate::highlight::TypedHighlight {
+            base,
+            lines,
+            stage,
+            end_last_line,
+        }
     }
 }
 
