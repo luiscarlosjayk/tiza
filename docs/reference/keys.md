@@ -44,6 +44,7 @@ For example, to put a box around three lines and go to the next step:
 - When a step types code, the next key finishes the typing. Tiza does not use that key for anything else. `Ctrl-C` is the exception: it does what it does in normal mode. See [Ctrl-C](#ctrl-c).
 - In presentation mode, with the live pointer off, a key that only moves the view does not finish the typing. The view moves, and the typing continues. See [Present](#present).
 - To go to a named step or to a step number, type `:goto ID`. See [Steps and files](commands/steps-and-files.md).
+- In a talk, `n` at the last step of a scene goes to step 0 of the next scene, and `p` at step 0 goes to the last step of the scene before. `p` goes back over the steps that go on by themselves. This is the same in normal mode and in presentation mode. On the last step of the last scene, `n` does not move. To add a step after the last step of a scene, use `:step N`. See [Present a long talk](../guides/present-a-long-talk.md).
 
 ## Select code
 

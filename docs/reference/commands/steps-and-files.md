@@ -26,6 +26,8 @@ Go to the next step or to the previous step.
 
 - The keys `n` and `p` do the same. See [Keys](../keys.md).
 - When a move does not apply, the status bar shows the warning of the move in place of `step N/M`.
+- In a talk, `:next` at the last step of a scene goes to the next scene, and `:prev` at its step 0 goes to the last step of the scene before. See [Present a long talk](../../guides/present-a-long-talk.md).
+- `:next!` and `:prev!` do the same, also when autosave could not save the changes of the scene. The changes are lost.
 
 ## `:goto`
 
@@ -40,6 +42,22 @@ For example, `:goto borrow` goes to the step with the name `borrow`. Named steps
 
 - `:goto` to the step on screen puts the view of the step back. The view of a step comes from its last `scroll`, `cursor` or `code.link` move, also from an earlier step. A `scroll` move puts the view back on its target. A `cursor` or a `code.link` move puts the cursor and the view back on its line. When the live pointer stays, the cursor stays on the pointer.
 - In presentation mode, what comes in at that step also comes into the view again, unless the step has a `scroll`, a `cursor` or a `code.link` move of its own.
+
+## `:scene`
+
+In a talk, goes to a scene.
+
+```
+:scene X
+:scene X STEP
+:scene! X
+```
+
+`X` is a position or a name. Digits only are a position, from 1. Other text is a name, and it goes to the first scene with that name. `STEP` is a step number or a named step of that scene. Without it, the scene opens at step 0.
+
+- `:scene` to the scene on screen does what `:goto STEP` does there.
+- When autosave could not save the changes of the scene on screen, `:scene` does not go. `:scene! X` goes, and the changes are lost.
+- `:scene` works only in a talk. See [Present a long talk](../../guides/present-a-long-talk.md).
 
 ## `:link`
 

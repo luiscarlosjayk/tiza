@@ -113,5 +113,6 @@ You presented all the steps of the document, and the file did not change.
 
 - [Present](../reference/keys.md#present), all the keys and rules of presentation mode
 - [Animate an explanation](animate-an-explanation.md)
+- [Present a long talk](present-a-long-talk.md), several documents in a row
 - [Check before you record](check-before-you-record.md)
 - [Command line](../reference/cli.md)

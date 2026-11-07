@@ -59,7 +59,7 @@ Object. Required.
 
 The embedded code as an array of lines, or a [file reference](#file-reference).
 
-Array or object. Required.
+Array or object. Required, except in a master, which has `talk` in its place (see [Talk](#talk)).
 
 </dd>
 <dt><code>follows</code></dt>
@@ -182,7 +182,7 @@ When `false`, Tiza does not show line numbers.
 </dd>
 </dl>
 
-Tiza ignores a top-level key that it does not know, and does not save it.
+Tiza ignores a top-level key that it does not know, and does not save it. A file with `talk` is a master, not a document: see [Talk](#talk).
 
 ### `source`
 
@@ -1377,6 +1377,80 @@ Each image under this paragraph is a real `tiza render` export of the document a
 - On the screen, an effect plays at 60 frames each second, or at 30 with `effect_fps = 30` in the [config file](config.md#defaults). A GIF, a WebP or a video plays it at 25 frames each second.
 - A GIF, an animated WebP, an MP4 and a WebM show the effect of each step as frames. The first step of the take shows the final drawing, as when the document opens. A `.tape` records the TUI with its effects. A still, a text export, a `.md`, a `.cast` and `render --step N` show the final drawing.
 - With the `terminal` theme, a fade changes the color in one step at its middle.
+
+## Talk
+
+A master `.tiza` plays several documents in a row, as one talk. It has `talk` in place of `code`. Each document of the talk is a scene. A scene is a usual document, and it does not change when a master names it. To present a talk, see [Present a long talk](../guides/present-a-long-talk.md).
+
+```json
+{
+  "schema": 2,
+  "talk": {
+    "title": "Borrows in Rust",
+    "scenes": [
+      "scenes/intro.tiza",
+      {"file": "scenes/06-move.md.tiza", "name": "move"},
+      {"file": "scenes/draft.tiza", "skip": true}
+    ],
+    "at": {"position": 2, "name": "move", "step": 4}
+  }
+}
+```
+
+The fields of `talk`:
+
+<dl>
+<dt><code>title</code></dt>
+<dd>
+
+The title of the talk.
+
+Text. No default.
+
+</dd>
+<dt><code>scenes</code></dt>
+<dd>
+
+The scenes, in the order of the talk. Each entry is the path of a `.tiza` file, or an object with these fields:
+
+- `file`: the path of the `.tiza` file. Required.
+- `name`: the name of the scene. Default: the file name up to the first dot, for example `06-move` for `scenes/06-move.md.tiza`.
+- `skip`: when `true`, the talk leaves out the scene, and Tiza does not read its file. Default: `false`.
+
+A path is absolute or relative to the master. List with at least one scene that shows. Required.
+
+</dd>
+<dt><code>at</code></dt>
+<dd>
+
+Where the talk opens: the `position` and the `name` of a scene, and a `step` of that scene. Tiza writes it when it closes.
+
+Object. No default: the talk opens at step 0 of the first scene that shows.
+
+</dd>
+</dl>
+
+- **The position** of a scene is the number of its entry, from 1. A skipped entry has a position too. Thus `skip` does not change the positions of the other scenes.
+- **The name** of a scene follows the rules of the id of a step: one word, not digits only, and no `-` at the start. A file name that does not follow them, for example `07.tiza`, gives no name: use the position of that scene. Two scenes can have the same name.
+- `--scene X`, `:scene X` and `at` find a scene by its position or by its name. Digits only are a position. Other text is a name, and it finds the first scene that shows with that name.
+- `at` opens the scene at its `position` when that scene has the same name and shows. Else it opens the first scene that shows with that name. Else it opens the first scene that shows, at step 0.
+- When Tiza writes `at`, it changes only `talk.at`. The other keys and the form of each entry stay as they are in the file. When the list of scenes in the file changed while the talk was open, Tiza does not write `at`.
+- Each scene keeps its own `step`. A change in a scene saves the step that its file has, not the step on screen.
+- A file shows once in a talk. Two entries that name the same file are an error, also with other paths to it.
+- `tiza render`, `tiza check` and `scene put` refuse a master: give them a scene.
+
+The errors of a master:
+
+| Message | Cause |
+|---|---|
+| `` the file has both `code` and `talk` `` … | The file has `code` and `talk`. Keep one. |
+| `` talk: unknown key `KEY` `` … | `talk` has a key other than `title`, `scenes` and `at`. |
+| `` talk: `scenes` is empty `` … | The list has no scene. |
+| `` talk: every scene has `skip` `` … | No scene shows. |
+| `talk: scene N: FILE is not a .tiza file` … | An entry names a file that does not end in `.tiza`. |
+| `talk: scene N: name "NAME"` … | A `name` does not follow the rules of a name. |
+| `scene N (NAME, FILE): the same file as scene M` … | Two entries name the same file. |
+| `scene N (NAME, FILE): ` … | The file of a scene does not open. The rest of the message tells why. |
 
 ## Rules the schema does not check
 

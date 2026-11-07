@@ -12,6 +12,7 @@ tiza src/main.rs:12-48                      # open lines 12 to 48, with their li
 tiza src/main.rs --follow                   # reload when you save the file in the editor
 pbpaste | tiza --lang rs                    # open code from the clipboard (macOS)
 tiza examples/ownership.rs.tiza --present   # open a document in presentation mode
+tiza talk.tiza --present                    # present a talk: several documents in a row
 ```
 
 `FILE` is one of these:
@@ -149,13 +150,13 @@ Changes part of the document of the live instance.
 <dt><code>tiza next</code></dt>
 <dd>
 
-Makes the live instance go to the next step.
+Makes the live instance go to the next step. In a talk, at the last step of a scene, it goes to the next scene, as `n` does.
 
 </dd>
 <dt><code>tiza prev</code></dt>
 <dd>
 
-Makes the live instance go to the previous step.
+Makes the live instance go to the previous step. In a talk, at step 0 of a scene, it goes to the scene before, as `p` does.
 
 </dd>
 <dt><code>tiza goto ID</code></dt>
@@ -269,7 +270,7 @@ These flags work with `tiza [FILE]`:
 
 Sets the language of the code.
 
-`LANG` is a language id, for example `rs`, `ts` or `py`, or a full name such as `rust`.
+`LANG` is a language id, for example `rs`, `ts` or `py`, or a full name such as `rust`. It does not work with a talk: each scene has its own language.
 
 </dd>
 <dt><code>--follow</code></dt>
@@ -291,7 +292,15 @@ Starts in presentation mode.
 
 Opens the document at step `N`.
 
-A step after the last step opens the last step.
+A step after the last step opens the last step. In a talk, it is a step of the scene that the talk opens at.
+
+</dd>
+<dt><code>--scene X</code></dt>
+<dd>
+
+Opens a talk at scene `X`: a position or a name.
+
+Digits only are a position, from 1. Other text is a name, and it opens the first scene with that name. Without `--scene`, the talk opens where it was left. It works only with a master `.tiza`. See [Present a long talk](../guides/present-a-long-talk.md).
 
 </dd>
 <dt><code>--focus A-B</code></dt>
@@ -313,7 +322,7 @@ Sets the theme. See [Theme names](themes.md#theme-names).
 
 Loads the theme tokens of a TOML file into the document.
 
-See [Themes](themes.md).
+It does not work with a talk: put the theme in each scene. See [Themes](themes.md).
 
 </dd>
 <dt><code>--padding V[,H]</code></dt>

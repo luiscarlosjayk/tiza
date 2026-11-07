@@ -96,7 +96,7 @@ In `is not in the code shown`, `FILE` can end with the lines on screen, for exam
 
 | Message | When |
 |---|---|
-| `step N/M` or `step N/M · TITLE` | `:step`, `:next`, `:prev` or `:goto` reached a step. |
+| `step N/M` or `step N/M · TITLE` | `:step`, `:next`, `:prev`, `:goto` or `:scene` reached a step. |
 | `step N/N: empty, new annotations go here` | `:step N` opened the empty step after the last step. The status bar also counts that step. |
 | `step N is beyond the last step (M); :step K opens a new one` | `:step N` got a step number past `K`, the first empty step. |
 | `move #N added: step S shows FILE (:ref path to change the document's own file)` | `:link PATH` at step 1 or later added a `code.link` move. |
@@ -142,8 +142,16 @@ In `is not in the code shown`, `FILE` can end with the lines on screen, for exam
 | `presentation mode (P to exit)` | `:present` started presentation mode. |
 | `supervised mode on (N pending)` or `supervised mode off (N pending)` | `:supervise` shows the state. |
 | `no agent changes wait` | `:review` found no change to show. |
+| `SCENE: changes not saved; :w saves them, CMD goes on without them` | In a talk, `n`, `p`, `:next`, `:prev` or `:scene` did not go to another scene, because autosave could not save the changes of the scene on screen. `CMD` is `:next!`, `:prev!` or `:scene! X`. |
+| `left SCENE: REASON` | In a talk, the scene changed, and the scene before left something behind. `REASON` is what the stale moves do the next time, the code of a follow pause that is not kept, or `changes to SCENE are not kept: its files changed on disk`. |
+| `:scene works in a talk: open a master .tiza that lists the scenes` | `:scene` without a talk. |
+| `usage: :scene POSITION\|NAME [STEP]  (:scene! goes on without unsaved changes)` | `:scene` got no scene, or more than two words. |
+| `the talk has no scene N: it has scenes 1 to M` | `:scene N` got a position that is not in the talk. |
+| `` scene N is skipped (`skip` in the talk); the talk has scenes 1 to M `` | `:scene N` got the position of a skipped scene. |
+| `no scene is named "NAME"; the names are NAMES, or give a position (1 to M)` | `:scene NAME` got a name that no scene has. |
 
 - The other messages of `:goto` are in [Messages](../document-format.md#messages). They are for an unknown id and a step after the last step.
+- In the messages of a talk, `SCENE` is `scene N (NAME)`, or `scene N (FILE)` for a scene without a name. The list of skipped positions ends a position message, for example `, and 4 skipped`.
 - In `<id>` and in `usage: :lang ID`, the id is a language id, `LANG`.
 - In the `padding` messages, `V H` is the padding in use, and `CV CH` is the padding that fits on the screen.
 - `HOW` is `file extension`, `file name`, `shebang`, `diff header`, `modeline` or `default: plain text`.
@@ -166,6 +174,7 @@ In `is not in the code shown`, `FILE` can end with the lines on screen, for exam
 | `autosave off` | `:autosave` shows that autosave is off. |
 | `autosave off (unsaved changes: :w)` | `:autosave` shows that autosave is off and that changes are not saved. |
 | `PATH exists (add ! to overwrite)` | The file exists and the command has no `!`. |
+| `:saveas does not work in a talk: the master names the file of each scene; :w PATH writes a copy` | `:saveas` in a talk. |
 
 When `:q` refuses, the status bar shows one of these messages:
 
