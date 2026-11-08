@@ -2079,7 +2079,11 @@ impl App {
             match (&mut self.scroll_held, cam.lines) {
                 (Some(h), Some(lines)) if h.from == Some(cam.id) => {
                     h.lines = lines;
-                    h.align = cam.align;
+                    // A view that kept its code over a moved target holds
+                    // it as `show` ([`App::keep_view_on_moved_target`]).
+                    if h.align != tiza_core::moves::Align::Show {
+                        h.align = cam.align;
+                    }
                     h.annotation = cam.annotation.clone();
                     h.to_come = None;
                     h.pointer = self.pointer;
@@ -4462,9 +4466,42 @@ impl App {
             }
             // The take was sized from the code typed so far.
             *self.geometry.get_mut() = None;
+            self.keep_view_on_moved_target();
             // The step is ready: its auto-advance countdown starts.
             self.step_ready_at = Some(std::time::Instant::now());
         }
+    }
+
+    /// At the end of a typing or a `wait`: a patch of the step that moved
+    /// the first line of the target of the held `scroll` (lines added or
+    /// removed above it) did not move the view, so the view
+    /// keeps its code. The held view takes the target where the patch put
+    /// it, and holds it from there as `show` does: the next step with the
+    /// same `scroll` and a step back do not move the code.
+    fn keep_view_on_moved_target(&mut self) {
+        if self.doc.moves.is_empty() || self.scroll_held.as_ref().is_none_or(|h| h.from.is_none()) {
+            return;
+        }
+        let Camera::Scroll(cam) = self.doc.view_at(self.doc.step).camera else {
+            return;
+        };
+        let Some(lines) = cam.lines else { return };
+        let Some(h) = self.scroll_held.as_mut() else {
+            return;
+        };
+        // Only a target whose first line moved: lines typed into the
+        // target do not change where the view holds it.
+        if h.from != Some(cam.id) || h.lines.0 == lines.0 {
+            return;
+        }
+        h.lines = lines;
+        h.align = tiza_core::moves::Align::Show;
+        h.show_row = None;
+        h.to_come = None;
+        if self.pointer.is_none() && h.reveal.is_none() {
+            (self.cursor_line, self.cursor_col) = (lines.0, 0);
+        }
+        h.cursor = (self.cursor_line, self.cursor_col);
     }
 
     pub fn is_typing(&self) -> bool {

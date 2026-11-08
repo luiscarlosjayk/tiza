@@ -871,3 +871,152 @@ fn in_presentation_the_notes_come_in_and_the_cursor_of_its_own_step_wins() {
         "step 5: the cursor"
     );
 }
+
+/// 160 lines `let vN = N;` with `moves` and a note on line `note` at
+/// step 3, in presentation mode with no padding, at step 0.
+fn open_patched(name: &str, moves: serde_json::Value, note: u32) -> Live {
+    let dir = scratch(name);
+    let code: Vec<String> = (1..=160).map(|i| format!("let v{i} = {i};")).collect();
+    let doc = serde_json::json!({
+        "schema": 2, "source": {"language": "rs", "first_line": 1}, "code": code,
+        "annotations": [{"id": "n3", "step": 3, "type": "note", "line": note, "text": "later"}],
+        "moves": moves, "step": 0
+    });
+    std::fs::write(dir.join("doc.tiza"), doc.to_string()).unwrap();
+    let doc = tiza_core::fs::load_document(&dir.join("doc.tiza")).unwrap();
+    let live = Live::open(doc, dir.join("doc.tiza"), dir.join("s.sock"));
+    live.command("pad 0 0");
+    live.with(|a| {
+        a.autosave = false;
+        a.set_present(true);
+        draw(a);
+    });
+    live
+}
+
+/// Step 1 centers line 40. Step 2 centers line 45, waits, and then
+/// deletes line 40 (with `diff` when `diff`): when the wait ends, the
+/// target is line 44.
+fn scroll_wait_delete(diff: bool) -> serde_json::Value {
+    serde_json::json!([
+        {"at_step": 1, "action": "scroll", "line": 40},
+        {"at_step": 2, "action": "scroll", "line": 45},
+        {"at_step": 2, "action": "wait", "ms": 3_600_000},
+        {"at_step": 2, "action": "code.patch", "op": "delete", "find": "let v40 = 40;", "diff": diff}
+    ])
+}
+
+/// From step 1, `n` to step 2 and the end of its wait or its typing (by
+/// its clock, or by a key when `by_key`); then `n`, `p` and `n`. The rows
+/// of `texts` at step 2 while it waits, and then at each of the four, and
+/// the line of the cursor when the wait ends.
+fn rows_through_the_wait(
+    live: &Live,
+    texts: &'static [&'static str],
+    by_key: bool,
+) -> (Vec<Vec<Option<u16>>>, u32) {
+    key(live, KeyCode::Char('n'));
+    key(live, KeyCode::Char('n'));
+    assert!(live.with(|a| a.is_typing()), "step 2 waits");
+    let mut rows = vec![rows_of(live, texts)];
+    if by_key {
+        key(live, KeyCode::Char('n'));
+    } else {
+        let later = std::time::Instant::now() + std::time::Duration::from_secs(7200);
+        live.with(move |a| a.typing_tick_at(later));
+    }
+    assert_eq!(live.with(|a| (a.doc.step, a.is_typing())), (2, false));
+    rows.push(rows_of(live, texts));
+    let cursor = live.with(|a| a.cursor_line);
+    for (k, step) in [('n', 3), ('p', 2), ('n', 3)] {
+        key(live, KeyCode::Char(k));
+        assert_eq!(live.with(|a| a.doc.step), step);
+        rows.push(rows_of(live, texts));
+    }
+    (rows, cursor)
+}
+
+#[test]
+fn a_patch_that_moves_the_target_after_a_wait_does_not_move_the_view_later() {
+    // The delete of step 2 moves the target (line 45 is line 44 after it)
+    // under a view that stays. Steps 2, 3, back to 2 and 3 again keep the
+    // code above the delete on its rows, with and without a diff, in
+    // presentation mode and in normal mode.
+    const ABOVE: &[&str] = &["let v35 = 35;", "let v39 = 39;"];
+    for (diff, by_key, present) in [
+        (false, false, true),
+        (true, false, true),
+        (false, true, true),
+        (true, true, true),
+        (false, false, false),
+        (true, false, false),
+        (false, true, false),
+    ] {
+        let name = format!("moved-{diff}-{by_key}-{present}");
+        let live = open_patched(&name, scroll_wait_delete(diff), 50);
+        live.with(move |a| a.set_present(present));
+        let (rows, cursor) = rows_through_the_wait(&live, ABOVE, by_key);
+        assert!(rows[0][0].is_some(), "line 35 in view: {rows:?}");
+        assert_eq!(cursor, 44, "the cursor on the target, `let v45`");
+        for (i, at) in ["wait over", "n to 3", "p to 2", "n to 3 again"]
+            .iter()
+            .enumerate()
+        {
+            assert_eq!(
+                rows[i + 1],
+                rows[0],
+                "{at}, diff {diff}, key {by_key}, present {present}"
+            );
+        }
+        assert!(
+            row_of(&live, "let v45 = 45;").is_some(),
+            "the target stays in view"
+        );
+    }
+}
+
+#[test]
+fn a_view_at_the_top_keeps_the_first_lines_after_a_patch_that_moves_the_target() {
+    // The target of step 2, line 10, is near the start: the view is at the
+    // top. The delete of line 3 moves it to line 9.
+    const FIRST: &[&str] = &["let v1 = 1;", "let v2 = 2;"];
+    for diff in [false, true] {
+        let moves = serde_json::json!([
+            {"at_step": 1, "action": "scroll", "line": 5},
+            {"at_step": 2, "action": "scroll", "line": 10},
+            {"at_step": 2, "action": "wait", "ms": 3_600_000},
+            {"at_step": 2, "action": "code.patch", "op": "delete", "find": "let v3 = 3;", "diff": diff}
+        ]);
+        // The note of step 3 is in view: it does not move the view.
+        let live = open_patched(&format!("moved-top-{diff}"), moves, 15);
+        let (rows, _) = rows_through_the_wait(&live, FIRST, false);
+        for (i, r) in rows.iter().enumerate() {
+            assert_eq!(r, &[Some(0), Some(1)], "position {i}, diff {diff}");
+        }
+    }
+}
+
+#[test]
+fn an_insert_above_the_target_after_a_wait_does_not_move_the_view_later() {
+    // Step 2 centers line 45, waits, then inserts two lines before line
+    // 42: the target goes down to line 47 with its code. From the end of
+    // the wait, the lines above and under the new lines keep their rows.
+    const ROWS_OF: &[&str] = &["let v39 = 39;", "let v45 = 45;"];
+    for present in [true, false] {
+        let moves = serde_json::json!([
+            {"at_step": 1, "action": "scroll", "line": 40},
+            {"at_step": 2, "action": "scroll", "line": 45},
+            {"at_step": 2, "action": "wait", "ms": 3_600_000},
+            {"at_step": 2, "action": "code.patch", "op": "insert", "position": "42",
+             "content": "let a = 1;\nlet b = 2;"}
+        ]);
+        let live = open_patched(&format!("moved-insert-{present}"), moves, 50);
+        live.with(move |a| a.set_present(present));
+        let (rows, cursor) = rows_through_the_wait(&live, ROWS_OF, false);
+        assert!(rows[1].iter().all(Option::is_some), "{rows:?}");
+        assert_eq!(cursor, 47, "the cursor on the target, `let v45`");
+        for (i, at) in ["n to 3", "p to 2", "n to 3 again"].iter().enumerate() {
+            assert_eq!(rows[i + 2], rows[1], "{at}, present {present}");
+        }
+    }
+}
