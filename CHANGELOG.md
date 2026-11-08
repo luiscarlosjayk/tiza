@@ -29,7 +29,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 
 ### Fixed
 - **A step that types a line past line 9 does not move the code.** When the code of a step gets a line number with one more digit while the step types, the code moved one column to the right in the middle of the typing. In presentation mode and in an export it also moved one column to the left at the start of the typing. Now the gutter has the width of the code at the end of the step from the first frame of the typing, with or without `center`. In normal mode, the code can move when the step changes, as before.
-- **A patch that moves the target of a `scroll` after a `wait` does not move the code at the next step.** Before, when a `scroll` came before a `wait`, and then a patch of the same step removed or added lines above the target or in it, the view kept its code at the end of the wait. Then at the next step, and at a step back, the code went up or down by the lines of the patch. Now the view keeps its code at those steps too, and the target keeps its new row.
+- **A patch that moves or changes the target of a `scroll` after a `wait` does not move the code at the next step.** Before, when a `scroll` came before a `wait`, and then a patch of the same step removed or added lines above the target or in it, the view kept its code at the end of the wait. Then at the next step, and at a step back, the code went up or down by the lines of the patch. Now the view keeps its code at those steps too, and the target keeps its new row.
 
 ## [0.2.1] - 2026-11-06
 
