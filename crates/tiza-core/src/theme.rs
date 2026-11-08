@@ -74,8 +74,8 @@ pub struct Theme {
     /// The `−` of a line that a patch with `diff` removed.
     pub diff_del: Rgb,
     /// The progress bar of a talk in presentation mode. `None` follows
-    /// `accent`, also an `accent` that an override set ([`Theme::progress`]).
-    pub progress: Option<Rgb>,
+    /// `accent`, also an `accent` that an override set ([`Theme::progress_bar`]).
+    pub progress_bar: Option<Rgb>,
     /// Matching two-face syntax theme.
     pub syntax: two_face::theme::EmbeddedThemeName,
     /// Named annotation colours (`orange`, `blue`…) when an override or the
@@ -108,7 +108,7 @@ impl Theme {
             error: Rgb::hex(0xF47C6F),
             diff_add: Rgb::hex(0x3FB950),
             diff_del: Rgb::hex(0xFF7B72),
-            progress: None,
+            progress_bar: None,
             syntax: T::OneHalfDark,
             palette: BTreeMap::new(),
             host_dark: true,
@@ -136,7 +136,7 @@ impl Theme {
             error: Rgb::hex(0xB42318),
             diff_add: Rgb::hex(0x116329),
             diff_del: Rgb::hex(0xA40E26),
-            progress: None,
+            progress_bar: None,
             syntax: T::OneHalfLight,
             palette: BTreeMap::new(),
             host_dark: false,
@@ -184,7 +184,7 @@ impl Theme {
             error: ansi(1),
             diff_add: ansi(2),
             diff_del: ansi(1),
-            progress: None,
+            progress_bar: None,
             syntax: T::Ansi,
             palette,
             host_dark,
@@ -301,9 +301,9 @@ impl Theme {
                 replaced.push(name);
             }
         }
-        if out.progress.is_some_and(|c| host_color(c).is_some()) {
-            out.progress = None;
-            replaced.push("progress");
+        if out.progress_bar.is_some_and(|c| host_color(c).is_some()) {
+            out.progress_bar = None;
+            replaced.push("progress_bar");
         }
         out.palette.retain(|_, c| host_color(*c).is_none());
         let notice = (!replaced.is_empty()).then(|| {
@@ -443,10 +443,10 @@ impl Theme {
         }
     }
 
-    /// The color of the progress bar of a talk: `progress`, or `accent`
+    /// The color of the progress bar of a talk: `progress_bar`, or `accent`
     /// when the theme does not set it.
-    pub fn progress(&self) -> Rgb {
-        self.progress.unwrap_or(self.accent)
+    pub fn progress_bar(&self) -> Rgb {
+        self.progress_bar.unwrap_or(self.accent)
     }
 
     /// Palette that arrows without an explicit color rotate through, so they can be told apart.
@@ -526,7 +526,7 @@ impl<'de> Deserialize<'de> for ColorString {
 /// or a document's `theme_overrides`: Tiza's roles by name (`bg`, `fg`,
 /// `muted`, `dimmed`, `accent`, `rail`, `box_line`, `box_bg`, `arrow`,
 /// `note`, `highlight_bg`, `status_bg`, `status_fg`, `cmd_bg`, `error`,
-/// `diff_add`, `diff_del`, `progress`),
+/// `diff_add`, `diff_del`, `progress_bar`),
 /// the named annotation palette (`orange`, `blue`, `green`, `purple`,
 /// `pink`, `cyan`, `yellow`, `red`, `gray`), and `dark`, `light` and
 /// `terminal` subtables with the same keys. The subtable of the theme in
@@ -556,7 +556,7 @@ pub const ROLES: &[&str] = &[
     "error",
     "diff_add",
     "diff_del",
-    "progress",
+    "progress_bar",
 ];
 
 /// Parses a colour written by a person: `#rrggbb`, `#rgb`, `rgb(r, g, b)`,
@@ -682,8 +682,8 @@ impl Theme {
                 "error" => &mut self.error,
                 "diff_add" => &mut self.diff_add,
                 "diff_del" => &mut self.diff_del,
-                "progress" => {
-                    self.progress = Some(color);
+                "progress_bar" => {
+                    self.progress_bar = Some(color);
                     continue;
                 }
                 name if PALETTE.contains(&name) => {
@@ -1052,34 +1052,48 @@ mod tests {
     fn the_progress_bar_follows_the_accent_until_a_theme_sets_its_own_color() {
         for name in [ThemeName::Dark, ThemeName::Light, ThemeName::Terminal] {
             let (th, _) = Theme::resolve(name, true, None, None);
-            assert_eq!(th.progress(), th.accent, "{name:?}");
+            assert_eq!(th.progress_bar(), th.accent, "{name:?}");
         }
-        // An accent of the config, and no `progress`: the bar follows it.
+        // An accent of the config, and no `progress_bar`: the bar follows it.
         let accent = parse_theme_file("accent = \"#a6e3a1\"").unwrap().0;
         let (th, _) = Theme::resolve(ThemeName::Dark, true, Some(&accent), None);
-        assert_eq!(th.progress(), Rgb::hex(0xA6E3A1));
+        assert_eq!(th.progress_bar(), Rgb::hex(0xA6E3A1));
         // Its own color, flat or in the subtable of the theme in use, and in
         // the document's table; the accent and the marks keep theirs.
-        let own = parse_theme_file("progress = \"#7bb0d5\"\n[light]\nprogress = \"#2f4f9e\"\n")
-            .unwrap()
-            .0;
+        let own =
+            parse_theme_file("progress_bar = \"#7bb0d5\"\n[light]\nprogress_bar = \"#2f4f9e\"\n")
+                .unwrap()
+                .0;
         let (th, notes) = Theme::resolve(ThemeName::Dark, true, Some(&own), None);
-        assert_eq!(th.progress(), Rgb::hex(0x7BB0D5));
+        assert_eq!(th.progress_bar(), Rgb::hex(0x7BB0D5));
         assert_eq!(th.accent, Theme::dark().accent);
         assert_eq!(th.named_color("orange"), Some(Theme::dark().accent));
         assert!(notes.is_empty(), "{notes:?}");
         let (th, _) = Theme::resolve(ThemeName::Light, false, Some(&own), None);
-        assert_eq!(th.progress(), Rgb::hex(0x2F4F9E));
+        assert_eq!(th.progress_bar(), Rgb::hex(0x2F4F9E));
         let (th, _) = Theme::resolve(ThemeName::Dark, true, Some(&accent), Some(&own));
-        assert_eq!(th.progress(), Rgb::hex(0x7BB0D5), "the document's table");
+        assert_eq!(
+            th.progress_bar(),
+            Rgb::hex(0x7BB0D5),
+            "the document's table"
+        );
         assert_eq!(th.accent, Rgb::hex(0xA6E3A1));
         // A host color has no value in an export: the bar follows the accent.
-        let host = parse_theme_file("progress = \"reset\"").unwrap().0;
+        let host = parse_theme_file("progress_bar = \"reset\"").unwrap().0;
         let (th, _) = Theme::resolve(ThemeName::Dark, true, Some(&host), None);
-        assert_eq!(th.progress, Some(terminal_default()));
+        assert_eq!(th.progress_bar, Some(terminal_default()));
         let (e, n) = th.for_export();
-        assert_eq!(e.progress(), e.accent);
-        assert!(n.unwrap().contains("progress"));
+        assert_eq!(e.progress_bar(), e.accent);
+        assert!(n.unwrap().contains("progress_bar"));
+        // `progress` is the mode of the bar in `[defaults]`, not a color:
+        // in a theme it is an unknown token.
+        let old = parse_theme_file("progress = \"#7bb0d5\"").unwrap().0;
+        let (th, notes) = Theme::resolve(ThemeName::Dark, true, Some(&old), None);
+        assert_eq!(th.progress_bar(), th.accent);
+        assert!(
+            notes.iter().any(|n| n.contains("unknown token `progress`")),
+            "{notes:?}"
+        );
     }
 
     #[test]

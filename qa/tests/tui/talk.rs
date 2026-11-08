@@ -1114,7 +1114,7 @@ fn own_styles(name: &str, overrides: Option<serde_json::Value>) -> String {
 }
 
 #[test]
-fn the_bar_of_a_talk_has_the_progress_color_of_the_theme_and_the_marks_keep_theirs() {
+fn the_bar_of_a_talk_has_the_progress_bar_color_of_the_theme_and_the_marks_keep_theirs() {
     let accent = {
         let c = tiza_core::theme::Theme::dark().accent;
         format!("#{:02x}{:02x}{:02x}", c.0, c.1, c.2)
@@ -1138,10 +1138,13 @@ fn the_bar_of_a_talk_has_the_progress_color_of_the_theme_and_the_marks_keep_thei
     assert_eq!(bar_color(&plain), accent);
     assert!(above(&plain).contains(&accent), "the orange arrow: {plain}");
     // Its own color: only the bar changes.
-    let own = own_styles("talk-bar-color-own", Some(json!({"progress": "#7bb0d5"})));
+    let own = own_styles(
+        "talk-bar-color-own",
+        Some(json!({"progress_bar": "#7bb0d5"})),
+    );
     assert_eq!(bar_color(&own), "#7bb0d5");
     assert_eq!(above(&own), above(&plain), "the code and the marks");
-    // No `progress`, and another accent: the bar follows it.
+    // No `progress_bar`, and another accent: the bar follows it.
     let other = own_styles("talk-bar-color-accent", Some(json!({"accent": "#a6e3a1"})));
     assert_eq!(bar_color(&other), "#a6e3a1");
 }

@@ -532,7 +532,7 @@ fn draw_progress_bar(frame: &mut Frame, app: &App, area: Rect, room: u16, done: 
     }
     let filled =
         ((u64::from(len) * u64::from(done.min(all)) + u64::from(all) / 2) / u64::from(all)) as u16;
-    let style = Style::default().fg(rgb(th.progress())).bg(rgb(th.bg));
+    let style = Style::default().fg(rgb(th.progress_bar())).bg(rgb(th.bg));
     let buf = frame.buffer_mut();
     for i in 0..len {
         let glyph = if i < filled { "▂" } else { " " };

@@ -76,7 +76,7 @@ The values that a session starts with.
 | `numbers` | `true` or `false` | `true` | The line-number gutter. |
 | `mouse` | `true` or `false` | `false` | Mouse capture. |
 | `counter` | `true` or `false` | `true` | The step counter of presentation mode. |
-| `progress` | `"scene"`, `"step"` or `"off"` | `"scene"` | How the progress bar of a talk moves in presentation mode: at each new scene, at each key, or no bar. Its color is the `progress` token of the [theme](themes.md). |
+| `progress` | `"scene"`, `"step"` or `"off"` | `"scene"` | How the progress bar of a talk moves in presentation mode: at each new scene, at each key, or no bar. Its color is the `progress_bar` token of the [theme](themes.md). |
 | `autosave` | `true` or `false` | `true` | Autosave of the document. |
 | `layout` | `"stable"` or `"dynamic"` | `"dynamic"` | The layout of normal mode. |
 | `width` | integer | `100` | The width of `tiza render` and `tiza check`, from 20 to 400 columns. |

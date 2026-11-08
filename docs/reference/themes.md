@@ -118,7 +118,7 @@ The table lists each token that you can set, with its main use.
 | `error` | The error messages, and the `⬚` sign for an invisible character. |
 | `diff_add` | The `+` of a line that a `code.patch` move with `diff` writes, and the tint of its cell. See [A diff](document-format.md#a-diff). |
 | `diff_del` | The `−` of a line that a `code.patch` move with `diff` removes, and the tint of its cell. See [A diff](document-format.md#a-diff). |
-| `progress` | The progress bar of a talk in presentation mode. When you do not set it, the bar has the `accent` color, also when you set your own `accent`. Tiza does not change it for contrast: the bar is not text. See [Present a long talk](../guides/present-a-long-talk.md#4-present-the-talk). |
+| `progress_bar` | The progress bar of a talk in presentation mode. When you do not set it, the bar has the `accent` color, also when you set your own `accent`. Tiza does not change it for contrast: the bar is not text. See [Present a long talk](../guides/present-a-long-talk.md#4-present-the-talk). |
 | `orange`, `blue`, `green`, `purple`, `pink`, `cyan`, `yellow`, `red`, `gray` | The annotation color with that name. |
 | `rail`, `box_bg`, `arrow` | Nothing: Tiza accepts these tokens and draws nothing with them. |
 
