@@ -813,7 +813,7 @@
           ]
         },
         "diff": {
-          "description": "At its step, show the lines that the patch wrote with `+` in a\ncolumn beside the line numbers. The column is kept at every step of\na document that has a patch with `diff`. Default `false`.",
+          "description": "At its step, show the lines that the patch wrote with `+` in a\ncolumn beside the line numbers, and each line that it removed on a\nrow of its own with `−`. The column is kept at every step of a\ndocument that has a patch with `diff`. Default `false`.",
           "type": "boolean"
         },
         "end_occurrence": {

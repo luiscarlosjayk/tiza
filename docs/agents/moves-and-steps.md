@@ -17,7 +17,7 @@ At step 2, type the fix with a move, and explain it in a note.
 When the lesson adds or changes code between steps, add a move. Do not open a second document.
 
 1. Call `add_move` with `at_step`, `op` (`insert`, `replace` or `delete`), one target and `content`. A `delete` takes no `content`.
-2. To type the content on the screen, add `"typing": "line"` or `"typing": "char"`. To show a `+` next to each line that the move writes, at its step, add `"diff": true`. See [A diff](../reference/document-format.md#a-diff).
+2. To type the content on the screen, add `"typing": "line"` or `"typing": "char"`. To show at its step which lines the move writes (`+`) and which lines it removes (`−`), add `"diff": true`. See [A diff](../reference/document-format.md#a-diff).
 3. Add the annotations of the new code with the same `step` as the `at_step` of the move.
 4. Call `check`.
 
@@ -106,7 +106,7 @@ A `code.link` move shows another file from its step, until a later link shows an
 {"name":"add_move","arguments":{"at_step":2,"action":"code.link","file":"src/queue.rs","lines":"10-36"}}
 ```
 
-- `get_code` gives the file on the screen, in its window. When a `code.link` shows the file, the first line names it, for example `# src/queue.rs:10-36`. The notes on invisible characters after the code give the lines of the file.
+- `get_code` gives the file on the screen, in its window. When a `code.link` shows the file, the first line names it, for example `# src/queue.rs:10-36`. The notes on invisible characters after the code give the lines of the file. At the step of a move with `diff`, a note after the code gives the lines that the move removed.
 - `status` gives the file on the screen. See [Fields of `status`](../reference/socket-api.md#fields-of-status).
 - A move carries a window as it carries a line number. An insert at the first line of the window, at the step of the link, makes the window start at the new lines.
 - When a move hides annotations that were on the screen at a step, its reply has a `warning` with their ids. `check` gives the same as `outside_window` or `not_shown`.

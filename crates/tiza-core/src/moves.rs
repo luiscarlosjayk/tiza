@@ -497,8 +497,9 @@ pub struct Patch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub speed_ms: Option<u64>,
     /// At its step, show the lines that the patch wrote with `+` in a
-    /// column beside the line numbers. The column is kept at every step of
-    /// a document that has a patch with `diff`. Default `false`.
+    /// column beside the line numbers, and each line that it removed on a
+    /// row of its own with `−`. The column is kept at every step of a
+    /// document that has a patch with `diff`. Default `false`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub diff: bool,
 }

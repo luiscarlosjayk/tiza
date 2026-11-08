@@ -613,7 +613,7 @@ pub struct AddMoveParams {
     )]
     pub speed_ms: Option<u64>,
     #[schemars(
-        description = "code.patch: true shows the lines that the patch writes with `+` beside the line numbers, at its step only (default false)"
+        description = "code.patch: true shows at its step only a `+` beside each line that the patch writes, and each line that it removes on a row of its own with a `−` (default false)"
     )]
     pub diff: Option<bool>,
     #[schemars(
