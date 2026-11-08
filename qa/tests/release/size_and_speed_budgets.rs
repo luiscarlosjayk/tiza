@@ -1,12 +1,12 @@
 //! Size and speed budgets: binary < 16 MB (17 MB on Linux x86_64),
-//! download < 8 MB, `cargo install` time tracked, a benchmark baseline that
+//! download < 8 MB (8.5 MB on Linux x86_64), `cargo install` time tracked, a benchmark baseline that
 //! warns on regressions, and `lto = "fat"` in the release profile.
 //!
 //! Acceptance criteria:
 //! - AC1 `scripts/size-check.sh` builds `--release`, prints the binary size and
 //!   the size of the tar.gz the release workflow packs, and fails when the
 //!   binary is > 16 MB (or the `binary_limit_bytes` of its target), the
-//!   archive > 8 MB, or either grew > 10 % over this target's baseline in
+//!   archive > 8 MB (or the `archive_limit_bytes` of its target), or either grew > 10 % over this target's baseline in
 //!   `qa/budgets.json` — unless that file is updated in the same commit with
 //!   a new one-line reason.
 //! - AC2 `scripts/bench.sh` times fixed scenarios with the release binary
@@ -155,7 +155,17 @@ fn committed_budgets_hold_the_limits_and_a_baseline_per_target() {
             }
             None => 16 * MB,
         };
-        assert!(bin <= limit && arch <= 8 * MB, "{t}: {e}");
+        // The same for the archive (Luis, 2026-11-08).
+        let arch_limit = match e.get("archive_limit_bytes") {
+            Some(l) => {
+                assert_eq!(t, "x86_64-unknown-linux-gnu", "{t}: {e}");
+                let why = e["archive_limit_reason"].as_str().unwrap_or("");
+                assert!(!why.trim().is_empty() && !why.contains('\n'), "{t}: {e}");
+                l.as_u64().unwrap()
+            }
+            None => 8 * MB,
+        };
+        assert!(bin <= limit && arch <= arch_limit, "{t}: {e}");
         let reason = e["reason"].as_str().unwrap_or("");
         assert!(
             !reason.trim().is_empty() && !reason.contains('\n'),
@@ -418,6 +428,58 @@ fn a_target_with_its_own_binary_limit_is_checked_against_it() {
     assert!(
         r.stdout
             .contains("FAIL: binary 17.10 MB is over the 17 MB budget"),
+        "{}",
+        r.stdout
+    );
+}
+
+#[test]
+fn a_target_with_its_own_archive_limit_is_checked_against_it() {
+    let dir = scratch("size-own-archive-limit");
+    let linux = "x86_64-unknown-linux-gnu";
+    let b = write_json(
+        &dir,
+        "budgets.json",
+        &budgets(json!({ linux: {
+            "binary_bytes": 2 * MB, "archive_bytes": 8_400_000, "commit": "abc1234",
+            "measured": "2026-11-08", "reason": "first baseline",
+            "archive_limit_bytes": 8_500_000, "archive_limit_reason": "the code of 0.3.0"
+        }})),
+    );
+    let b = b.to_str().unwrap();
+    let small = fake_binary(&dir, "small", 2 * MB as usize, false);
+    let check = |name: &str, n: usize, target: &str| {
+        let archive = fake_binary(&dir, name, n, false);
+        run(
+            "size_check.py",
+            &[
+                "--bin",
+                small.to_str().unwrap(),
+                "--archive",
+                archive.to_str().unwrap(),
+                "--budgets",
+                b,
+                "--committed",
+                b,
+                "--target",
+                target,
+            ],
+        )
+    };
+    // 8.45 MB: over the 8 MB of `limits`, under the 8.5 MB of this target.
+    let r = check("under.tar.gz", 8_450_000, linux);
+    assert!(ok(&r), "{}\n{}", r.stdout, r.stderr);
+    assert!(
+        r.stdout.contains("OK (budget 16 MB / 8.5 MB"),
+        "{}",
+        r.stdout
+    );
+    // 8.55 MB: over the limit of the target, which the message names.
+    let r = check("over.tar.gz", 8_550_000, linux);
+    assert!(!ok(&r), "{}", r.stdout);
+    assert!(
+        r.stdout
+            .contains("FAIL: archive 8.55 MB is over the 8.5 MB budget"),
         "{}",
         r.stdout
     );

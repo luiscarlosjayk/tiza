@@ -8,7 +8,8 @@ a folder, `tar -czf`), prints both sizes and fails when:
 - the binary is over `limits.binary_bytes` (16 MB), or over the
   `binary_limit_bytes` of the target when its entry has one (17 MB on Linux
   x86_64: its code and the ELF format take more room), or the archive is over
-  `limits.archive_bytes` (8 MB), or
+  `limits.archive_bytes` (8 MB), or over the `archive_limit_bytes` of the
+  target when its entry has one (8.5 MB on Linux x86_64), or
 - either grew more than `limits.growth_pct` (10 %) over the baseline of this
   target in `qa/budgets.json`.
 
@@ -136,10 +137,11 @@ def main():
     fails = []
     base = budgets["targets"].get(target)
     binary_limit = (base or {}).get("binary_limit_bytes", limits["binary_bytes"])
+    archive_limit = (base or {}).get("archive_limit_bytes", limits["archive_bytes"])
     if size > binary_limit:
-        fails.append(f"binary {size / MB:.2f} MB is over the {binary_limit / MB:.0f} MB budget")
-    if arch > limits["archive_bytes"]:
-        fails.append(f"archive {arch / MB:.2f} MB is over the {limits['archive_bytes'] / MB:.0f} MB budget")
+        fails.append(f"binary {size / MB:.2f} MB is over the {binary_limit / MB:g} MB budget")
+    if arch > archive_limit:
+        fails.append(f"archive {arch / MB:.2f} MB is over the {archive_limit / MB:g} MB budget")
 
     growth = limits["growth_pct"] / 100
     if base is None and a.target:
@@ -168,7 +170,7 @@ def main():
         for f in fails:
             print(f"FAIL: {f}")
         sys.exit(1)
-    print(f"OK (budget {binary_limit / MB:.0f} MB / {limits['archive_bytes'] / MB:.0f} MB, "
+    print(f"OK (budget {binary_limit / MB:g} MB / {archive_limit / MB:g} MB, "
           f"growth ≤ {limits['growth_pct']} % over the baseline)")
 
 

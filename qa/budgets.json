@@ -33,7 +33,9 @@
       "measured": "2026-11-05",
       "reason": "the 0.2.1 code (resvg 0.49), from a cross build with rust-lld that is within 0.04 % of the v0.2.0 release",
       "binary_limit_bytes": 17000000,
-      "binary_limit_reason": "x86_64 code and the ELF format take about 2.4 MB more than macOS arm64; the simple levers gave too little margin (Luis, 2026-11-05)"
+      "binary_limit_reason": "x86_64 code and the ELF format take about 2.4 MB more than macOS arm64; the simple levers gave too little margin (Luis, 2026-11-05)",
+      "archive_limit_bytes": 8500000,
+      "archive_limit_reason": "the code of 0.3.0 makes an archive 516 bytes under 8 MB in a cross build; a limit of its own gives the release a margin (Luis, 2026-11-08)"
     }
   }
 }
