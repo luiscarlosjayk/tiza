@@ -789,6 +789,7 @@ You made a step of your own in `ownership.rs.tiza`, and an image of it in `my-st
 - To annotate your own code, run `tiza FILE`. See [Quick start](../README.md#quick-start).
 - To annotate a selection with keys (`V`, then `n` for a note or `b` for a box), see [Annotate a selection](reference/keys.md#annotate-a-selection).
 - To present the steps to people, see [Present a take](guides/present-a-take.md).
+- To present several documents in a row, for example a talk of many scenes, see [Present a long talk](guides/present-a-long-talk.md).
 - To make an explanation that plays by itself, see [Animate an explanation](guides/animate-an-explanation.md).
 - Before you record, see [Check before you record](guides/check-before-you-record.md).
 - For all the keys, see [Keys](reference/keys.md). For all the commands, see [Commands](reference/commands.md).

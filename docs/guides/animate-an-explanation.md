@@ -42,6 +42,7 @@ The example in this guide has four steps:
 - `fade` fades the annotation in. It works on every annotation.
 - To change the effect of an annotation, type `:set ID effect=draw`. `effect=none` removes the effect. The status bar shows the id when you add an annotation, and the list (`L`) also shows it.
 - To move an annotation to the next or the previous step, press `Tab` until Tiza selects it, then press `+` or `-`.
+- To take an annotation away at a later step, type `:until ID N`. After step `N`, Tiza does not draw the annotation or its label, and the code under it shows as before. `:until ID -` shows it to the last step again. See [`:until`](../reference/commands/annotate.md#until).
 
 The document and the export of steps 1 and 2:
 
@@ -110,6 +111,42 @@ The document and the export of steps 3 and 4:
 <img src="../images/guides/animate-typing.webp" width="544" alt="Lines 1 to 8 with the note and the arrow. At step 3, line 7 becomes let n = t.len();, one character at a time. At step 4, a line is drawn under t.len(), then the label a method call comes in.">
 
 For the other operations and the annotations on a changed line, see [Moves](../reference/document-format.md#moves) and [Typing](../reference/document-format.md#typing).
+
+### Show what a step changes
+
+To show which lines a step writes and which lines it removes, add `"diff": true` to the `code.patch` move. For example, the move of this section with a diff:
+
+```json
+{"at_step": 3, "action": "code.patch", "op": "replace", "find": "let n = len(&t);",
+ "content": "    let n = t.len();", "typing": "char", "speed_ms": 60, "diff": true}
+```
+
+- At the step of the move, a `+` shows next to each line that the move writes. Each line that it removes comes back on a row of its own above them, with a `−` and no line number.
+- At the next step, the signs and the removed lines go.
+- With `typing`, the signs and the removed lines show when the typing ends.
+- A document with `diff` has the schema `2`. Tiza 0.2.1 and earlier versions do not open it.
+- `examples/borrow-diff.rs.tiza` is a short example.
+
+This `replace` writes lines 7 and 8 again, and it changes only line 8. The image is a real `tiza render` export of this document at step 1:
+
+<!-- frame id=animate-diff doc=docs/frames/patch-diff.tiza step=1 -->
+```json
+{
+  "schema": 2,
+  "source": {},
+  "code": {"file": "ownership.rs", "lines": "6-8"},
+  "moves": [
+    {"at_step": 1, "action": "code.patch", "op": "replace",
+     "find_start": "let n", "find_end": "println!",
+     "content": "    let n = len(&t);\n    println!(\"{n} letters in {t}\");",
+     "diff": true}
+  ]
+}
+```
+
+<img src="../images/guides/animate-diff.webp" width="380" alt="Lines 6 to 8 at step 1. Above line 8, the old line that prints {t} has {n} letters, with a red minus sign and no line number. Line 8 prints {n} letters in {t}, and a green plus sign is next to its line number. Lines 6 and 7 have no sign.">
+
+For each rule, see [A diff](../reference/document-format.md#a-diff).
 
 ## 4. Move the view
 
