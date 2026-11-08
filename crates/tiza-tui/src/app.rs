@@ -4473,8 +4473,8 @@ impl App {
     }
 
     /// At the end of a typing or a `wait`: a patch of the step that moved
-    /// the first line of the target of the held `scroll` (lines added or
-    /// removed above it) did not move the view, so the view
+    /// the target of the held `scroll` (lines added or removed above it or
+    /// in it) did not move the view, so the view
     /// keeps its code. The held view takes the target where the patch put
     /// it, and holds it from there as `show` does: the next step with the
     /// same `scroll` and a step back do not move the code.
@@ -4489,9 +4489,13 @@ impl App {
         let Some(h) = self.scroll_held.as_mut() else {
             return;
         };
-        // Only a target whose first line moved: lines typed into the
-        // target do not change where the view holds it.
-        if h.from != Some(cam.id) || h.lines.0 == lines.0 {
+        if h.from != Some(cam.id) || h.lines == lines {
+            return;
+        }
+        // An agent moved the cursor: the next frame lets the view go, and
+        // the cursor stays where the agent put it. (A pointer that an agent
+        // moved lets it go too: this does not change `h.pointer`.)
+        if (self.cursor_line, self.cursor_col) != h.cursor {
             return;
         }
         h.lines = lines;

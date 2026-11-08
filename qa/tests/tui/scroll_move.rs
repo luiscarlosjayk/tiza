@@ -1020,3 +1020,69 @@ fn an_insert_above_the_target_after_a_wait_does_not_move_the_view_later() {
         }
     }
 }
+
+#[test]
+fn an_agent_cursor_at_the_end_of_the_wait_stays_and_lets_the_view_go() {
+    // An agent moves the cursor to line 100 in the same turn of the loop
+    // that ends the wait of step 2: the cursor stays there, and the view
+    // goes with it.
+    let live = open_patched("moved-agent", scroll_wait_delete(false), 50);
+    key(&live, KeyCode::Char('n'));
+    key(&live, KeyCode::Char('n'));
+    assert!(live.with(|a| a.is_typing()), "step 2 waits");
+    let later = std::time::Instant::now() + std::time::Duration::from_secs(7200);
+    live.with(move |a| {
+        (a.cursor_line, a.cursor_col) = (100, 0);
+        a.typing_tick_at(later);
+    });
+    assert_eq!(live.with(|a| (a.is_typing(), a.cursor_line)), (false, 100));
+    assert!(
+        row_of(&live, "let v101 = 101;").is_some(),
+        "the view goes to the cursor"
+    );
+}
+
+#[test]
+fn an_insert_in_the_target_after_a_wait_does_not_move_the_view_later() {
+    // Step 2 centers the box b1 (lines 45 to 47), waits, then inserts two
+    // lines in it: the box is on lines 45 to 49. From the start of the
+    // wait, the lines above the new lines keep their rows, and the lines
+    // under them go down two rows when the wait ends, then stay.
+    let notes = serde_json::json!([
+        {"id": "b1", "step": 1, "type": "box", "from_line": 45, "to_line": 47},
+        {"id": "n3", "step": 3, "type": "note", "line": 50, "text": "later"}
+    ]);
+    let moves = serde_json::json!([
+        {"at_step": 1, "action": "scroll", "line": 40},
+        {"at_step": 2, "action": "scroll", "annotation": "b1"},
+        {"at_step": 2, "action": "wait", "ms": 3_600_000},
+        {"at_step": 2, "action": "code.patch", "op": "insert", "position": "46",
+         "content": "let a = 1;\nlet b = 2;"}
+    ]);
+    const ROWS_OF: &[&str] = &["let v39 = 39;", "let v45 = 45;", "let v47 = 47;"];
+    for present in [true, false] {
+        let live = open_json(
+            &format!("moved-box-{present}"),
+            notes.clone(),
+            moves.clone(),
+            0,
+        );
+        live.with(move |a| a.set_present(present));
+        let (rows, _) = rows_through_the_wait(&live, ROWS_OF, false);
+        let [v39, v45, v47] = [0, 1, 2].map(|i| rows.iter().map(|r| r[i]).collect::<Vec<_>>());
+        assert!(v39[0].is_some(), "line 39 in view: {rows:?}");
+        assert!(
+            v39.iter().all(|r| *r == v39[0]),
+            "line 39, present {present}: {v39:?}"
+        );
+        assert!(
+            v45.iter().all(|r| *r == v45[0]),
+            "line 45, present {present}: {v45:?}"
+        );
+        let under = v47[0].map(|r| r + 2);
+        assert!(
+            v47[1..].iter().all(|r| *r == under),
+            "line 47, present {present}: {v47:?}"
+        );
+    }
+}
