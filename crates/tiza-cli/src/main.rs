@@ -43,7 +43,7 @@ struct Cli {
     /// Hide the progress bar of a talk for this session, as `--progress off`; the counter stays
     #[arg(long, overrides_with = "progress")]
     no_progress: bool,
-    /// How the progress bar of a talk moves for this session: scene (the default: the bar moves at each new scene), step (the bar moves at each key, as the counter) or off.
+    /// How the progress bar of a talk moves for this session: step (the default: the bar moves at each key, as the counter), scene (the bar moves at each new scene) or off.
     /// `progress` in config.toml sets it for every session.
     #[arg(long, value_enum, value_name = "MODE", overrides_with_all = ["no_progress", "progress"])]
     progress: Option<ProgressArg>,

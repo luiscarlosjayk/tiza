@@ -378,8 +378,8 @@ Hides the progress bar of a talk in presentation mode for this session, as `--pr
 
 Sets how the progress bar of a talk moves in presentation mode for this session, also when the config file sets another mode:
 
-- `scene` (the default): the bar shows how much of the talk is done at the end of the scene on screen. It moves on at the next scene.
-- `step`: the bar grows at each key that you press, as the counter.
+- `step` (the default): the bar grows at each key that you press, as the counter.
+- `scene`: the bar shows how much of the talk is done at the end of the scene on screen. It moves on at the next scene.
 - `off`: no bar.
 
 When you give `--progress` and `--no-progress`, the last one wins.

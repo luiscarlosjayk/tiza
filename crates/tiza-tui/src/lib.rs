@@ -71,7 +71,7 @@ pub struct SessionStart {
     pub counter: Option<bool>,
     /// `--progress MODE` or `--no-progress` (`Some(Off)`): how the progress
     /// bar of the presentation of a talk moves for this session. `None`:
-    /// the config file decides, else `scene`.
+    /// the config file decides, else `step`.
     pub progress: Option<tiza_core::config::ProgressMode>,
 }
 

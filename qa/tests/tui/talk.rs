@@ -987,7 +987,11 @@ fn presenting(
 #[test]
 fn the_bar_of_a_talk_fills_from_the_left_with_its_share_of_the_talk() {
     let dir = talk_copy("talk-bar-fill");
-    let live = open(&dir, None, presenting(None, None, None));
+    let live = open(
+        &dir,
+        None,
+        presenting(None, Some(ProgressMode::Scene), None),
+    );
     // (where, the counter, the bar, the counter on screen). The bar by
     // hand, as the end of each scene: intro 1 (a scene that plays by
     // itself weighs 1), borrow 4, own 3, loop 3, again 3, 2024 1 (its one
@@ -1035,7 +1039,11 @@ fn the_bar_of_a_talk_fills_from_the_left_with_its_share_of_the_talk() {
 #[test]
 fn the_bar_of_a_talk_stays_still_in_a_scene_and_jumps_to_the_next() {
     let dir = talk_copy("talk-bar-scenes");
-    let live = open(&dir, None, presenting(None, None, None));
+    let live = open(
+        &dir,
+        None,
+        presenting(None, Some(ProgressMode::Scene), None),
+    );
     // (scene, its places in the walk, the bar there). By hand: each scene
     // weighs its presses, at least 1: intro 1 (it plays by itself), borrow
     // 4, own 3, loop 3, again 3, 2024 1. The skipped scene between own and
@@ -1193,7 +1201,7 @@ fn the_bar_of_a_talk_by_step_grows_at_each_key_as_the_counter() {
 fn a_talk_opened_at_a_step_of_a_scene_has_the_bar_of_its_mode() {
     // `--scene own --step 2`: the counter is 6/14 in each mode.
     let cases = [
-        (None, Some((8, 15))),
+        (None, Some((6, 14))),
         (Some(ProgressMode::Scene), Some((8, 15))),
         (Some(ProgressMode::Step), Some((6, 14))),
         (Some(ProgressMode::Off), None),
@@ -1221,8 +1229,8 @@ fn the_counter_and_the_bar_of_a_talk_turn_off_apart() {
     // by step (`Some(true)`), by scene (`Some(false)`) or not, the counter
     // shows)
     let cases = [
-        (None, None, None, Some(false), true),
-        (Some(false), None, None, Some(false), false),
+        (None, None, None, Some(true), true),
+        (Some(false), None, None, Some(true), false),
         (None, Some(Off), None, None, true),
         (Some(false), Some(Off), None, None, false),
         (None, None, Some(Off), None, true),
@@ -1311,7 +1319,7 @@ fn the_review_chip_shows_over_the_bar() {
     let chip = " ⏸ 1 to review · :review ";
     assert!(row.starts_with(chip), "{row:?}");
     // Right of the chip, the bar goes on as it was, then the counter.
-    let full = filled(80, " 14/14 ", 15, 15);
+    let full = filled(80, " 14/14 ", 14, 14);
     let rest: String = row.chars().skip(chip.chars().count()).collect();
     assert_eq!(
         rest.matches('▂').count(),
@@ -1336,7 +1344,7 @@ fn the_config_sets_the_bar_of_a_talk_and_a_flag_wins_over_it() {
     let press = filled(80, " 4/14 ", 4, 14);
     assert_ne!(scene, press);
     let cases: &[(&str, &[&str], usize)] = &[
-        ("", &[], scene),
+        ("", &[], press),
         (off, &[], 0),
         (step, &[], press),
         (off, &["--progress", "scene"], scene),

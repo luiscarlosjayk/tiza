@@ -772,7 +772,7 @@ pub struct App {
     /// config file or `--no-counter` turn it off, `--counter` on).
     pub counter: bool,
     /// How the presentation of a talk draws its progress bar on the row of
-    /// the counter: by scene (the default), by step, or not (`progress` in
+    /// the counter: by step (the default), by scene, or not (`progress` in
     /// the config file, `--progress MODE`, `--no-progress`). It is
     /// independent of `counter`.
     pub progress: tiza_core::config::ProgressMode,
@@ -1022,7 +1022,7 @@ impl App {
             socket_path: None,
             autosave: true,
             counter: true,
-            progress: tiza_core::config::ProgressMode::Scene,
+            progress: tiza_core::config::ProgressMode::Step,
             no_save: false,
             reference,
             frozen_views,
@@ -2554,9 +2554,9 @@ impl App {
             && self.present_progress().is_some_and(|(_, n)| n > 0)
     }
 
-    /// What the progress bar of a talk shows, `(done, all)`: the share at
-    /// the end of the scene on screen ([`App::talk_bar`]), or with `step`
-    /// the share of the key presses, as the counter.
+    /// What the progress bar of a talk shows, `(done, all)`: the share of
+    /// the key presses, as the counter, or with `scene` the share at the
+    /// end of the scene on screen ([`App::talk_bar`]).
     pub fn present_bar(&self) -> Option<(u32, u32)> {
         match self.progress {
             tiza_core::config::ProgressMode::Scene => self.talk_bar(),

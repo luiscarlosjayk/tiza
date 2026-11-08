@@ -178,8 +178,8 @@ CAPTURES = [
     },
     # In a talk, the counter counts the key presses of the whole talk: 1 on
     # the title slide and 2 in the code before its step 2, of 4. The
-    # progress bar shows the end of the scene: title 1, code 3 and last
-    # slide 1 (each scene counts at least once), so it fills 4/5 of the row.
+    # progress bar grows at each key, as the counter: it fills 3/4 of the
+    # way to the counter.
     {
         "id": "talk-progress",
         "pages": ["docs/guides/present-a-long-talk.md"],

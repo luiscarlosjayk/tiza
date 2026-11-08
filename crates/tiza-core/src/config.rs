@@ -67,10 +67,10 @@ impl LayoutMode {
 pub enum ProgressMode {
     /// The share of the talk at the end of the scene on screen: the bar
     /// does not move in a scene and moves on at the next one.
-    #[default]
     Scene,
     /// The share of the key presses, as the counter: the bar grows at each
     /// key.
+    #[default]
     Step,
     /// No bar.
     Off,

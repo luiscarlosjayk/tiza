@@ -86,7 +86,7 @@ fn tiza_config_shows_the_file_the_values_and_the_warnings() {
         "  numbers    off      config",
         "  mouse      off      built-in",
         "  counter    on       built-in",
-        "  progress   scene    built-in",
+        "  progress   step     built-in",
         "  autosave   on       built-in",
         "  layout     dynamic  built-in",
         "  width      100      built-in",
@@ -142,7 +142,7 @@ fn the_progress_key_takes_scene_step_and_off_and_warns_on_another_value() {
             format!("[defaults]\nprogress = {value}\n").as_bytes(),
         );
         let (_, out, _) = tiza_with_config(&dir, "cfg.toml", &["config"]);
-        assert!(out.contains(&row("scene", "built-in")), "{out}");
+        assert!(out.contains(&row("step", "built-in")), "{out}");
         assert!(
             out.contains(&format!(
                 "cfg.toml:2: [defaults] progress: {value} is not valid: use \"scene\", \"step\" or \"off\""
