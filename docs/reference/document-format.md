@@ -630,7 +630,7 @@ The `stroke` and `heads` fields change the look of an arrow. For example, `examp
 | A color name, from the list under this table | A color value |
 | `dark`, `light` or `terminal` | An object with the same keys, which applies only with that theme |
 
-- Roles: `bg`, `fg`, `muted`, `dimmed`, `accent`, `rail`, `box_line`, `box_bg`, `arrow`, `note`, `highlight_bg`, `status_bg`, `status_fg`, `cmd_bg`, `error`, `diff_add`, `diff_del`.
+- Roles: `bg`, `fg`, `muted`, `dimmed`, `accent`, `rail`, `box_line`, `box_bg`, `arrow`, `note`, `highlight_bg`, `status_bg`, `status_fg`, `cmd_bg`, `error`, `diff_add`, `diff_del`, `progress`.
 - Color names: `orange`, `blue`, `green`, `purple`, `pink`, `cyan`, `yellow`, `red`, `gray`.
 
 A color value is one of these:

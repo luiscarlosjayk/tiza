@@ -211,7 +211,7 @@ Presentation mode (`P`) shows only the code and the annotations. It hides:
 It keeps, on the last row:
 
 - the step counter `2/5` at the right, in the muted color, when the take has more than one step, and on step 0. In a take of one step, it also shows on the empty step after the last one (`2/2`). In a talk, it counts the whole talk and shows in each scene, also in a scene of one step;
-- in a talk, the progress bar: a line `▂` in the accent color from the left edge to the counter, for the share of the talk that is done. It has its own option (`progress`, `--no-progress`), apart from the counter;
+- in a talk, the progress bar: a line `▂` in the theme color `progress` (the accent color when it is not set) from the left edge to the counter, for the share of the talk that is done at the end of the scene on screen. It does not move in a scene and moves on at the next scene. Each scene counts for its key presses, and at least once; a skipped scene does not count. It has its own option (`progress`, `--no-progress`), apart from the counter;
 - the chip `⏸ 2 to review · :review` at the left, when agent changes wait;
 - the command line while the user types after `:`, and its result for 2 s;
 - the message at start for 2 s, when it holds the count of the entries that this version does not know.

@@ -54,9 +54,10 @@ pub struct TalkState {
     /// By the canonical path of the scene, so that a new order of the list
     /// gives no scene the history of another.
     parked: HashMap<PathBuf, Parked>,
-    /// The key presses of each scene, for the counter of the whole talk
-    /// ([`tiza_core::talk::scene_presses`]): 0 for a skipped one. The scene
-    /// on screen is counted from its document as it is now.
+    /// The key presses of each scene, for the counter of the whole talk and
+    /// its progress bar ([`tiza_core::talk::scene_presses`]): 0 for a
+    /// skipped one. The scene on screen is counted from its document as it
+    /// is now.
     pub(super) presses: Vec<u32>,
 }
 
@@ -640,6 +641,46 @@ impl App {
         let before: u32 = t.presses[..t.index].iter().sum();
         let after: u32 = t.presses[t.index + 1..].iter().sum();
         Some((before + done, before + all + after))
+    }
+
+    /// In a talk, what its progress bar shows: `(k, n)`, the weight of the
+    /// scenes up to the end of the scene on screen, and the weight of all
+    /// of them. The bar stays still in a scene and jumps when the talk
+    /// goes to the next one; the last scene fills it. A scene weighs its
+    /// key presses, and at least 1 (a cover, a scene that plays by itself);
+    /// a skipped scene weighs 0.
+    pub fn talk_bar(&self) -> Option<(u32, u32)> {
+        let t = self.talk.as_ref()?;
+        if t.presses.len() != t.loaded.scenes.len() {
+            return None;
+        }
+        // The scene on screen counts as it is now, as in the counter.
+        let here = tiza_core::talk::scene_presses(&self.doc, t.last_shown(t.index));
+        let weights = t
+            .loaded
+            .scenes
+            .iter()
+            .zip(&t.presses)
+            .enumerate()
+            .map(|(i, (s, &p))| {
+                // A scene that a new list skips while it shows still
+                // counts until the talk leaves it, as in the counter.
+                if i == t.index {
+                    here.max(1)
+                } else if s.skip {
+                    0
+                } else {
+                    p.max(1)
+                }
+            });
+        let (mut done, mut all) = (0, 0);
+        for (i, w) in weights.enumerate() {
+            all += w;
+            if i <= t.index {
+                done += w;
+            }
+        }
+        Some((done, all))
     }
 
     /// In a talk, whether the next scenes with a file to follow open with

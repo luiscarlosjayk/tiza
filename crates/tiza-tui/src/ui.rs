@@ -453,7 +453,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
             .present_counter_shown()
             .then(|| format!(" {step}/{total} "));
         if app.present_bar_shown()
-            && let Some((done, all)) = progress
+            && let Some((done, all)) = app.talk_bar()
         {
             let room = counter.as_ref().map_or(0, |t| t.width() as u16);
             draw_progress_bar(frame, app, area, room, done, all);
@@ -519,8 +519,9 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
 }
 
 /// The progress bar of a talk on the last row, left of the counter
-/// (`room` columns at the right): a thin line in the accent color from the
-/// left edge, for the share `done / all` of the key presses of the talk.
+/// (`room` columns at the right): a thin line in the theme color
+/// `progress` from the left edge, for the share `done / all` of the talk
+/// at the end of the scene on screen ([`App::talk_bar`]).
 /// Nothing on a terminal too narrow for it.
 fn draw_progress_bar(frame: &mut Frame, app: &App, area: Rect, room: u16, done: u32, all: u32) {
     let th = &app.theme;
@@ -531,7 +532,7 @@ fn draw_progress_bar(frame: &mut Frame, app: &App, area: Rect, room: u16, done: 
     }
     let filled =
         ((u64::from(len) * u64::from(done.min(all)) + u64::from(all) / 2) / u64::from(all)) as u16;
-    let style = Style::default().fg(rgb(th.accent)).bg(rgb(th.bg));
+    let style = Style::default().fg(rgb(th.progress())).bg(rgb(th.bg));
     let buf = frame.buffer_mut();
     for i in 0..len {
         let glyph = if i < filled { "▂" } else { " " };
