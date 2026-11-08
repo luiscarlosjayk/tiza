@@ -40,13 +40,13 @@ struct Cli {
     /// Show the step counter of presentation mode, also when config.toml sets `counter = false`
     #[arg(long, overrides_with = "no_counter")]
     counter: bool,
-    /// Hide the progress bar of a talk for this session; the counter stays.
-    /// `progress = false` in config.toml hides it for every session.
+    /// Hide the progress bar of a talk for this session, as `--progress off`; the counter stays
     #[arg(long, overrides_with = "progress")]
     no_progress: bool,
-    /// Show the progress bar of a talk, also when config.toml sets `progress = false`
-    #[arg(long, overrides_with = "no_progress")]
-    progress: bool,
+    /// How the progress bar of a talk moves for this session: scene (the default: the bar moves at each new scene), step (the bar moves at each key, as the counter) or off.
+    /// `progress` in config.toml sets it for every session.
+    #[arg(long, value_enum, value_name = "MODE", overrides_with_all = ["no_progress", "progress"])]
+    progress: Option<ProgressArg>,
     /// Initial presentation step
     #[arg(long)]
     step: Option<u32>,
@@ -85,6 +85,23 @@ struct Cli {
     no_save: bool,
     #[command(subcommand)]
     cmd: Option<Cmd>,
+}
+
+#[derive(Clone, Copy, ValueEnum, PartialEq)]
+enum ProgressArg {
+    Scene,
+    Step,
+    Off,
+}
+
+impl From<ProgressArg> for tiza_core::config::ProgressMode {
+    fn from(p: ProgressArg) -> Self {
+        match p {
+            ProgressArg::Scene => Self::Scene,
+            ProgressArg::Step => Self::Step,
+            ProgressArg::Off => Self::Off,
+        }
+    }
 }
 
 #[derive(Clone, Copy, ValueEnum, PartialEq)]
@@ -1493,7 +1510,13 @@ fn config_report(cfg: &tiza_core::config::Config) -> String {
         ("numbers", d.numbers.map(on), on(true)),
         ("mouse", d.mouse.map(on), on(false)),
         ("counter", d.counter.map(on), on(true)),
-        ("progress", d.progress.map(on), on(true)),
+        (
+            "progress",
+            d.progress.map(|p| p.name().to_string()),
+            tiza_core::config::ProgressMode::default()
+                .name()
+                .to_string(),
+        ),
         ("autosave", d.autosave.map(on), on(true)),
         (
             "layout",
@@ -2633,10 +2656,11 @@ fn run_tui(cli: Cli, socket_path: PathBuf, origin: &socket::Origin) -> anyhow::R
             (_, true) => Some(false),
             _ => None,
         },
-        progress: match (cli.progress, cli.no_progress) {
-            (true, _) => Some(true),
-            (_, true) => Some(false),
-            _ => None,
+        // Of `--progress MODE` and `--no-progress`, clap keeps the last.
+        progress: if cli.no_progress {
+            Some(tiza_core::config::ProgressMode::Off)
+        } else {
+            cli.progress.map(Into::into)
         },
     };
     let (app, notice) = match opened {

@@ -61,6 +61,40 @@ impl LayoutMode {
     }
 }
 
+/// `progress = "scene" | "step" | "off"`: how the progress bar of a talk
+/// moves in presentation mode.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ProgressMode {
+    /// The share of the talk at the end of the scene on screen: the bar
+    /// does not move in a scene and moves on at the next one.
+    #[default]
+    Scene,
+    /// The share of the key presses, as the counter: the bar grows at each
+    /// key.
+    Step,
+    /// No bar.
+    Off,
+}
+
+impl ProgressMode {
+    pub fn name(self) -> &'static str {
+        match self {
+            ProgressMode::Scene => "scene",
+            ProgressMode::Step => "step",
+            ProgressMode::Off => "off",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        match text.trim() {
+            "scene" => Some(ProgressMode::Scene),
+            "step" => Some(ProgressMode::Step),
+            "off" => Some(ProgressMode::Off),
+            _ => None,
+        }
+    }
+}
+
 /// The `[defaults]` table: `None` for a key the file does not set (or
 /// sets to a bad value), so the built-in value applies.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -82,8 +116,8 @@ pub struct Defaults {
     pub effect_fps: Option<u16>,
     /// `counter = false`: no step counter in presentation mode.
     pub counter: Option<bool>,
-    /// `progress = false`: no progress bar in the presentation of a talk.
-    pub progress: Option<bool>,
+    /// `progress = "step"`: how the progress bar of a talk moves, or `off`.
+    pub progress: Option<ProgressMode>,
 }
 
 /// What the config file holds, after every entry was checked.
@@ -1107,7 +1141,7 @@ fn shown(v: &DeValue<'_>) -> String {
 }
 
 /// `true`, `false` or the words `:numbers`, `:mouse` and `:autosave` take
-/// (also for `counter` and `progress`).
+/// (also for `counter`).
 fn on_off(v: &DeValue<'_>) -> Option<bool> {
     match v {
         DeValue::Boolean(b) => Some(*b),
@@ -1149,19 +1183,25 @@ fn defaults_table(t: &DeTable<'_>, cx: &mut Ctx) -> Defaults {
                     None => Some("use \"V H\" or \"V\", as :pad takes it".to_string()),
                 }
             }
-            "numbers" | "mouse" | "autosave" | "counter" | "progress" => match on_off(value) {
+            "numbers" | "mouse" | "autosave" | "counter" => match on_off(value) {
                 Some(b) => {
                     let slot = match key {
                         "numbers" => &mut d.numbers,
                         "mouse" => &mut d.mouse,
                         "counter" => &mut d.counter,
-                        "progress" => &mut d.progress,
                         _ => &mut d.autosave,
                     };
                     *slot = Some(b);
                     None
                 }
                 None => Some("use true or false".to_string()),
+            },
+            "progress" => match value {
+                DeValue::String(s) if ProgressMode::parse(s).is_some() => {
+                    d.progress = ProgressMode::parse(s);
+                    None
+                }
+                _ => Some("use \"scene\", \"step\" or \"off\"".to_string()),
             },
             "layout" => match value {
                 DeValue::String(s) if LayoutMode::parse(s).is_some() => {
@@ -1377,7 +1417,7 @@ mod tests {
     #[test]
     fn defaults_take_the_values_of_their_commands() {
         let c = cfg(
-            "[defaults]\npad = \"1 3\"\nnumbers = false\nmouse = \"on\"\ncounter = \"off\"\nprogress = \"off\"\nautosave = false\nlayout = \"stable\"\nwidth = 120\neffect_fps = 30\n",
+            "[defaults]\npad = \"1 3\"\nnumbers = false\nmouse = \"on\"\ncounter = \"off\"\nprogress = \"step\"\nautosave = false\nlayout = \"stable\"\nwidth = 120\neffect_fps = 30\n",
         );
         assert!(c.warnings.is_empty(), "{:?}", c.warning_lines());
         assert_eq!(
@@ -1391,9 +1431,20 @@ mod tests {
                 width: Some(120),
                 effect_fps: Some(30),
                 counter: Some(false),
-                progress: Some(false),
+                progress: Some(ProgressMode::Step),
             }
         );
+        // `progress` takes its three words, and no true or false.
+        for (text, want) in [
+            ("\"scene\"", Some(ProgressMode::Scene)),
+            ("\"off\"", Some(ProgressMode::Off)),
+            ("true", None),
+            ("\"on\"", None),
+        ] {
+            let c = cfg(&format!("[defaults]\nprogress = {text}\n"));
+            assert_eq!(c.defaults.progress, want, "{text}");
+            assert_eq!(c.warnings.is_empty(), want.is_some(), "{text}");
+        }
         assert_eq!(cfg("[defaults]\npad = 2").defaults.pad, Some((2, 4)));
         // Only 30 and 60: another number is a warning, and 60 applies.
         let c = cfg("[defaults]\neffect_fps = 45\n");

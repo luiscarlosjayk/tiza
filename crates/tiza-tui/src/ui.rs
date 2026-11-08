@@ -453,7 +453,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
             .present_counter_shown()
             .then(|| format!(" {step}/{total} "));
         if app.present_bar_shown()
-            && let Some((done, all)) = app.talk_bar()
+            && let Some((done, all)) = app.present_bar()
         {
             let room = counter.as_ref().map_or(0, |t| t.width() as u16);
             draw_progress_bar(frame, app, area, room, done, all);
@@ -521,7 +521,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
 /// The progress bar of a talk on the last row, left of the counter
 /// (`room` columns at the right): a thin line in the theme color
 /// `progress` from the left edge, for the share `done / all` of the talk
-/// at the end of the scene on screen ([`App::talk_bar`]).
+/// ([`App::present_bar`]).
 /// Nothing on a terminal too narrow for it.
 fn draw_progress_bar(frame: &mut Frame, app: &App, area: Rect, room: u16, done: u32, all: u32) {
     let th = &app.theme;

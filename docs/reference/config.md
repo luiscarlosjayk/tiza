@@ -12,7 +12,7 @@ pad = "1 2"
 numbers = false
 mouse = true
 counter = false
-progress = false
+progress = "off"
 autosave = false
 layout = "stable"
 width = 120
@@ -76,14 +76,14 @@ The values that a session starts with.
 | `numbers` | `true` or `false` | `true` | The line-number gutter. |
 | `mouse` | `true` or `false` | `false` | Mouse capture. |
 | `counter` | `true` or `false` | `true` | The step counter of presentation mode. |
-| `progress` | `true` or `false` | `true` | The progress bar of a talk in presentation mode. Its color is the `progress` token of the [theme](themes.md). |
+| `progress` | `"scene"`, `"step"` or `"off"` | `"scene"` | How the progress bar of a talk moves in presentation mode: at each new scene, at each key, or no bar. Its color is the `progress` token of the [theme](themes.md). |
 | `autosave` | `true` or `false` | `true` | Autosave of the document. |
 | `layout` | `"stable"` or `"dynamic"` | `"dynamic"` | The layout of normal mode. |
 | `width` | integer | `100` | The width of `tiza render` and `tiza check`, from 20 to 400 columns. |
 | `effect_fps` | `30` or `60` | `60` | The frames each second of an enter effect on the screen. |
 
 - `pad = "V"` sets `H` to two times `V`. A number, for example `pad = 2`, does the same. `pad = "default"` gives the built-in value.
-- `numbers`, `mouse`, `counter`, `progress` and `autosave` also take the strings `"on"`, `"off"`, `"yes"` and `"no"`.
+- `numbers`, `mouse`, `counter` and `autosave` also take the strings `"on"`, `"off"`, `"yes"` and `"no"`.
 - `pad` changes only the screen. An export does not draw the padding.
 - In presentation mode, the layout is always stable.
 - `effect_fps` changes only the screen. A GIF, a WebP or a video plays an effect at 25 frames each second.
@@ -98,7 +98,7 @@ A flag, a [`:` command](commands.md) and the document win over the config file. 
 | `numbers` | `--numbers` and `--no-numbers` of `tiza render`, for one export | Yes, as `numbers` | `:numbers on`, `:numbers off` |
 | `mouse` | `--mouse` | No | `:mouse on`, `:mouse off` |
 | `counter` | `--counter` and `--no-counter`, for the session | No | No command |
-| `progress` | `--progress` and `--no-progress`, for the session | No | No command |
+| `progress` | `--progress MODE` and `--no-progress`, for the session | No | No command |
 | `autosave` | `--no-save` | No | `:autosave on`, `:autosave off` |
 | `layout` | No flag | No | `:layout stable`, `:layout dynamic` |
 | `width` | `--width N` of `tiza render` and `tiza check` | No | No command |
@@ -108,7 +108,7 @@ A flag, a [`:` command](commands.md) and the document win over the config file. 
 - **`numbers`:** When the document has a `numbers` field, it wins over the config file. `:numbers on` and `:numbers off` always write the field, also when the gutter is already in that state. Then the document looks the same on a computer without your config file. To use the config file again, remove the field from the `.tiza` file.
 - **`mouse`:** Mouse capture is on at start when you give `--mouse` or the file sets `mouse = true`. The file cannot turn off `--mouse`. `:mouse` changes it for the session.
 - **`counter`:** `--no-counter` hides the counter for the session, and `--counter` shows it, also when the file sets `counter = false`. When you give the two flags, the last one wins.
-- **`progress`:** `--no-progress` hides the progress bar of a talk for the session, and `--progress` shows it, also when the file sets `progress = false`. When you give the two flags, the last one wins. The bar and the counter are independent: `counter = false` hides only the numbers, and `progress = false` removes only the bar. A document that is not a talk has no bar.
+- **`progress`:** With `"scene"`, the bar shows how much of the talk is done at the end of the scene on screen. It does not move in a scene, and it moves on at the next scene. With `"step"`, the bar grows at each key that you press, as the counter. `"off"` removes the bar. `--progress MODE` sets the mode for the session, also when the file sets another mode. `--no-progress` is the same as `--progress off`. When you give `--progress MODE` and `--no-progress`, or `--progress MODE` two times, the last one wins. The bar and the counter are independent: `counter = false` hides only the numbers, and `progress = "off"` removes only the bar. A document that is not a talk has no bar. `true` and `false` are not values of `progress`. Tiza ignores such a value with a warning, and the bar moves by scene.
 - **`autosave`:** `--no-save` wins over `autosave = true`. `:autosave` changes it for the session. `:autosave on` also ends no-save mode.
 - **`layout`:** `:layout` changes it for the session.
 - **`width`:** For `tiza render` and `tiza check`, `--width` wins, then the file, then 100. For the `check` method and the `check` MCP tool, their `width` argument wins, then the file of the instance, then 100. For `tiza check`, the width is a terminal, and the side padding comes off it. For `tiza render` and the `check` method, it is columns of code.

@@ -69,10 +69,10 @@ pub struct SessionStart {
     /// step counter of presentation mode for this session. `None`: the
     /// config file decides, else it shows.
     pub counter: Option<bool>,
-    /// `--progress` (`Some(true)`) or `--no-progress` (`Some(false)`): the
-    /// progress bar of the presentation of a talk for this session. `None`:
-    /// the config file decides, else it shows.
-    pub progress: Option<bool>,
+    /// `--progress MODE` or `--no-progress` (`Some(Off)`): how the progress
+    /// bar of the presentation of a talk moves for this session. `None`:
+    /// the config file decides, else `scene`.
+    pub progress: Option<tiza_core::config::ProgressMode>,
 }
 
 pub struct RunOptions {
@@ -167,7 +167,7 @@ fn open_rest(
     app.progress = start
         .progress
         .or(app.config_defaults.progress)
-        .unwrap_or(true);
+        .unwrap_or_default();
     // A bad entry of the config file was ignored: the first one on the
     // bar, file name, line and key first (the binary printed every one on
     // stderr with the full path), and how many there are: a cut keeps the

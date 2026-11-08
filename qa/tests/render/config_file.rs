@@ -86,7 +86,7 @@ fn tiza_config_shows_the_file_the_values_and_the_warnings() {
         "  numbers    off      config",
         "  mouse      off      built-in",
         "  counter    on       built-in",
-        "  progress   on       built-in",
+        "  progress   scene    built-in",
         "  autosave   on       built-in",
         "  layout     dynamic  built-in",
         "  width      100      built-in",
@@ -107,25 +107,45 @@ fn tiza_config_shows_the_file_the_values_and_the_warnings() {
 }
 
 #[test]
-fn the_counter_and_progress_keys_take_on_and_off_and_warn_on_another_value() {
-    for key in ["counter", "progress"] {
-        let row = |value: &str, source: &str| format!("  {key:<10} {value:<8} {source}\n");
+fn the_counter_key_takes_on_and_off_and_warns_on_another_value() {
+    let row = |value: &str, source: &str| format!("  counter    {value:<8} {source}\n");
+    let dir = setup("config-counter", b"[defaults]\ncounter = \"off\"\n");
+    let (code, out, err) = tiza_with_config(&dir, "cfg.toml", &["config"]);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains(&row("off", "config")), "{out}");
+    let dir = setup("config-counter-bad", b"[defaults]\ncounter = \"hidden\"\n");
+    let (_, out, _) = tiza_with_config(&dir, "cfg.toml", &["config"]);
+    assert!(out.contains(&row("on", "built-in")), "{out}");
+    assert!(
+        out.contains("cfg.toml:2: [defaults] counter: \"hidden\" is not valid: use true or false"),
+        "{out}"
+    );
+}
+
+#[test]
+fn the_progress_key_takes_scene_step_and_off_and_warns_on_another_value() {
+    let row = |value: &str, source: &str| format!("  progress   {value:<8} {source}\n");
+    for value in ["scene", "step", "off"] {
         let dir = setup(
-            &format!("config-{key}"),
-            format!("[defaults]\n{key} = \"off\"\n").as_bytes(),
+            &format!("config-progress-{value}"),
+            format!("[defaults]\nprogress = \"{value}\"\n").as_bytes(),
         );
         let (code, out, err) = tiza_with_config(&dir, "cfg.toml", &["config"]);
         assert_eq!(code, 0, "{err}");
-        assert!(out.contains(&row("off", "config")), "{out}");
+        assert!(out.contains(&row(value, "config")), "{out}");
+        assert!(out.contains("warnings: none\n"), "{out}");
+    }
+    // An on/off value of the other keys is not a mode.
+    for (i, value) in ["true", "\"on\"", "\"hidden\""].into_iter().enumerate() {
         let dir = setup(
-            &format!("config-{key}-bad"),
-            format!("[defaults]\n{key} = \"hidden\"\n").as_bytes(),
+            &format!("config-progress-bad-{i}"),
+            format!("[defaults]\nprogress = {value}\n").as_bytes(),
         );
         let (_, out, _) = tiza_with_config(&dir, "cfg.toml", &["config"]);
-        assert!(out.contains(&row("on", "built-in")), "{out}");
+        assert!(out.contains(&row("scene", "built-in")), "{out}");
         assert!(
             out.contains(&format!(
-                "cfg.toml:2: [defaults] {key}: \"hidden\" is not valid: use true or false"
+                "cfg.toml:2: [defaults] progress: {value} is not valid: use \"scene\", \"step\" or \"off\""
             )),
             "{out}"
         );

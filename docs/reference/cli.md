@@ -368,15 +368,21 @@ Shows the step counter of presentation mode, also when the config file sets `cou
 <dt><code>--no-progress</code></dt>
 <dd>
 
-Hides the progress bar of a talk in presentation mode for this session. The counter stays.
+Hides the progress bar of a talk in presentation mode for this session, as `--progress off`. The counter stays.
 
-`progress = false` in the config file hides it for every session. See [Config file](config.md#which-value-wins).
+`progress = "off"` in the config file hides it for every session. See [Config file](config.md#which-value-wins).
 
 </dd>
-<dt><code>--progress</code></dt>
+<dt><code>--progress MODE</code></dt>
 <dd>
 
-Shows the progress bar of a talk in presentation mode, also when the config file sets `progress = false`.
+Sets how the progress bar of a talk moves in presentation mode for this session, also when the config file sets another mode:
+
+- `scene` (the default): the bar shows how much of the talk is done at the end of the scene on screen. It moves on at the next scene.
+- `step`: the bar grows at each key that you press, as the counter.
+- `off`: no bar.
+
+When you give `--progress` and `--no-progress`, the last one wins.
 
 </dd>
 <dt><code>--no-save</code></dt>

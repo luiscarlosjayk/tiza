@@ -771,10 +771,11 @@ pub struct App {
     /// Presentation mode draws its step counter (`counter = false` in the
     /// config file or `--no-counter` turn it off, `--counter` on).
     pub counter: bool,
-    /// The presentation of a talk draws its progress bar on the row of the
-    /// counter (`progress = false` in the config file or `--no-progress`
-    /// turn it off, `--progress` on). It is independent of `counter`.
-    pub progress: bool,
+    /// How the presentation of a talk draws its progress bar on the row of
+    /// the counter: by scene (the default), by step, or not (`progress` in
+    /// the config file, `--progress MODE`, `--no-progress`). It is
+    /// independent of `counter`.
+    pub progress: tiza_core::config::ProgressMode,
     /// The file the code was last read from (`code: {file}` when opened or
     /// at the last put): a put that sent other code leaves the document
     /// embedded in memory, and a later put of that file's code makes it a
@@ -1021,7 +1022,7 @@ impl App {
             socket_path: None,
             autosave: true,
             counter: true,
-            progress: true,
+            progress: tiza_core::config::ProgressMode::Scene,
             no_save: false,
             reference,
             frozen_views,
@@ -2549,7 +2550,19 @@ impl App {
     /// The progress bar of a talk, on the row of the counter, unless the
     /// presenter turned it off. Outside a talk there is no bar.
     pub fn present_bar_shown(&self) -> bool {
-        self.progress && self.present_progress().is_some_and(|(_, n)| n > 0)
+        self.progress != tiza_core::config::ProgressMode::Off
+            && self.present_progress().is_some_and(|(_, n)| n > 0)
+    }
+
+    /// What the progress bar of a talk shows, `(done, all)`: the share at
+    /// the end of the scene on screen ([`App::talk_bar`]), or with `step`
+    /// the share of the key presses, as the counter.
+    pub fn present_bar(&self) -> Option<(u32, u32)> {
+        match self.progress {
+            tiza_core::config::ProgressMode::Scene => self.talk_bar(),
+            tiza_core::config::ProgressMode::Step => self.talk_progress(),
+            tiza_core::config::ProgressMode::Off => None,
+        }
     }
 
     /// A step change in presentation mode, before the moves of the new

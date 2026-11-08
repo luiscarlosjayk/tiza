@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 
 use crossterm::event::KeyCode;
 use serde_json::json;
+use tiza_core::config::ProgressMode;
 use tiza_qa::{Live, fixture, scratch};
 use tiza_tui::SessionStart;
 
@@ -966,7 +967,11 @@ fn bar_share(live: &Live) -> (u32, u32) {
     live.with(|a| a.talk_bar()).expect("a talk")
 }
 
-fn presenting(counter: Option<bool>, progress: Option<bool>, config: Option<bool>) -> SessionStart {
+fn presenting(
+    counter: Option<bool>,
+    progress: Option<ProgressMode>,
+    config: Option<ProgressMode>,
+) -> SessionStart {
     SessionStart {
         present: true,
         counter,
@@ -1142,25 +1147,102 @@ fn the_bar_of_a_talk_has_the_progress_color_of_the_theme_and_the_marks_keep_thei
 }
 
 #[test]
-fn the_counter_and_the_bar_of_a_talk_turn_off_apart() {
-    // (counter flag, progress flag, progress of the config, the bar shows,
-    // the counter shows)
-    let cases = [
-        (None, None, None, true, true),
-        (Some(false), None, None, true, false),
-        (None, Some(false), None, false, true),
-        (Some(false), Some(false), None, false, false),
-        (None, None, Some(false), false, true),
-        (None, Some(true), Some(false), true, true),
+fn the_bar_of_a_talk_by_step_grows_at_each_key_as_the_counter() {
+    let dir = talk_copy("talk-bar-step");
+    let live = open(&dir, None, presenting(None, Some(ProgressMode::Step), None));
+    // The places of the walk and their counter, as the counter test: the
+    // skipped scene between own and loop has no place and no share.
+    let want = [
+        ("intro.tiza", [0, 0, 0].as_slice()),
+        ("borrow.tiza", &[0, 1, 2, 3]),
+        ("own.tiza", &[4, 5, 6]),
+        ("loop.tiza", &[7, 8, 9]),
+        ("again.tiza", &[10, 11, 12]),
+        ("2024.tiza", &[13, 14]),
     ];
-    for (i, (counter, flag, config, bar, numbers)) in cases.into_iter().enumerate() {
+    let mut cells = Vec::new();
+    for (file, ks) in want {
+        for (s, k) in ks.iter().enumerate() {
+            assert_eq!(
+                (scene_file(&live), step(&live)),
+                (file.to_string(), s as u32)
+            );
+            assert_eq!(progress(&live), (*k, 14), "{file} at step {s}");
+            let counter = format!(" {k}/14 ");
+            let (row, got) = bar_row(&live, 80);
+            assert_eq!(got, filled(80, &counter, *k, 14), "{file} {s}: {row:?}");
+            assert!(row.ends_with(counter.trim_end()), "{row:?}");
+            cells.push((file, got));
+            live.keys(&[KeyCode::Char('n')]);
+        }
+    }
+    // In a scene the bar grows: the four steps of borrow.
+    let borrow: Vec<usize> = cells
+        .iter()
+        .filter(|(f, _)| *f == "borrow.tiza")
+        .map(|(_, c)| *c)
+        .collect();
+    assert!(borrow.windows(2).all(|w| w[0] < w[1]), "{borrow:?}");
+    assert_eq!(cells.last().unwrap().1, 80 - " 14/14 ".len() - 1);
+}
+
+#[test]
+fn a_talk_opened_at_a_step_of_a_scene_has_the_bar_of_its_mode() {
+    // `--scene own --step 2`: the counter is 6/14 in each mode.
+    let cases = [
+        (None, Some((8, 15))),
+        (Some(ProgressMode::Scene), Some((8, 15))),
+        (Some(ProgressMode::Step), Some((6, 14))),
+        (Some(ProgressMode::Off), None),
+    ];
+    for (i, (mode, share)) in cases.into_iter().enumerate() {
+        let dir = talk_copy(&format!("talk-bar-at-step-{i}"));
+        let start = SessionStart {
+            step: Some(2),
+            ..presenting(None, mode, None)
+        };
+        let live = open(&dir, Some("own"), start);
+        assert_eq!((scene_file(&live), step(&live)), ("own.tiza".into(), 2));
+        assert_eq!(progress(&live), (6, 14), "{mode:?}");
+        let (row, cells) = bar_row(&live, 80);
+        let want = share.map_or(0, |(k, n)| filled(80, " 6/14 ", k, n));
+        assert_eq!(cells, want, "{mode:?}: {row:?}");
+        assert!(row.ends_with(" 6/14"), "the counter stays: {row:?}");
+    }
+}
+
+#[test]
+fn the_counter_and_the_bar_of_a_talk_turn_off_apart() {
+    use ProgressMode::{Off, Scene, Step};
+    // (counter flag, progress flag, progress of the config, the bar shows
+    // by step (`Some(true)`), by scene (`Some(false)`) or not, the counter
+    // shows)
+    let cases = [
+        (None, None, None, Some(false), true),
+        (Some(false), None, None, Some(false), false),
+        (None, Some(Off), None, None, true),
+        (Some(false), Some(Off), None, None, false),
+        (None, None, Some(Off), None, true),
+        (None, Some(Scene), Some(Off), Some(false), true),
+        (None, None, Some(Step), Some(true), true),
+        (Some(false), Some(Step), None, Some(true), false),
+        (None, Some(Scene), Some(Step), Some(false), true),
+        (None, Some(Off), Some(Step), None, true),
+        (None, Some(Step), Some(Off), Some(true), true),
+    ];
+    for (i, (counter, flag, config, by, numbers)) in cases.into_iter().enumerate() {
+        let bar = by.is_some();
         let case = format!("counter {counter:?}, progress {flag:?}, config {config:?}");
         let dir = talk_copy(&format!("talk-bar-off-{i}"));
         let live = open(&dir, Some("own"), presenting(counter, flag, config));
         for scene in ["own.tiza", "loop.tiza"] {
             assert_eq!(scene_file(&live), scene);
             let (k, n) = progress(&live);
-            let (bk, bn) = bar_share(&live);
+            let (bk, bn) = if by == Some(true) {
+                (k, n)
+            } else {
+                bar_share(&live)
+            };
             let (row, cells) = bar_row(&live, 80);
             let room = if numbers {
                 format!(" {k}/{n} ")
@@ -1192,7 +1274,7 @@ fn a_document_that_is_not_a_talk_has_no_bar() {
     let solo = alone(
         &dir.join("own.tiza"),
         1,
-        &presenting(None, Some(true), None),
+        &presenting(None, Some(ProgressMode::Step), None),
         dir.join("a.sock"),
     );
     let (row, cells) = bar_row(&solo, 80);
@@ -1237,26 +1319,42 @@ fn the_review_chip_shows_over_the_bar() {
 }
 
 /// The real binary on a pty of 80×24, in the talk of the fixture at the
-/// scene `own` (4/14): `progress = false` in the config hides the bar,
-/// `--progress` wins over it, `--no-progress` hides it, and of the two
+/// scene `own` (4/14): `progress` in the config sets the mode of the bar,
+/// `--progress MODE` wins over it, `--no-progress` hides it, and of the
 /// flags the last one wins. The counter stays in each case.
 #[test]
-fn the_config_hides_the_bar_of_a_talk_and_a_flag_wins_over_it() {
+fn the_config_sets_the_bar_of_a_talk_and_a_flag_wins_over_it() {
     let dir = talk_copy("talk-bar-flags");
-    let off = "[defaults]\nprogress = false\n";
-    let cases: &[(&str, &[&str], bool)] = &[
-        ("", &[], true),
-        (off, &[], false),
-        (off, &["--progress"], true),
-        ("", &["--no-progress"], false),
-        ("", &["--no-progress", "--progress"], true),
-        ("", &["--progress", "--no-progress"], false),
+    let off = "[defaults]\nprogress = \"off\"\n";
+    let step = "[defaults]\nprogress = \"step\"\n";
+    // At `own` the bar by scene is at the end of the scene: 8 of 15. By
+    // step it is the counter: 4 of 14.
+    let scene = filled(80, " 4/14 ", 8, 15);
+    let press = filled(80, " 4/14 ", 4, 14);
+    assert_ne!(scene, press);
+    let cases: &[(&str, &[&str], usize)] = &[
+        ("", &[], scene),
+        (off, &[], 0),
+        (step, &[], press),
+        (off, &["--progress", "scene"], scene),
+        (step, &["--progress", "scene"], scene),
+        (off, &["--progress", "step"], press),
+        ("", &["--no-progress"], 0),
+        (step, &["--no-progress"], 0),
+        ("", &["--no-progress", "--progress", "step"], press),
+        ("", &["--progress", "step", "--no-progress"], 0),
+        ("", &["--progress", "off", "--progress", "step"], press),
+        (
+            step,
+            &["--progress", "step", "--no-progress", "--progress", "scene"],
+            scene,
+        ),
     ];
     let body = r##"
 import json
 binary, cwd, cases = sys.argv[1], sys.argv[2], json.loads(sys.argv[3])
 os.chdir(cwd)
-for i, (cfg, flags, shown) in enumerate(cases):
+for i, (cfg, flags, cells) in enumerate(cases):
     with open("cfg.toml", "w") as f:
         f.write(cfg)
     env = dict(os.environ, TERM="xterm-256color", TIZA_CONFIG=os.path.abspath("cfg.toml"))
@@ -1268,7 +1366,7 @@ for i, (cfg, flags, shown) in enumerate(cases):
         term.feed(out[seen[0]:])
         seen[0] = len(out)
         return term.lines()[-1]
-    want = lambda row: row.rstrip().endswith("4/14") and (("▂" in row) == shown)
+    want = lambda row: row.rstrip().endswith("4/14") and row.count("▂") == cells
     ok = s.wait_for(lambda out: want(last(out)), 10, f"case {i}")
     last(s.out)
     print(f"CASE{i}", ok, json.dumps(term.lines()), flush=True)
@@ -1286,23 +1384,14 @@ for i, (cfg, flags, shown) in enumerate(cases):
             &serde_json::to_string(cases).unwrap(),
         ],
     );
-    for (i, (cfg, flags, shown)) in cases.iter().enumerate() {
+    for (i, (cfg, flags, cells)) in cases.iter().enumerate() {
         let line = crate::common::field(&out, &format!("CASE{i}"));
         let (ok, screen) = line.split_once(' ').unwrap();
         let rows: Vec<String> = serde_json::from_str(screen).unwrap();
-        let case = format!("{cfg:?} {flags:?}, bar {shown}");
+        let case = format!("{cfg:?} {flags:?}, bar {cells}");
         assert_eq!(ok, "True", "{case}:\n{}", rows.join("\n"));
         let bottom = &rows[23];
-        assert_eq!(
-            bottom.matches('▂').count(),
-            if *shown {
-                // At `own` the bar is at the end of the scene: 8 of 15.
-                filled(80, " 4/14 ", 8, 15)
-            } else {
-                0
-            },
-            "{case}: {bottom:?}"
-        );
+        assert_eq!(bottom.matches('▂').count(), *cells, "{case}: {bottom:?}");
         assert_eq!(
             crate::common::field(&out, &format!("EXIT{i}")),
             "0",
