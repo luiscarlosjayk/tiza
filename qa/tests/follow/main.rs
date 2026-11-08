@@ -11,6 +11,7 @@ mod pause_with_patches;
 mod put_while_paused;
 mod reload_on_save;
 mod reload_with_code_link;
+mod removed_lines_after_a_reload;
 mod reopen_after_follow_off;
 mod save_with_moves_applied;
 mod stale_moves;
